@@ -3,6 +3,7 @@
 GOBIN = ./build/bin
 GO ?= latest
 GORUN = go run
+d = $(shell date -Iminutes +"%Y-%m-%d-%H-%M-%S" )
 
 #? geth: Build geth.
 geth:
@@ -14,3 +15,6 @@ geth:
 all:
 	$(GORUN) build/ci.go install
 
+cloc:
+	echo ${d}
+	cloc . --fullpath --exclude-dir=.idea --not-match-f="(.*?).json" | tee ./stat/${d}.txt
