@@ -5,15 +5,26 @@ package main
 
 import (
 	"flag"
-	"github.com/ethereum/go-ethereum/internal/build"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/internal/build"
 )
+
+var GOBIN, _ = filepath.Abs(filepath.Join("build", "bin"))
+
+func executablePath(name string) string {
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(GOBIN, name)
+}
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -90,7 +101,7 @@ func doInstall(cmdline []string) {
 	// Do the build!
 	for _, pkg := range packages {
 		args := slices.Clone(gobuild.Args)
-		args = append(args, "-o")
+		args = append(args, "-o", executablePath(path.Base(pkg)))
 		args = append(args, pkg)
 		build.MustRun(&exec.Cmd{Path: gobuild.Path, Args: args, Env: gobuild.Env})
 	}
@@ -105,7 +116,7 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 	ld = append(ld, "--buildid=none")
 	if env.Commit != "" {
 		ld = append(ld, "-X", "github.com/ethereum/go-ethereum/internal/version.gitCommit="+env.Commit)
-		ld = append(ld, "-x", "github.com/ethereum/go-ethereum/internal/version.gitDate="+env.Date)
+		ld = append(ld, "-X", "github.com/ethereum/go-ethereum/internal/version.gitDate="+env.Date)
 	}
 	// Strip DWARF on darwin. This used to be required for certain things,
 	// and there is no downside to this, so we just keep doing it.

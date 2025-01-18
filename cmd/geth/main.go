@@ -17,10 +17,41 @@
 // geth is a command-line client for Ethereum.
 package main
 
-import "github.com/ethereum/go-ethereum/internal/flags"
+import (
+	"fmt"
+	"os"
+
+	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/urfave/cli/v2"
+)
 
 const (
 	clientIdentifier = "geth" //  Client identifier to advertise over the network
 )
 
 var app = flags.NewApp("the go ethereum command line interface")
+
+func init() {
+	// Initialize the CLI app and start Geth
+	app.Action = geth
+	app.Commands = []*cli.Command{
+		//	see chaincmd.go:
+	}
+}
+
+func main() {
+	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// geth is the main entry point into the system if no special subcommand is run.
+// It creates a default node based on the command line arguments and runs it in
+// blocking mode, waiting for it to be shut down.
+func geth(ctx *cli.Context) error {
+	if args := ctx.Args().Slice(); len(args) > 0 {
+		return fmt.Errorf("invalid command: %s", args[0])
+	}
+	return nil
+}
