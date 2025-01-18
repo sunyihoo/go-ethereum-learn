@@ -14,18 +14,8 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package flags
+package node
 
-import "github.com/urfave/cli/v2"
-
-const (
-	EthCategory  = "ETHEREUM"
-	DevCategory  = "DEVELOPER CHAIN"
-	PerfCategory = "PERFORMANCE TUNING"
-	MiscCategory = "MISC"
-)
-
-func init() {
-	cli.HelpFlag.(*cli.BoolFlag).Category = MiscCategory
-	cli.VersionFlag.(*cli.BoolFlag).Category = MiscCategory
+// Node is a container on which services can be registered.
+type Node struct {
 }

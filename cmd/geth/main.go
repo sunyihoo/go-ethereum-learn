@@ -20,6 +20,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/internal/flags"
@@ -55,6 +56,40 @@ func prepare(ctx *cli.Context) {
 	switch {
 	case ctx.IsSet(utils.SepoliaFlag.Name):
 		log.Info("Starting Geth on Sepola testnet...")
+
+	case ctx.IsSet(utils.HoleskyFlag.Name):
+		log.Info("Starting Geth on Holesky testnet...")
+
+	case ctx.IsSet(utils.DeveloperFlag.Name):
+		log.Info("Starting Geth in ephemeral dev mode...")
+		log.Warn(`You are running Geth in --dev mode. Please note the following:
+
+	1. This mode is only intended for fast, iterative development without assumptions on
+     security or persistence.
+	2. The database is created in memory unless specified otherwise. Therefore, shutting down
+     your computer or losing power will wipe your entire block data and chain state for
+     your dev environment.
+	3. A random, pre-allocated developer account will be available and unlocked as
+     eth.coinbase, which can be used for testing. The random dev account is temporary,
+     stored on a ramdisk, and will be lost if your machine is restarted.
+	4.  Mining is enabled by default. However, the client will only seal blocks if transactions
+     are pending in the mempool. The miner's minimum accepted gas price is 1.
+	5. Networking is disabled; there is no listen-address, the maximum number of peers is set
+     to 0, and discovery is disabled.
+`)
+	case !ctx.IsSet(utils.NetworkIdFlag.Name):
+		log.Info("Starting Geth on Ethereum mainnet...")
+	}
+	// If we're a full node on mainnet without --cache specified, bump default cache allowance
+	if !ctx.IsSet(utils.CacheFlag.Name) && !ctx.IsSet(utils.NetworkIdFlag.Name) {
+		// Make sure we're not on any supported preconfigured testnet either
+		if !ctx.IsSet(utils.HoleskyFlag.Name) &&
+			!ctx.IsSet(utils.SepoliaFlag.Name) &&
+			!ctx.IsSet(utils.DeveloperFlag.Name) {
+			// Nope, we're really on mainnet. Bump that cache up!
+			log.Info("Bumping default cache on mainnet", "provided", ctx.Int(utils.CacheFlag.Name), "updated", 4096)
+			ctx.Set(utils.CacheFlag.Name, strconv.Itoa(4096))
+		}
 	}
 }
 
@@ -65,6 +100,10 @@ func geth(ctx *cli.Context) error {
 	if args := ctx.Args().Slice(); len(args) > 0 {
 		return fmt.Errorf("invalid command: %s", args[0])
 	}
+
+	prepare(ctx)
+	stack := makeFullNode(ctx)
+	//defer stack.Close()
 
 	return nil
 }

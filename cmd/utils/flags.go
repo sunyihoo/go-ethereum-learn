@@ -18,6 +18,7 @@
 package utils
 
 import (
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -31,9 +32,39 @@ import (
 
 var (
 	// General settings
+	NetworkIdFlag = &cli.Uint64Flag{
+		Name:     "networkid",
+		Usage:    "Explictly set network id (integer)(For testnets: use --sepolia, --hokesky instead",
+		Value:    ethconfig.Defaults.NetworkId,
+		Category: flags.EthCategory,
+	}
+	MainnetFlag = &cli.BoolFlag{
+		Name:     "mainnet",
+		Usage:    "Ethereum mainnet",
+		Category: flags.EthCategory,
+	}
 	SepoliaFlag = &cli.BoolFlag{
 		Name:     "sepolia",
 		Usage:    "Seplia network: pre-configured proof-of-work test network",
 		Category: flags.EthCategory,
+	}
+	HoleskyFlag = &cli.BoolFlag{
+		Name:     "holesky",
+		Usage:    "Holesky networkL: pre-configured proof-stake test network",
+		Category: flags.EthCategory,
+	}
+	// Dev mode
+	DeveloperFlag = &cli.BoolFlag{
+		Name:     "dev",
+		Usage:    "Ephemeral proof-of-authority network with a pre-funded developer account, mining enabled",
+		Category: flags.DevCategory,
+	}
+
+	// Performance tuning settings
+	CacheFlag = &cli.IntFlag{
+		Name:     "cache",
+		Usage:    "Megabytes of memory allocated to internal caching (default = 4096 mainnet full node, 128 light mode)",
+		Value:    1024,
+		Category: flags.PerfCategory,
 	}
 )
