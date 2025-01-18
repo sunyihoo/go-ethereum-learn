@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/urfave/cli/v2"
 )
 
@@ -46,6 +48,16 @@ func main() {
 	}
 }
 
+// prepare manipulates memory cache allowance and setups metric system.
+// This function should be called before launching devp2p stack.
+func prepare(ctx *cli.Context) {
+	// If we're running a known preset, log it  for convenience
+	switch {
+	case ctx.IsSet(utils.SepoliaFlag.Name):
+		log.Info("Starting Geth on Sepola testnet...")
+	}
+}
+
 // geth is the main entry point into the system if no special subcommand is run.
 // It creates a default node based on the command line arguments and runs it in
 // blocking mode, waiting for it to be shut down.
@@ -53,5 +65,6 @@ func geth(ctx *cli.Context) error {
 	if args := ctx.Args().Slice(); len(args) > 0 {
 		return fmt.Errorf("invalid command: %s", args[0])
 	}
+
 	return nil
 }
