@@ -3,7 +3,7 @@
 GOBIN = ./build/bin
 GO ?= latest
 GORUN = go run
-d = $(shell date -Iminutes +"%Y-%m-%d-%H-%M-%S" )
+d = $(shell date -Iminutes +"%Y-%m-%d@%H_%M_%S" )
 
 #? geth: Build geth.
 geth:

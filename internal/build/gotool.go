@@ -166,7 +166,7 @@ func DownloadAndVerifyChecksums(csdb *ChecksumDB) {
 		if strings.HasPrefix(l, "#") {
 			continue
 		}
-		hashFile := strings.Split(l, " ")
+		hashFile := strings.Split(l, "  ")
 		if len(hashFile) != 2 {
 			continue
 		}
@@ -176,5 +176,6 @@ func DownloadAndVerifyChecksums(csdb *ChecksumDB) {
 		if err := csdb.DownloadFile(url, dst); err != nil {
 			log.Print(err)
 		}
+		log.Println(url)
 	}
 }
