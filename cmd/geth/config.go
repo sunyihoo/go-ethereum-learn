@@ -27,7 +27,10 @@ type gethConfig struct {
 	//Node node
 }
 
-func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {}
+func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
+	// todo no implement
+	return &node.Node{}, gethConfig{}
+}
 
 func makeFullNode(ctx *cli.Context) *node.Node {
 	// stack, cfg :=

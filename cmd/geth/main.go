@@ -105,5 +105,7 @@ func geth(ctx *cli.Context) error {
 	stack := makeFullNode(ctx)
 	//defer stack.Close()
 
+	// todo no finish
+	fmt.Print(stack)
 	return nil
 }

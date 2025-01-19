@@ -17,6 +17,17 @@
 // Package ethconfig contains the configuration of the ETH and LES protocols.
 package ethconfig
 
+import (
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
+	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+	"github.com/ethereum/go-ethereum/eth/gasprice"
+	"github.com/ethereum/go-ethereum/miner"
+)
+
 //todo learn-not implement
 //var FullNodeGPO =
 
@@ -31,10 +42,87 @@ var Defaults = Config{
 type Config struct {
 	// The genesis block, which is inserted if the database is empty.
 	// If nil, the Ethereum main net block is used.
-	Genesis *core.Gensis `toml:",omitempty"`
+	Genesis *core.Genesis `toml:",omitempty"`
 
 	// Network ID separates blockchains on the peer-to-peer networking level. When left
 	// zero, the chain ID is used as network ID.
 	NetworkId uint64
-	//SyncMode
+	SyncMode  SyncMode
+
+	// This can be set to list of enrtree:// URLs which will be queried for
+	//	nodes to connect to.
+	EthDiscoveryURLs  []string
+	SnapDiscoveryURLs []string
+
+	// State options
+	NoPruning  bool // Whether to disable pruning and flush everything to disk
+	NoPrefetch bool // Whether to disable prefetching and only load state on demand
+
+	// Deprecated: use 'TransactionHistory' instead
+	TxLookupLimit uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
+
+	TransactionHistory uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
+	StateHistory       uint64 `toml:",omitempty"` // The maximum number of blocks from head whose state histories are reserved.
+
+	// State scheme represents the scheme used to store ethereum states and trie
+	// nodes on top. It can be 'hash', 'path', or none which means use the scheme
+	// consistent with persistent state.
+	StateScheme string `toml:",omitempty"`
+
+	// RequiredBlocks is a set of block number -> hash mappings which must be in the
+	// canonical chain of all remote peers. Setting the option makes geth verify the
+	// presence of these blocks for every new peer connection.
+	RequiredBlocks map[uint64]common.Hash `toml:"-"`
+
+	// Database options
+	SkipBcVersionCheck bool `toml:"-"`
+	DatabaseHandles    int  `toml:"-"`
+	DatabaseCache      int
+	DatabaseFreezer    string
+
+	TrieCleanCache int
+	TrieDirtyCache int
+	TrieTimeout    time.Duration
+	SnapshotCache  int
+	Preimages      bool
+
+	// This is the number of blocks for which logs will be cached in the filter system.
+	FilterLogCacheSize int
+
+	// Mining options
+	Miner miner.Config
+
+	// Transaction pool options
+	TxPool   legacypool.Config
+	BlobPool blobpool.Config
+
+	// Gas Price Oracle options
+	GPO gasprice.Config
+
+	// Enable tracking if SHA3 preimage in the VM
+	EnablePreimageRecording bool
+
+	// Enables VM tracing
+	VMTrace           string
+	VMTraceJsonConfig string
+
+	// RPCGasCap is the global gas cap for eth-call variants.
+	RPCGasCap uint64
+
+	// RPCEVMTimeout is the global timeout for eth-call.
+	RPCEVMTimeout time.Duration
+
+	// RPCTxFeeCap is the global transaction fee(price * gaslimit) cap for
+	// send-transaction variants. The uint is ether.
+	RPCTxFeeCap float64
+
+	// OverrideCancun (TODO: remove after the fork)
+	OverideCancum *uint64 `toml:",omitempty"`
+
+	// OverrideVerkle (TODO: remove after the fork)
+	OverrideVerkle *uint64 `toml:",omitempty"`
 }
+
+//func CreateConsensusEngine(config *params.ChainConfig, db ethdb.Database) (consens) {
+
+//}
