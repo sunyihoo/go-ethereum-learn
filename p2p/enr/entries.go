@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2017 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,9 +14,13 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package enr
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
+// Entry is implemented by known node record entry types.
+//
+// To define a new entry that is to be included in a node record,
+// create a Go type that satisfies this interface. The type should
+// also implement rlp.Decoder if additional checks are needed on the value.
+type Entry interface {
+	ENRKey() string
 }

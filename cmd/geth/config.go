@@ -24,7 +24,17 @@ import (
 
 type gethConfig struct {
 	Eth ethconfig.Config
-	//Node node
+	//Node node  // todo no finish
+}
+
+func loadBaseConfig(ctx *cli.Context) gethConfig {
+	// Load defaults
+	cfg := gethConfig{
+		Eth: ethconfig.Defaults,
+		//Node: d
+	}
+	// todo no finish
+	return cfg
 }
 
 func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {

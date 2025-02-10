@@ -14,9 +14,17 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package p2p
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
+import (
+	"context"
+	"net"
+
+	"github.com/ethereum/go-ethereum/p2p/enode"
+)
+
+// NodeDialer is used to connect to nodes in the network, typically by using
+// an underlying net.Dialer but also using net.Pipe in tests.
+type NodeDialer interface {
+	Dial(ctx context.Context, node *enode.Node) (net.Conn, error)
 }

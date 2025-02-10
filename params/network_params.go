@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2017 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,9 +14,15 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package params
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
-}
+// These are network parameters that need to be constant between clients, but
+// aren't necessarily consensus related.
+
+const (
+	// FullImmutabilityThreshold is the number of blocks after which a chain segment is
+	// considered immutable (i.e. soft finality). It is used by the downloader as a
+	// hard limit against deep ancestors, by the blockchain against deep reorgs, by
+	// the freezer as the cutoff threshold and by clique as the snapshot trust limit.
+	FullImmutabilityThreshold = 90000
+)

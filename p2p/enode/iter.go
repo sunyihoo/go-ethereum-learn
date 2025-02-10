@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2019 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,9 +14,13 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package enode
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
+// Iterator represents a sequence of nodes. The Next method moves to the next node in the
+// sequence. It returns false when the sequence has ended or the iterator is closed. Close
+// may be called concurrently with Next and Node, and interrupts Next if it is blocked.
+type Iterator interface {
+	Next() bool  // moves to next node
+	Node() *Node // returns current node
+	Close()      // ends the iterator
 }

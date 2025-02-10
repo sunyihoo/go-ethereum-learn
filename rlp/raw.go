@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package rlp
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
-}
+// RawValue represents an encoded RLP value and can be used to delay
+// RLP decoding or to precompute an encoding. Note that the decoder does
+// not verify whether the content of RawValues is valid RLP.
+type RawValue []byte

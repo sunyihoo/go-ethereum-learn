@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2017 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,9 +14,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package params
 
-// Node is a container on which services can be registered.
-type Node struct {
-	//eventmux *event.Type
-}
+// These are the multipliers for ether denominations.
+// Example: To get the wei value of an amount in 'gwei', use
+//
+//	new(big.Int).Mul(value, big.NewInt(params.GWei))
+const (
+	Wei   = 1
+	GWei  = 1e9
+	Ether = 1e18
+)

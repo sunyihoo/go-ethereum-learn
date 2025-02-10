@@ -22,3 +22,9 @@ type Config struct {
 	Datacap   uint64 // Soft-cap of database storage (hard cap is larger due to overhead)
 	PriceBump uint64 // Minimum price bump percentage to replace an already existing nonce
 }
+
+var DefaultConfig = Config{
+	Datadir:   "blobpool",
+	Datacap:   10 * 1024 * 1024 * 1024 / 4, // TODO(karalable): /4 handicap for rollout, gradually bump back up tp 10 GB
+	PriceBump: 100,                         // either have patience or be aggressive, no mushy ground.
+}
