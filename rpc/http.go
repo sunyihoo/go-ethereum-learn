@@ -49,3 +49,12 @@ type HTTPTimeouts struct {
 	// zero, ReadHeaderTimeout is used.
 	IdleTimeout time.Duration
 }
+
+// DefaultHTTPTimeouts represents the default timeout values used if further
+// configuration is not provided.
+var DefaultHTTPTimeouts = HTTPTimeouts{
+	ReadTimeout:       30 * time.Second,
+	ReadHeaderTimeout: 30 * time.Second,
+	WriteTimeout:      30 * time.Second,
+	IdleTimeout:       120 * time.Second,
+}
