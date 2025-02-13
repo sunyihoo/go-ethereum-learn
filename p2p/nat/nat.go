@@ -18,10 +18,15 @@
 package nat
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	natpmp "github.com/jackpal/go-nat-pmp"
 )
 
 type Interface interface {
@@ -42,12 +47,106 @@ type Interface interface {
 	String() string
 }
 
+// Parse parses a NAT interface description.
+// The following formats are currently accepted.
+// Note that mechanism names are not case-sensitive.
+//
+//	"" or "none"         return nil
+//	"extip:77.12.33.4"   will assume the local machine is reachable on the given IP
+//	"any"                uses the first auto-detected mechanism
+//	"upnp"               uses the Universal Plug and Play protocol
+//	"pmp"                uses NAT-PMP with an auto-detected gateway address
+//	"pmp:192.168.0.1"    uses NAT-PMP with the given gateway address
+func Parse(spec string) (Interface, error) {
+	var (
+		before, after, found = strings.Cut(spec, ":")
+		mech                 = strings.ToLower(before)
+		ip                   net.IP
+	)
+	if found {
+		ip = net.ParseIP(after)
+		if ip == nil {
+			return nil, errors.New("invalid IP address")
+		}
+	}
+	switch mech {
+	case "", "none", "off":
+		return nil, nil
+	case "any", "auto", "on":
+		return Any(), nil
+	case "extip", "ip":
+		if ip == nil {
+			return nil, errors.New("missing IP address")
+		}
+		return ExtIP(ip), nil
+	case "upnp":
+		return UPnP(), nil
+	case "pmp", "natpmp", "nat-pmp":
+		return PMP(ip), nil
+	default:
+		return nil, fmt.Errorf("unknown mechanism %q", before)
+	}
+}
+
+const (
+	DefaultMapTimeout = 10 * time.Minute
+)
+
+// Map adds a port mapping on m and keeps it alive until c is closed.
+// This function is typically invoked in its own goroutine.
+//
+// Note that Map does not handle the situation where the NAT interface assigns a different
+// external port than the requested one.
+func Map(m Interface, c <-chan struct{}, protocol string, extport, intport int, name string) {
+	log := log.New("proto", protocol, "extport", extport, "intport", intport, "interface", m)
+	refresh := time.NewTimer(DefaultMapTimeout)
+	defer func() {
+		refresh.Stop()
+		log.Debug("Deleting port mapping")
+		m.DeleteMapping(protocol, extport, intport)
+	}()
+	if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil {
+		log.Debug("Couldn't add port mapping", "err", err)
+	} else {
+		log.Info("Mapped network port")
+	}
+	for {
+		select {
+		case _, ok := <-c:
+			if !ok {
+				return
+			}
+		case <-refresh.C:
+			log.Trace("Refreshing port mapping")
+			if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil {
+				log.Debug("Couldn't add port mapping", "err", err)
+			}
+			refresh.Reset(DefaultMapTimeout)
+		}
+	}
+}
+
+// ExtIP assumes that the local machine is reachable on the given
+// external IP address, and that any required ports were mapped manually.
+// Mapping operations will not return an error but won't actually do anything.
+type ExtIP net.IP
+
+func (n ExtIP) ExternalIP() (net.IP, error) { return net.IP(n), nil }
+func (n ExtIP) String() string              { return fmt.Sprintf("ExtIP(%v)", net.IP(n)) }
+
+// These do nothing.
+
+func (ExtIP) AddMapping(protocol string, extport, intport int, name string, lifetime time.Duration) (uint16, error) {
+	return uint16(extport), nil
+}
+func (ExtIP) DeleteMapping(string, int, int) error { return nil }
+
 // Any returns a port mapper that tries to discover any supported
 // mechanism on the local network.
 func Any() Interface {
 	// TODO: attempt to discover whether the local machine has an
 	// Internet-class address. Return ExtIP in this case.
-	return startauodisc("UPnp or NAT-PMP", func() Interface {
+	return startautodisc("UPnp or NAT-PMP", func() Interface {
 		found := make(chan Interface, 2)
 		go func() { found <- discoverUPnP() }()
 		go func() { found <- discoverPMP() }()
@@ -58,6 +157,22 @@ func Any() Interface {
 		}
 		return nil
 	})
+}
+
+// UPnP returns a port mapper that uses UPnP. It will attempt to
+// discover the address of your router using UDP broadcasts.
+func UPnP() Interface {
+	return startautodisc("UPnP", discoverUPnP)
+}
+
+// PMP returns a port mapper that uses NAT-PMP. The provided gateway
+// address should be the IP of your router. If the given gateway
+// address is nil, PMP will attempt to auto-discover the router.
+func PMP(gateway net.IP) Interface {
+	if gateway != nil {
+		return &pmp{gw: gateway, c: natpmp.NewClient(gateway)}
+	}
+	return startautodisc("NAT-PMP", discoverPMP)
 }
 
 // autodisc represents a port mapping mechanism that is still being
@@ -76,7 +191,7 @@ type autodisc struct {
 	found Interface
 }
 
-func startauodisc(what string, doit func() Interface) Interface {
+func startautodisc(what string, doit func() Interface) Interface {
 	// TODO: monitor network configuration and rerun doit when it changes.
 	return &autodisc{what: what, doit: doit}
 }

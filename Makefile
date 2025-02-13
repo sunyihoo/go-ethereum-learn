@@ -17,4 +17,4 @@ all:
 
 cloc:
 	echo ${d}
-	cloc . --fullpath --exclude-dir=.idea --not-match-f="(.*?).json" | tee ./stat/${d}.txt
+	cloc . --fullpath --exclude-dir=.idea,stat --not-match-f="(.*?).json" | tee ./stat/${d}.txt

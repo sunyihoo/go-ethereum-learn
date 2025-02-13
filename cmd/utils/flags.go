@@ -18,8 +18,15 @@
 package utils
 
 import (
+	"crypto/ecdsa"
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/urfave/cli/v2"
 )
 
@@ -30,6 +37,7 @@ import (
 // The flags are defined here so their names and help texts
 // are the same for all commands.
 
+// TODO no finish
 var (
 	// General settings
 	NetworkIdFlag = &cli.Uint64Flag{
@@ -67,4 +75,94 @@ var (
 		Value:    1024,
 		Category: flags.PerfCategory,
 	}
+
+	// Network Settings
+
+	ListenPortFlag = &cli.IntFlag{
+		Name:     "port",
+		Usage:    "Network listening port",
+		Value:    30303,
+		Category: flags.NetworkingCategory,
+	}
+
+	NodeKeyFileFlag = &cli.StringFlag{
+		Name:     "nodekey",
+		Usage:    "P2P node key file",
+		Category: flags.NetworkingCategory,
+	}
+	NodeKeyHexFlag = &cli.StringFlag{
+		Name:     "nodekeyhex",
+		Usage:    "P2P node key as hex (for testing)",
+		Category: flags.NetworkingCategory,
+	}
+	NATFlag = &cli.StringFlag{
+		Name:     "nat",
+		Usage:    "NAT port mapping mechanism (any|none|upnp|pmp|pmp:<IP>|extip:<IP>",
+		Value:    "any",
+		Category: flags.NetworkingCategory,
+	}
+	DiscoveryPortFlag = &cli.IntFlag{
+		Name:     "discovery.port",
+		Usage:    "Use a custom UDP port for P2P discovery",
+		Value:    30303,
+		Category: flags.NetworkingCategory,
+	}
 )
+
+// setNodeKey creates a node key from set command line flags, either loading it
+// from a file or as a specified hex value. If neither flags were provided, this
+// method returns nil and an ephemeral key is to be generated.
+func setNodeKey(ctx *cli.Context, cfg *p2p.Config) {
+	var (
+		hex  = ctx.String(NodeKeyHexFlag.Name)
+		file = ctx.String(NodeKeyFileFlag.Name)
+		key  *ecdsa.PrivateKey
+		err  error
+	)
+	switch {
+	case file != "" && hex != "":
+		Fatalf("Options %q and %q are mutually exclusive", NodeKeyFileFlag.Name, NodeKeyHexFlag.Name)
+	case file != "":
+		if key, err = crypto.LoadECDSA(file); err != nil {
+			Fatalf("Option %q: %v", NodeKeyFileFlag.Name, err)
+		}
+		cfg.PrivateKey = key
+	case hex != "":
+		if key, err = crypto.HexToECDSA(hex); err != nil {
+			Fatalf("Option %q: %v", NodeKeyHexFlag.Name, err)
+		}
+		cfg.PrivateKey = key
+	}
+}
+
+// setListenAddress creates TCP/UDP listening address strings from set command
+// line flags
+func setListenAddress(ctx *cli.Context, cfg *p2p.Config) {
+	if ctx.IsSet(ListenPortFlag.Name) {
+		cfg.ListenAddr = fmt.Sprintf(":%d", ctx.Int(ListenPortFlag.Name))
+	}
+	if ctx.IsSet(DiscoveryPortFlag.Name) {
+		cfg.DiscAddr = fmt.Sprintf(":%d", ctx.Int(DiscoveryPortFlag.Name))
+	}
+}
+func setNAT(ctx *cli.Context, cfg *p2p.Config) {
+	if ctx.IsSet(NATFlag.Name) {
+		natif, err := nat.Parse(ctx.String(NATFlag.Name))
+		if err != nil {
+			Fatalf("Option %s: %v", NATFlag.Name, err)
+		}
+		cfg.NAT = natif
+	}
+}
+
+func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
+	setNodeKey(ctx, cfg)
+	setNAT(ctx, cfg)
+	setListenAddress(ctx, cfg)
+	// todo here again
+}
+
+// SetNodeConfig applies node-related command line flags to the config.
+func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
+
+}
