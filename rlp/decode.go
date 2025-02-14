@@ -629,6 +629,37 @@ func (s *Stream) Bytes() ([]byte, error) {
 	}
 }
 
+// ReadBytes decodes the next RLP value and stores the result in b.
+// The value size must match len(b) exactly.
+func (s *Stream) ReadBytes(b []byte) error {
+	kind, size, err := s.Kind()
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case Byte:
+		if len(b) != 1 {
+			return fmt.Errorf("input value has wrong size 1, want %d", len(b))
+		}
+		b[0] = s.byteval
+		s.kind = -1 // rearm Kind
+		return nil
+	case String:
+		if uint64(len(b)) != size {
+			return fmt.Errorf("input value has wrong size %d, want %d", size, len(b))
+		}
+		if err = s.readFull(b); err != nil {
+			return err
+		}
+		if size == 1 && b[0] < 128 {
+			return ErrCanonSize
+		}
+		return nil
+	default:
+		return ErrExpectedString
+	}
+}
+
 // Raw reads a raw encoded value including RLP type information.
 func (s *Stream) Raw() ([]byte, error) {
 	kind, size, err := s.Kind()
