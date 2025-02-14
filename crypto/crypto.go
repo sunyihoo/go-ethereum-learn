@@ -23,15 +23,24 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"math/big"
 	"os"
+
+	"github.com/ethereum/go-ethereum/common"
+	"golang.org/x/crypto/sha3"
 )
+
+// DigestLength sets the signature digest exact length
+const DigestLength = 32
 
 var (
 	secp256k1N     = S256().Params().N
 	secp256k1halfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
 )
+
+var errInvalidPubkey = errors.New("invalid secp256k1 public key")
 
 // EllipticCurve contains curve operations.
 type EllipticCurve interface {
@@ -40,6 +49,38 @@ type EllipticCurve interface {
 	// Point marshaling/unmarshaling.
 	Marshal(x, y *big.Int) []byte
 	Unmarshal(data []byte) (x, y *big.Int)
+}
+
+// KeccakState wraps sha3.state. In addition to the usual hash methods, it also supports
+// Read to get a variable amount of data from the hash state. Read is faster than Sum
+// because it doesn't copy the internal state, but also modifies the internal state.
+type KeccakState interface {
+	hash.Hash
+	Read([]byte) (int, error)
+}
+
+// NewKeccakState creates a new KeccakState
+func NewKeccakState() KeccakState {
+	return sha3.NewLegacyKeccak256().(KeccakState)
+}
+
+// HashData hashes the provided data using the KeccakState and returns a 32 byte hash
+func HashData(kh KeccakState, data []byte) (h common.Hash) {
+	kh.Reset()
+	kh.Write(data)
+	kh.Read(h[:])
+	return h
+}
+
+// Keccak256 calculates and returns the Keccak256 hash of the input data.
+func Keccak256(data ...[]byte) []byte {
+	b := make([]byte, 32)
+	d := NewKeccakState()
+	for _, b := range data {
+		d.Write(b)
+	}
+	d.Read(b)
+	return b
 }
 
 func ToECDSA(d []byte) (*ecdsa.PrivateKey, error) {
@@ -68,6 +109,15 @@ func toECDSA(d []byte, strict bool) (*ecdsa.PrivateKey, error) {
 		return nil, errors.New("invalid private key")
 	}
 	return priv, nil
+}
+
+// UnmarshalPubkey converts bytes to a secp256k1 public key.
+func UnmarshalPubkey(pub []byte) (*ecdsa.PublicKey, error) {
+	x, y := S256().Unmarshal(pub)
+	if x == nil {
+		return nil, errInvalidPubkey
+	}
+	return &ecdsa.PublicKey{Curve: S256(), X: x, Y: y}, nil
 }
 
 func HexToECDSA(hexkey string) (*ecdsa.PrivateKey, error) {
@@ -111,4 +161,8 @@ func readASCII(buf []byte, r *bufio.Reader) (n int, err error) {
 		}
 	}
 	return n, nil
+}
+
+func zeroBytes(bytes []byte) {
+	clear(bytes)
 }

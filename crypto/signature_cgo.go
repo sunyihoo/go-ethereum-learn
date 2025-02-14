@@ -14,9 +14,57 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build !nacl && !js && cgo && !gofuzz
+// +build !nacl,!js,cgo,!gofuzz
+
 package crypto
 
-import "github.com/ethereum/go-ethereum/crypto/secp256k1"
+import (
+	"crypto/ecdsa"
+	"errors"
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+)
+
+// Sign calculates an ECDSA signature.
+//
+// This function is susceptible to chosen plaintext attacks that can leak
+// information about the private key that is used for signing. Callers must
+// be aware that the given digest cannot be chosen by an adversary. Common
+// solution is to hash any input before calculating the signature.
+//
+// The produced signature is in the [R || S || V] format where V is 0 or 1.
+func Sign(digestHash []byte, prv *ecdsa.PrivateKey) (sig []byte, err error) {
+	if len(digestHash) != DigestLength {
+		return nil, fmt.Errorf("hash is required to be exactly %d bytes (%d)", DigestLength, len(digestHash))
+	}
+	seckey := math.PaddedBigBytes(prv.D, prv.Params().BitSize/8)
+	defer zeroBytes(seckey)
+	return secp256k1.Sign(digestHash, seckey)
+}
+
+// VerifySignature checks that the given public key created signature over digest.
+// The public key should be in compressed (33 bytes) or uncompressed (65 bytes) format.
+// The signature should have the 64 byte [R || S] format.
+func VerifySignature(pubkey, digestHash, signature []byte) bool {
+	return secp256k1.VerifySignature(pubkey, digestHash, signature)
+}
+
+// DecompressPubkey parses a public key in the 33-byte compressed format.
+func DecompressPubkey(pubkey []byte) (*ecdsa.PublicKey, error) {
+	x, y := secp256k1.DecompressPubkey(pubkey)
+	if x == nil {
+		return nil, errors.New("invalid public key")
+	}
+	return &ecdsa.PublicKey{X: x, Y: y, Curve: S256()}, nil
+}
+
+// CompressPubkey encodes a public key to the 33-byte compressed format.
+func CompressPubkey(pubkey *ecdsa.PublicKey) []byte {
+	return secp256k1.CompressPubkey(pubkey.X, pubkey.Y)
+}
 
 func S256() EllipticCurve {
 	return secp256k1.S256()

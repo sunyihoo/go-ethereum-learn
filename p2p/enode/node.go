@@ -17,13 +17,18 @@
 package enode
 
 import (
+	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/rlp"
 )
+
+var errMissingPrefix = errors.New("missing 'enr:' prefix for base64-encoded record")
 
 // Node represents a host on the network.
 type Node struct {
@@ -37,6 +42,130 @@ type Node struct {
 	ip  netip.Addr
 	udp uint16
 	tcp uint16
+}
+
+// New wraps a node record. The record must be valid according to the given
+// identity scheme.
+func New(validSchemes enr.IdentityScheme, r *enr.Record) (*Node, error) {
+	if err := r.VerifySignature(validSchemes); err != nil {
+		return nil, err
+	}
+	var id ID
+	if n := copy(id[:], validSchemes.NodeAddr(r)); n != len(id) {
+		return nil, fmt.Errorf("invalid node ID length %d, need %d", n, len(id))
+	}
+	return newNodeWithID(r, id), nil
+}
+
+func newNodeWithID(r *enr.Record, id ID) *Node {
+	n := &Node{r: *r, id: id}
+	// Set the preferred endpoint.
+	// Here we decide between IPv4 and IPv6, choosing the 'most global' address.
+	var ip4 netip.Addr
+	var ip6 netip.Addr
+	n.Load((*enr.IPv4Addr)(&ip4))
+	n.Load((*enr.IPv6Addr)(&ip6))
+	valid4 := validIP(ip4)
+	valid6 := validIP(ip6)
+	switch {
+	case valid4 && valid6:
+		if localityScore(ip4) >= localityScore(ip6) {
+			n.setIP4(ip4)
+		} else {
+			n.setIP6(ip6)
+		}
+	case valid4:
+		n.setIP4(ip4)
+	case valid6:
+		n.setIP6(ip6)
+	default:
+		n.setIPv4Ports()
+	}
+	return n
+}
+
+// validIP reports whether 'ip' is a valid node endpoint IP address.
+func validIP(ip netip.Addr) bool {
+	return ip.IsValid() && !ip.IsMulticast()
+}
+
+func localityScore(ip netip.Addr) int {
+	switch {
+	case ip.IsUnspecified():
+		return 0
+	case ip.IsLoopback():
+		return 1
+	case ip.IsLinkLocalUnicast():
+		return 2
+	case ip.IsPrivate():
+		return 3
+	default:
+		return 4
+	}
+}
+
+func (n *Node) setIP4(ip netip.Addr) {
+	n.ip = ip
+	n.setIPv4Ports()
+}
+
+func (n *Node) setIPv4Ports() {
+	n.Load((*enr.UDP)(&n.udp))
+	n.Load((*enr.TCP)(&n.tcp))
+}
+
+func (n *Node) setIP6(ip netip.Addr) {
+	if ip.Is4In6() {
+		n.setIP4(ip)
+		return
+	}
+	n.ip = ip
+	if err := n.Load((*enr.UDP6)(&n.udp)); err != nil {
+		n.Load((*enr.UDP)(&n.udp))
+	}
+	if err := n.Load((*enr.TCP6)(&n.tcp)); err != nil {
+		n.Load((*enr.TCP)(&n.tcp))
+	}
+}
+
+// MustParse parses a node record or enode:// URL. It panics if the input is invalid.
+func MustParse(rawurl string) *Node {
+	n, err := Parse(ValidSchemes, rawurl)
+	if err != nil {
+		panic("invalid node: " + err.Error())
+	}
+	return n
+}
+
+// Parse decodes and verifies a base64-encoded node record.
+func Parse(validSchemes enr.IdentityScheme, input string) (*Node, error) {
+	if strings.HasPrefix(input, "enode://") {
+		return ParseV4(input)
+	}
+	if !strings.HasPrefix(input, "enr:") {
+		return nil, errMissingPrefix
+	}
+	bin, err := base64.RawURLEncoding.DecodeString(input[4:])
+	if err != nil {
+		return nil, err
+	}
+	var r enr.Record
+	if err := rlp.DecodeBytes(bin, &r); err != nil {
+		return nil, err
+	}
+	return New(validSchemes, &r)
+}
+
+// Load retrieves an entry from the underlying record.
+func (n *Node) Load(k enr.Entry) error {
+	return n.r.Load(k)
+}
+
+// WithHostname adds a DNS hostname to the node.
+func (n *Node) WithHostname(hostname string) *Node {
+	cpy := *n
+	cpy.hostname = hostname
+	return &cpy
 }
 
 // ID is a unique identifier for each node.

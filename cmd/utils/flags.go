@@ -20,13 +20,17 @@ package utils
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/nat"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 )
 
@@ -84,7 +88,12 @@ var (
 		Value:    30303,
 		Category: flags.NetworkingCategory,
 	}
-
+	BootnodesFlag = &cli.StringFlag{
+		Name:     "bootnodes",
+		Usage:    "Comma separated enode URLs for P2P discovery bootstrap",
+		Value:    "",
+		Category: flags.NetworkingCategory,
+	}
 	NodeKeyFileFlag = &cli.StringFlag{
 		Name:     "nodekey",
 		Usage:    "P2P node key file",
@@ -135,6 +144,47 @@ func setNodeKey(ctx *cli.Context, cfg *p2p.Config) {
 	}
 }
 
+// setBootstrapNodes creates a list of bootstrap nodes from the command line
+// flags, reverting to pre-configured ones if none have been specified.
+// Priority order for bootnodes configuration:
+//
+// 1. --bootnodes flag
+// 2. Config file
+// 3. Network preset flags (e.g. --holesky)
+// 4. default to mainnet nodes
+func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
+	urls := params.MainnetBootnodes
+	if ctx.IsSet(BootnodesFlag.Name) {
+		urls = SplitAndTrim(ctx.String(BootnodesFlag.Name))
+	} else {
+		if cfg.BootstrapNodes != nil {
+			return // Already set by config file, don't apply defaults.
+		}
+		switch {
+		case ctx.Bool(HoleskyFlag.Name):
+			urls = params.HoleskyBootnodes
+		case ctx.Bool(SepoliaFlag.Name):
+			urls = params.SepoliaBootnodes
+		}
+	}
+	cfg.BootstrapNodes = mustParseBootnodes(urls)
+}
+
+func mustParseBootnodes(urls []string) []*enode.Node {
+	nodes := make([]*enode.Node, 0, len(urls))
+	for _, url := range urls {
+		if url != "" {
+			node, err := enode.Parse(enode.ValidSchemes, url)
+			if err != nil {
+				log.Crit("Bootstrap URL invalid", "enode", url, "err", err)
+				return nil
+			}
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
 // setListenAddress creates TCP/UDP listening address strings from set command
 // line flags
 func setListenAddress(ctx *cli.Context, cfg *p2p.Config) {
@@ -155,11 +205,24 @@ func setNAT(ctx *cli.Context, cfg *p2p.Config) {
 	}
 }
 
+// SplitAndTrim splits input separated by a comma
+// and trims excessive white space from the substrings.
+func SplitAndTrim(input string) (ret []string) {
+	l := strings.Split(input, ",")
+	for _, r := range l {
+		if r = strings.TrimSpace(r); r != "" {
+			ret = append(ret, r)
+		}
+	}
+	return ret
+}
+
 func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
 	setNodeKey(ctx, cfg)
 	setNAT(ctx, cfg)
 	setListenAddress(ctx, cfg)
-	// todo here again
+	setBootstrapNodes(ctx, cfg)
+	// todo start here
 }
 
 // SetNodeConfig applies node-related command line flags to the config.
