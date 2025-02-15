@@ -17,7 +17,10 @@
 // Package netutil contains extensions to the net package.
 package netutil
 
-import "net/netip"
+import (
+	"net/netip"
+	"strings"
+)
 
 var special4, special6 Netlist
 
@@ -55,6 +58,25 @@ func init() {
 
 // Netlist is a list of IP networks.
 type Netlist []netip.Prefix
+
+// ParseNetlist parses a comma-separated list of CIDR masks.
+// Whitespace and extra commas are ignored.
+func ParseNetlist(s string) (*Netlist, error) {
+	ws := strings.NewReplacer(" ", "", "\n", "", "\t", "")
+	masks := strings.Split(ws.Replace(s), ",")
+	l := make(Netlist, 0)
+	for _, mask := range masks {
+		if mask == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(mask)
+		if err != nil {
+			return nil, err
+		}
+		l = append(l, prefix)
+	}
+	return &l, nil
+}
 
 // Add parses a CIDR mask and appends it to the list. It panics for invalid masks and is
 // intended to be used for setting up static lists.
