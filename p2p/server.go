@@ -20,9 +20,12 @@ package p2p
 import (
 	"crypto/ecdsa"
 	"net"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common/mclock"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
@@ -123,6 +126,57 @@ type Config struct {
 	Logger log.Logger
 
 	clock mclock.Clock
+}
+
+// Server manages all peer connections.
+type Server struct {
+	// Config fields may not be modified while the server is running.
+	Config
+
+	// Hooks for testing. These are useful because we can inhibit
+	// the whole protocol stack.
+	newTransport func(net.Conn, *ecdsa.PublicKey) transport
+	newPeerHook  func(*Peer)
+	listenFunc   func(network, addr string) (net.Listener, error)
+
+	lock    sync.Mutex // protects running
+	running bool
+
+	listener     net.Listener
+	ourHandshake *protoHandshake
+	loopWG       sync.WaitGroup // loop, listenLoop
+	peerFeed     event.Feed
+	log          log.Logger
+
+	nodedb    *enode.DB
+	localnode *enode.LocalNode
+	discv4    *discover.UDPv4
+	discv5    *discover.UDPv5
+	discmix   *enode.FairMix
+	dialsched *dialScheduler
+
+	// This is read by the NAT port mapping loop.
+	portMappingRegister chan *portMapping
+
+	// Channels into the run loop.
+	quit                    chan struct{}
+	addtrusted              chan *enode.Node
+	removetrusted           chan *enode.Node
+	peerOp                  chan peerOpFunc
+	peerOpDone              chan struct{}
+	delpeer                 chan peerDrop
+	checkpointPostHandshake chan *conn
+	checkpointAddPeer       chan *conn
+
+	// State of run loop and listenLoop.
+	inboundHistory expHeap
+}
+type peerOpFunc func(map[enode.ID]*Peer)
+
+type peerDrop struct {
+	*Peer
+	err       error
+	requested bool // true if signaled by the peer
 }
 
 type connFlag int32

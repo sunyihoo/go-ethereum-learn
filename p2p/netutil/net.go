@@ -18,7 +18,12 @@
 package netutil
 
 import (
+	"bytes"
+	"fmt"
+	"golang.org/x/exp/maps"
+	"net"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -86,4 +91,101 @@ func (l *Netlist) Add(cidr string) {
 		panic(err)
 	}
 	*l = append(*l, perfix)
+}
+
+// DistinctNetSet tracks IPs, ensuring that at most N of them
+// fall into the same network range.
+type DistinctNetSet struct {
+	Subnet uint // number of common prefix bits
+	Limit  uint // maximum number of IPs in each subnet
+
+	members map[netip.Prefix]uint
+}
+
+// Add adds an IP address to the set. It returns false (and doesn't add the IP) if the
+// number of existing IPs in the defined range exceeds the limit.
+func (s *DistinctNetSet) Add(ip net.IP) bool {
+	return s.AddAddr(IPToAddr(ip))
+}
+
+// AddAddr adds an IP address to the set. It returns false (and doesn't add the IP) if the
+// number of existing IPs in the defined range exceeds the limit.
+func (s *DistinctNetSet) AddAddr(ip netip.Addr) bool {
+	key := s.key(ip)
+	n := s.members[key]
+	if n < s.Limit {
+		s.members[key] = n + 1
+		return true
+	}
+	return false
+}
+
+// Remove removes an IP from the set.
+func (s *DistinctNetSet) Remove(ip net.IP) {
+	s.RemoveAddr(IPToAddr(ip))
+}
+
+// RemoveAddr removes an IP from the set.
+func (s *DistinctNetSet) RemoveAddr(ip netip.Addr) {
+	key := s.key(ip)
+	if n, ok := s.members[key]; ok {
+		if n == 1 {
+			delete(s.members, key)
+		} else {
+			s.members[key] = n - 1
+		}
+	}
+}
+
+// Contains reports whether the given IP is contained in the set.
+func (s DistinctNetSet) Contains(ip net.IP) bool {
+	return s.ContainsAddr(IPToAddr(ip))
+}
+
+// ContainsAddr reports whether the given IP is contained in the set.
+func (s DistinctNetSet) ContainsAddr(ip netip.Addr) bool {
+	key := s.key(ip)
+	_, ok := s.members[key]
+	return ok
+}
+
+// Len returns the number of tracked IPs.
+func (s DistinctNetSet) Len() int {
+	n := uint(0)
+	for _, i := range s.members {
+		n += i
+	}
+	return int(n)
+}
+
+// key returns the map key for ip.
+func (s *DistinctNetSet) key(ip netip.Addr) netip.Prefix {
+	// Lazily initialize storage.
+	if s.members == nil {
+		s.members = make(map[netip.Prefix]uint)
+	}
+	p, err := ip.Prefix(int(s.Subnet))
+	if err != nil {
+		panic(err)
+	}
+	return p
+}
+
+// String implements fmt.Stringer
+func (s DistinctNetSet) String() string {
+	keys := maps.Keys(s.members)
+	slices.SortFunc(keys, func(a, b netip.Prefix) int {
+		return strings.Compare(a.String(), b.String())
+	})
+
+	var buf bytes.Buffer
+	buf.WriteString("{")
+	for i, k := range keys {
+		fmt.Fprintf(&buf, "%v×%d", k, s.members[k])
+		if i != len(keys)-1 {
+			buf.WriteString(" ")
+		}
+	}
+	buf.WriteString("}")
+	return buf.String()
 }

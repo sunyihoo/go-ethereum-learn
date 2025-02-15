@@ -140,7 +140,13 @@ func loadBaseConfig(ctx *cli.Context) gethConfig {
 func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	cfg := loadBaseConfig(ctx)
 	fmt.Print(cfg)
-	return &node.Node{}, gethConfig{}
+	stack, err := node.New(&cfg.Node)
+	if err != nil {
+		utils.Fatalf("Failed to create the protocol stack: %v", err)
+	}
+
+	// todo NOT implement
+	return stack, gethConfig{}
 }
 
 // todo not implement

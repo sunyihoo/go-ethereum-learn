@@ -18,6 +18,11 @@ package rpc
 
 import "time"
 
+const (
+	defaultBodyLimit = 5 * 1024 * 1024
+	contentType      = "application/json"
+)
+
 // HTTPTimeouts represents the configuration params for the HTTP RPC server.
 type HTTPTimeouts struct {
 	// ReadTimeout is the maximum duration for reading the entire

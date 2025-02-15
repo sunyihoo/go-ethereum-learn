@@ -17,9 +17,17 @@
 package node
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+)
+
+const (
+	datadirDefaultKeyStore = "keystore" // Path within the datadir to the keystore
 )
 
 type Config struct {
@@ -189,4 +197,60 @@ type Config struct {
 	EnablePersonal bool `toml:"-"`
 
 	DBEngine string `toml:",omitempty"`
+}
+
+func (c *Config) name() string {
+	if c.Name == "" {
+		progname := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+		if progname == "" {
+			panic("empty executable name, set Config.Name")
+		}
+		return progname
+	}
+	return c.Name
+}
+
+// KeyDirConfig determines the settings for keydirectory
+func (c *Config) KeyDirConfig() (string, error) {
+	var (
+		keydir string
+		err    error
+	)
+	switch {
+	case filepath.IsAbs(c.KeyStoreDir):
+		keydir = c.KeyStoreDir
+	case c.DataDir != "":
+		if c.KeyStoreDir == "" {
+			keydir = filepath.Join(c.DataDir, datadirDefaultKeyStore)
+		} else {
+			keydir, err = filepath.Abs(c.KeyStoreDir)
+		}
+	case c.KeyStoreDir != "":
+		keydir, err = filepath.Abs(c.KeyStoreDir)
+	}
+	return keydir, err
+}
+
+// GetKeyStoreDir retrieves the key directory and will create
+// and ephemeral one if necessary.
+func (c *Config) GetKeyStoreDir() (string, bool, error) {
+	keydir, err := c.KeyDirConfig()
+	if err != nil {
+		return "", false, err
+	}
+	isEphemeral := false
+	if keydir == "" {
+		// There is no datadir.
+		keydir, err = os.MkdirTemp("", "go-ethereum-keystore")
+		isEphemeral = true
+	}
+
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.MkdirAll(keydir, 0700); err != nil {
+		return "", false, err
+	}
+
+	return keydir, isEphemeral, nil
 }
