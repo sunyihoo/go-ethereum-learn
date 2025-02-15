@@ -106,6 +106,6 @@ func geth(ctx *cli.Context) error {
 	//defer stack.Close()
 
 	// todo no finish
-	fmt.Print(stack)
+	fmt.Print("stack:", stack)
 	return nil
 }

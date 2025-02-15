@@ -54,6 +54,23 @@ var (
 		Value:    flags.DirectoryString(node.DefaultDataDir()),
 		Category: flags.EthCategory,
 	}
+	DBEngineFlag = &cli.StringFlag{
+		Name:     "db.engine",
+		Usage:    "Backing database implementation to use ('pebble' or 'leveldb')",
+		Value:    node.DefaultConfig.DBEngine,
+		Category: flags.EthCategory,
+	}
+	KeyStoreDirFlag = &flags.DirectoryFlag{
+		Name:     "keystore",
+		Usage:    "Directory for the keystore (default = inside the datadir)",
+		Category: flags.AccountCategory,
+	}
+
+	USBFlag = &cli.BoolFlag{
+		Name:     "usb",
+		Usage:    "Enable monitoring and management of USB hardware wallets",
+		Category: flags.AccountCategory,
+	}
 	SmartCardDaemonPathFlag = &cli.StringFlag{
 		Name:     "pcscdpath",
 		Usage:    "Path to the smartcard daemon (pcscd) socket file",
@@ -94,12 +111,31 @@ var (
 		Category: flags.NetworkingCategory,
 	}
 
+	LightKDFFlag = &cli.BoolFlag{
+		Name:     "lightkdf",
+		Usage:    "Reduce key-derivation RAM & CPU usage at some expense of KDF strength",
+		Category: flags.AccountCategory,
+	}
+
 	// Performance tuning settings
 	CacheFlag = &cli.IntFlag{
 		Name:     "cache",
 		Usage:    "Megabytes of memory allocated to internal caching (default = 4096 mainnet full node, 128 light mode)",
 		Value:    1024,
 		Category: flags.PerfCategory,
+	}
+	// Account settings
+	PasswordFileFlag = &cli.PathFlag{
+		Name:      "password",
+		Usage:     "Password file to use for non-interactive password input",
+		TakesFile: true,
+		Category:  flags.AccountCategory,
+	}
+	ExternalSignerFlag = &cli.StringFlag{
+		Name:     "signer",
+		Usage:    "External signer (url or path to ipc file)",
+		Value:    "",
+		Category: flags.AccountCategory,
 	}
 
 	// Authenticated RPC HTTP settings
@@ -119,6 +155,11 @@ var (
 		Name:     "authrpc.vhosts",
 		Usage:    "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard.",
 		Value:    strings.Join(node.DefaultConfig.AuthVirtualHosts, ","),
+		Category: flags.APICategory,
+	}
+	JWTSecretFlag = &flags.DirectoryFlag{
+		Name:     "authrpc.jwtsecret",
+		Usage:    "Path to a JWT secret to use for authenticated RPC endpoints",
 		Category: flags.APICategory,
 	}
 
@@ -604,6 +645,50 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 	SetDataDir(ctx, cfg)
 	setSmartCard(ctx, cfg)
 
+	if ctx.IsSet(JWTSecretFlag.Name) {
+		cfg.JWTSecret = ctx.String(JWTSecretFlag.Name)
+	}
+	if ctx.IsSet(EnablePersonal.Name) {
+		log.Warn(fmt.Sprintf("Option --%s is deprecated. The 'personal' RPC namespace has been removed.", EnablePersonal.Name))
+	}
+
+	if ctx.IsSet(ExternalSignerFlag.Name) {
+		cfg.ExternalSigner = ctx.String(ExternalSignerFlag.Name)
+	}
+
+	if ctx.IsSet(KeyStoreDirFlag.Name) {
+		cfg.KeyStoreDir = ctx.String(KeyStoreDirFlag.Name)
+	}
+	if ctx.IsSet(DeveloperFlag.Name) {
+		cfg.UseLightweightKDF = true
+	}
+	if ctx.IsSet(LightKDFFlag.Name) {
+		cfg.UseLightweightKDF = ctx.Bool(LightKDFFlag.Name)
+	}
+	if ctx.IsSet(NoUSBFlag.Name) || cfg.NoUSB {
+		log.Warn("Option nousb is deprecated and USB is deactivated by default. Use --usb to enable")
+	}
+	if ctx.IsSet(USBFlag.Name) {
+		cfg.USB = ctx.Bool(USBFlag.Name)
+	}
+	if ctx.IsSet(InsecureUnlockAllowedFlag.Name) {
+		log.Warn(fmt.Sprintf("Option %q is deprecated and has no effect", InsecureUnlockAllowedFlag.Name))
+	}
+	if ctx.IsSet(DBEngineFlag.Name) {
+		dbEngine := ctx.String(DBEngineFlag.Name)
+		if dbEngine != "leveldb" && dbEngine != "pebble" {
+			Fatalf("Invalid choice for db.engine '%s', allowed 'leveldb' or 'pebble'", dbEngine)
+		}
+		log.Info(fmt.Sprintf("Using %s as db engine", dbEngine))
+		cfg.DBEngine = dbEngine
+	}
+	// deprecation notice for log debug flags (TODO: find a more appropriate place to put these?)
+	if ctx.IsSet(LogBacktraceAtFlag.Name) {
+		log.Warn("log.backtrace flag is deprecated")
+	}
+	if ctx.IsSet(LogDebugFlag.Name) {
+		log.Warn("log.debug flag is deprecated")
+	}
 }
 
 func setSmartCard(ctx *cli.Context, cfg *node.Config) {

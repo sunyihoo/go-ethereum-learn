@@ -132,16 +132,20 @@ func loadBaseConfig(ctx *cli.Context) gethConfig {
 		}
 	}
 
-	// todo no finish
+	// Apply flags.
+	utils.SetNodeConfig(ctx, &cfg.Node)
 	return cfg
 }
 
 func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
-	// todo no implement
+	cfg := loadBaseConfig(ctx)
+	fmt.Print(cfg)
 	return &node.Node{}, gethConfig{}
 }
 
+// todo not implement
 func makeFullNode(ctx *cli.Context) *node.Node {
-	// stack, cfg :=
-	return &node.Node{}
+	stack, _ := makeConfigNode(ctx)
+
+	return stack
 }
