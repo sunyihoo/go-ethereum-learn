@@ -22,6 +22,7 @@ const (
 	EthCategory        = "ETHEREUM"
 	DevCategory        = "DEVELOPER CHAIN"
 	PerfCategory       = "PERFORMANCE TUNING"
+	APICategory        = "API AND CONSOLE"
 	NetworkingCategory = "NETWORKING"
 	MiscCategory       = "MISC"
 )

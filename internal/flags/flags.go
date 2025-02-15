@@ -15,3 +15,71 @@
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package flags
+
+import (
+	"os"
+	"os/user"
+	"path/filepath"
+	"strings"
+)
+
+// DirectoryString is custom type which is registered in the flags library which cli uses for
+// argument parsing. This allows us to expand Value to an absolute path when
+// the argument is parsed
+type DirectoryString string
+
+func (s *DirectoryString) String() string {
+	return string(*s)
+}
+
+func (s *DirectoryString) Set(value string) error {
+	*s = DirectoryString(expandPath(value))
+	return nil
+}
+
+// DirectoryFlag is custom cli.Flag type which expand the received string to an absolute path.
+// e.g. ~/.ethereum -> /home/username/.ethereum
+type DirectoryFlag struct {
+	Name string
+
+	Category    string
+	DefaultText string
+	Usage       string
+
+	Required   bool
+	Hidden     bool
+	HasBeenSet bool
+
+	Value DirectoryString
+
+	Aliases []string
+	EnvVars []string
+}
+
+// Expands a file path
+// 1. replace tilde with users home dir
+// 2. expands embedded environment variables
+// 3. cleans the path, e.g. /a/b/../c -> /a/c
+// Note, it has limitations, e.g. ~someuser/tmp will not be expanded
+func expandPath(p string) string {
+	// Named pipes are not file paths on windows, ignore
+	if strings.HasPrefix(p, `\\.\pipe`) {
+		return p
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
+		if home := HomeDir(); home != "" {
+			p = home + p[1:]
+		}
+	}
+	return filepath.Clean(os.ExpandEnv(p))
+}
+
+func HomeDir() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	if usr, err := user.Current(); err == nil {
+		return usr.HomeDir
+	}
+	return ""
+}
