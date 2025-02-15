@@ -17,10 +17,14 @@
 package flags
 
 import (
+	"flag"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"github.com/urfave/cli/v2"
 )
 
 // DirectoryString is custom type which is registered in the flags library which cli uses for
@@ -56,6 +60,63 @@ type DirectoryFlag struct {
 	EnvVars []string
 }
 
+// For cli.Flag:
+
+func (f *DirectoryFlag) Names() []string { return append([]string{f.Name}, f.Aliases...) }
+func (f *DirectoryFlag) IsSet() bool     { return f.HasBeenSet }
+func (f *DirectoryFlag) String() string  { return cli.FlagStringer(f) }
+
+// Apply called by cli library, grabs variable from environment (if in env)
+// and adds variable to flag set for parsing.
+func (f *DirectoryFlag) Apply(set *flag.FlagSet) error {
+	for _, envVar := range f.EnvVars {
+		envVar = strings.TrimSpace(envVar)
+		if value, found := syscall.Getenv(envVar); found {
+			f.Value.Set(value)
+			f.HasBeenSet = true
+			break
+		}
+	}
+	eachName(f, func(name string) {
+		set.Var(&f.Value, name, f.Usage)
+	})
+	return nil
+}
+
+// For cli.RequiredFlag:
+
+func (f *DirectoryFlag) IsRequired() bool { return f.Required }
+
+// For cli.VisibleFlag:
+
+func (f *DirectoryFlag) IsVisible() bool { return !f.Hidden }
+
+// For cli.CategorizableFlag:
+
+func (f *DirectoryFlag) GetCategory() string { return f.Category }
+
+// For cli.DocGenerationFlag:
+
+func (f *DirectoryFlag) TakesValue() bool     { return true }
+func (f *DirectoryFlag) GetUsage() string     { return f.Usage }
+func (f *DirectoryFlag) GetValue() string     { return f.Value.String() }
+func (f *DirectoryFlag) GetEnvVars() []string { return f.EnvVars }
+
+func (f *DirectoryFlag) GetDefaultText() string {
+	if f.DefaultText != "" {
+		return f.DefaultText
+	}
+	return f.GetValue()
+}
+
+//var (
+//	_ cli.Flag              = (*BigFlag)(nil)
+//	_ cli.RequiredFlag      = (*BigFlag)(nil)
+//	_ cli.VisibleFlag       = (*BigFlag)(nil)
+//	_ cli.DocGenerationFlag = (*BigFlag)(nil)
+//	_ cli.CategorizableFlag = (*BigFlag)(nil)
+//)
+
 // Expands a file path
 // 1. replace tilde with users home dir
 // 2. expands embedded environment variables
@@ -82,4 +143,11 @@ func HomeDir() string {
 		return usr.HomeDir
 	}
 	return ""
+}
+
+func eachName(f cli.Flag, fn func(string)) {
+	for _, name := range f.Names() {
+		name = strings.Trim(name, " ")
+		fn(name)
+	}
 }

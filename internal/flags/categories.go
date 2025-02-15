@@ -26,6 +26,7 @@ const (
 	APICategory        = "API AND CONSOLE"
 	NetworkingCategory = "NETWORKING"
 	MiscCategory       = "MISC"
+	DeprecatedCategory = "ALIASED (deprecated)"
 )
 
 func init() {
