@@ -20,6 +20,8 @@ package utils
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -32,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"github.com/ethereum/go-ethereum/params"
+	pcsclite "github.com/gballet/go-libpcsclite"
 	"github.com/urfave/cli/v2"
 )
 
@@ -45,6 +48,18 @@ import (
 // TODO no finish
 var (
 	// General settings
+	DataDirFlag = &flags.DirectoryFlag{
+		Name:     "datadir",
+		Usage:    "Data directory for the databases and keystore",
+		Value:    flags.DirectoryString(node.DefaultDataDir()),
+		Category: flags.EthCategory,
+	}
+	SmartCardDaemonPathFlag = &cli.StringFlag{
+		Name:     "pcscdpath",
+		Usage:    "Path to the smartcard daemon (pcscd) socket file",
+		Value:    pcsclite.PCSCDSockName,
+		Category: flags.AccountCategory,
+	}
 	NetworkIdFlag = &cli.Uint64Flag{
 		Name:     "networkid",
 		Usage:    "Explictly set network id (integer)(For testnets: use --sepolia, --hokesky instead",
@@ -71,6 +86,12 @@ var (
 		Name:     "dev",
 		Usage:    "Ephemeral proof-of-authority network with a pre-funded developer account, mining enabled",
 		Category: flags.DevCategory,
+	}
+
+	IdentityFlag = &cli.StringFlag{
+		Name:     "identity",
+		Usage:    "Custom node name",
+		Category: flags.NetworkingCategory,
 	}
 
 	// Performance tuning settings
@@ -149,6 +170,53 @@ var (
 	}
 	HTTPPathPrefixFlag = &cli.StringFlag{
 		Name:     "http.rpcprefix",
+		Usage:    "HTTP path prefix on which JSON-RPC is served. Use '/' to serve on all paths.",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	GraphQLCORSDomainFlag = &cli.StringFlag{
+		Name:     "graphql.corsdomain",
+		Usage:    "Comma separated list of domains from which to accept cross origin requests (browser enforced)",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	GraphQLVirtualHostsFlag = &cli.StringFlag{
+		Name:     "graphql.vhosts",
+		Usage:    "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard.",
+		Value:    strings.Join(node.DefaultConfig.GraphQLVirtualHosts, ","),
+		Category: flags.APICategory,
+	}
+	WSEnabledFlag = &cli.BoolFlag{
+		Name:     "ws",
+		Usage:    "Enable the WS-RPC server",
+		Category: flags.APICategory,
+	}
+	WSListenAddrFlag = &cli.StringFlag{
+		Name:     "ws.addr",
+		Usage:    "WS-RPC server listening interface",
+		Value:    node.DefaultWSHost,
+		Category: flags.APICategory,
+	}
+	WSPortFlag = &cli.IntFlag{
+		Name:     "ws.port",
+		Usage:    "WS-RPC server listening port",
+		Value:    node.DefaultWSPort,
+		Category: flags.APICategory,
+	}
+	WSApiFlag = &cli.StringFlag{
+		Name:     "ws.api",
+		Usage:    "API's offered over the WS-RPC interface",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	WSAllowedOriginsFlag = &cli.StringFlag{
+		Name:     "ws.origins",
+		Usage:    "Origins from which to accept websockets requests",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	WSPathPrefixFlag = &cli.StringFlag{
+		Name:     "ws.rpcprefix",
 		Usage:    "HTTP path prefix on which JSON-RPC is served. Use '/' to serve on all paths.",
 		Value:    "",
 		Category: flags.APICategory,
@@ -270,6 +338,13 @@ func setNodeKey(ctx *cli.Context, cfg *p2p.Config) {
 	}
 }
 
+// setNodeUserIdent creates the user identifier from CLI flags.
+func setNodeUserIdent(ctx *cli.Context, cfg *node.Config) {
+	if identity := ctx.String(IdentityFlag.Name); len(identity) > 0 {
+		cfg.UserIdent = identity
+	}
+}
+
 // setBootstrapNodes creates a list of bootstrap nodes from the command line
 // flags, reverting to pre-configured ones if none have been specified.
 // Priority order for bootnodes configuration:
@@ -344,6 +419,7 @@ func setListenAddress(ctx *cli.Context, cfg *p2p.Config) {
 		cfg.DiscAddr = fmt.Sprintf(":%d", ctx.Int(DiscoveryPortFlag.Name))
 	}
 }
+
 func setNAT(ctx *cli.Context, cfg *p2p.Config) {
 	if ctx.IsSet(NATFlag.Name) {
 		natif, err := nat.Parse(ctx.String(NATFlag.Name))
@@ -422,6 +498,45 @@ func setHTTP(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
+// setGraphQL creates the GraphQL listener interface string from the set
+// command line flags, returning empty if the GraphQL endpoint is disabled.
+func setGraphQL(ctx *cli.Context, cfg *node.Config) {
+	if ctx.IsSet(GraphQLCORSDomainFlag.Name) {
+		cfg.GraphQLCors = SplitAndTrim(ctx.String(GraphQLCORSDomainFlag.Name))
+	}
+	if ctx.IsSet(GraphQLVirtualHostsFlag.Name) {
+		cfg.GraphQLVirtualHosts = SplitAndTrim(ctx.String(GraphQLVirtualHostsFlag.Name))
+	}
+}
+
+// setWS creates the WebSocket RPC listener interface string from the set
+// command line flags, returning empty if the HTTP endpoint is disabled.
+func setWS(ctx *cli.Context, cfg *node.Config) {
+	if ctx.Bool(WSEnabledFlag.Name) {
+		if cfg.WSHost == "" {
+			cfg.WSHost = "127.0.0.1"
+		}
+		if ctx.IsSet(WSListenAddrFlag.Name) {
+			cfg.WSHost = ctx.String(WSListenAddrFlag.Name)
+		}
+	}
+	if ctx.IsSet(WSPortFlag.Name) {
+		cfg.WSPort = ctx.Int(WSPortFlag.Name)
+	}
+
+	if ctx.IsSet(WSAllowedOriginsFlag.Name) {
+		cfg.WSOrigins = SplitAndTrim(ctx.String(WSAllowedOriginsFlag.Name))
+	}
+
+	if ctx.IsSet(WSApiFlag.Name) {
+		cfg.WSModules = SplitAndTrim(ctx.String(WSApiFlag.Name))
+	}
+
+	if ctx.IsSet(WSPathPrefixFlag.Name) {
+		cfg.WSPathPrefix = ctx.String(WSPathPrefixFlag.Name)
+	}
+}
+
 // setIPC creates an IPC path configuration from the set command line flags,
 // returning an empty string if IPC was explicitly disabled, or the set path.
 func setIPC(ctx *cli.Context, cfg *node.Config) {
@@ -483,6 +598,45 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 	SetP2PConfig(ctx, &cfg.P2P)
 	setIPC(ctx, cfg)
 	setHTTP(ctx, cfg)
+	setGraphQL(ctx, cfg)
+	setWS(ctx, cfg)
+	setNodeUserIdent(ctx, cfg)
+	SetDataDir(ctx, cfg)
+	setSmartCard(ctx, cfg)
+
+}
+
+func setSmartCard(ctx *cli.Context, cfg *node.Config) {
+	// Skip enabling smartcards if no path is set
+	path := ctx.String(SmartCardDaemonPathFlag.Name)
+	if path == "" {
+		return
+	}
+	// Sanity check that the smartcard path is valid
+	fi, err := os.Stat(path)
+	if err != nil {
+		log.Info("Smartcard socket not found, disabling", "err", err)
+		return
+	}
+	if fi.Mode()&os.ModeType != os.ModeSocket {
+		log.Error("Invalid smartcard daemon path", "path", path, "type", fi.Mode().String())
+		return
+	}
+	// Smartcard daemon path exists and is a socket, enable it
+	cfg.SmartCardDaemonPath = path
+}
+
+func SetDataDir(ctx *cli.Context, cfg *node.Config) {
+	switch {
+	case ctx.IsSet(DataDirFlag.Name):
+		cfg.DataDir = ctx.String(DataDirFlag.Name)
+	case ctx.Bool(DeveloperFlag.Name):
+		cfg.DataDir = "" // unless explicitly requested, use memory databases
+	case ctx.Bool(SepoliaFlag.Name) && cfg.DataDir == node.DefaultDataDir():
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "sepolia")
+	case ctx.Bool(HoleskyFlag.Name) && cfg.DataDir == node.DefaultDataDir():
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "holesky")
+	}
 }
 
 // CheckExclusive verifies that only a single instance of the provided flags was
