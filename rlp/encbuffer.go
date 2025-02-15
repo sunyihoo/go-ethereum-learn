@@ -17,9 +17,13 @@
 package rlp
 
 import (
+	"encoding/binary"
 	"io"
+	"math/big"
 	"reflect"
 	"sync"
+
+	"github.com/holiman/uint256"
 )
 
 type encBuffer struct {
@@ -105,6 +109,28 @@ func (buf *encBuffer) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// writeBool writes b as the integer 0 (false) or 1 (true).
+func (buf *encBuffer) writeBool(b bool) {
+	if b {
+		buf.str = append(buf.str, 0x01)
+	} else {
+		buf.str = append(buf.str, 0x80)
+	}
+}
+
+func (buf *encBuffer) writeUint64(i uint64) {
+	if i == 0 {
+		buf.str = append(buf.str, 0x80)
+	} else if i < 128 {
+		// fits single byte
+		buf.str = append(buf.str, byte(i))
+	} else {
+		s := putint(buf.sizebuf[1:], i)
+		buf.sizebuf[0] = 0x80 + byte(s)
+		buf.str = append(buf.str, buf.sizebuf[:s+1]...)
+	}
+}
+
 func (buf *encBuffer) writeBytes(b []byte) {
 	if len(b) == 1 && b[0] <= 0x7F {
 		// fits single byte, no string header
@@ -113,6 +139,71 @@ func (buf *encBuffer) writeBytes(b []byte) {
 		buf.encodeStringHeader(len(b))
 		buf.str = append(buf.str, b...)
 	}
+}
+
+func (buf *encBuffer) writeString(s string) {
+	buf.writeBytes([]byte(s))
+}
+
+// wordBytes is the number of bytes in a big.Word
+const wordBytes = (32 << (uint64(^big.Word(0)) >> 63)) / 8
+
+// writeBigInt writes i as an integer.
+func (buf *encBuffer) writeBigInt(i *big.Int) {
+	bitlen := i.BitLen()
+	if bitlen <= 64 {
+		buf.writeUint64(i.Uint64())
+		return
+	}
+	// Integer is larger than 64 bits, encode from i.Bits().
+	// The minimal byte length is bitlen rounded up to the next
+	// multiple of 8, divided by 8.
+	length := ((bitlen + 7) & -8) >> 3
+	buf.encodeStringHeader(length)
+	buf.str = append(buf.str, make([]byte, length)...)
+	index := length
+	bytesBuf := buf.str[len(buf.str)-length:]
+	for _, d := range i.Bits() {
+		for j := 0; j < wordBytes && index > 0; j++ {
+			index--
+			bytesBuf[index] = byte(d)
+			d >>= 8
+		}
+	}
+}
+
+// writeUint256 writes z as an integer.
+func (buf *encBuffer) writeUint256(z *uint256.Int) {
+	bitlen := z.BitLen()
+	if bitlen <= 64 {
+		buf.writeUint64(z.Uint64())
+		return
+	}
+	nBytes := byte((bitlen + 7) / 8)
+	var b [33]byte
+	binary.BigEndian.PutUint64(b[1:9], z[3])
+	binary.BigEndian.PutUint64(b[9:17], z[2])
+	binary.BigEndian.PutUint64(b[17:25], z[1])
+	binary.BigEndian.PutUint64(b[25:33], z[0])
+	b[32-nBytes] = 0x80 + nBytes
+	buf.str = append(buf.str, b[32-nBytes:]...)
+}
+
+func (buf *encBuffer) listEnd(index int) {
+	lh := &buf.lheads[index]
+	lh.size = buf.size() - lh.offset - lh.size
+	if lh.size < 56 {
+		buf.lhsize++ // length encoded into kind tag
+	} else {
+		buf.lhsize += 1 + intsize(uint64(lh.size))
+	}
+}
+
+// list adds a new list header to the header stack. It returns the index of the header.
+// Call listEnd with this index after encoding the content of the list.
+func (buf *encBuffer) list() int {
+	buf.lheads = append(buf.lheads, listhead{offset: len(buf.str), size: buf.lhsize})
+	return len(buf.lheads) - 1
 }
 
 func (buf *encBuffer) encode(val interface{}) error {

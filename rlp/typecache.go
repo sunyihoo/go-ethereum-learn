@@ -157,6 +157,16 @@ func structFields(typ reflect.Type) (fields []field, err error) {
 	return fields, nil
 }
 
+// firstOptionalField returns the index of the first field with "optional" tag.
+func firstOptionalField(fields []field) int {
+	for i, f := range fields {
+		if f.optional {
+			return i
+		}
+	}
+	return len(fields)
+}
+
 type structFieldError struct {
 	typ   reflect.Type
 	field int
@@ -221,4 +231,8 @@ func typeNilKind(typ reflect.Type, tags rlpstruct.Tags) Kind {
 
 func isUint(k reflect.Kind) bool {
 	return k >= reflect.Uint && k <= reflect.Uintptr
+}
+
+func isByte(typ reflect.Type) bool {
+	return typ.Kind() == reflect.Uint8 && !typ.Implements(encoderInterface)
 }
