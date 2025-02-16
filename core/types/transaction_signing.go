@@ -17,9 +17,11 @@
 package types
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // sigCache is used to cache the derived sender and contains
@@ -50,6 +52,16 @@ type Signer interface {
 
 	// Equal returns true if the given signer is the same as the receiver.
 	Equal(Signer) bool
+}
+
+func decodeSignature(sig []byte) (r, s, v *big.Int) {
+	if len(sig) != crypto.SignatureLength {
+		panic(fmt.Sprintf("wrong size for signature: got %d, want %d", len(sig), crypto.SignatureLength))
+	}
+	r = new(big.Int).SetBytes(sig[:32])
+	s = new(big.Int).SetBytes(sig[32:64])
+	v = new(big.Int).SetBytes([]byte{sig[64] + 27})
+	return r, s, v
 }
 
 // deriveChainId derives the chain id from the given v parameter

@@ -28,6 +28,11 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 )
 
+// Ecrecover returns the uncompressed public key that created the given signature.
+func Ecrecover(hash, sig []byte) ([]byte, error) {
+	return secp256k1.RecoverPubkey(hash, sig)
+}
+
 // Sign calculates an ECDSA signature.
 //
 // This function is susceptible to chosen plaintext attacks that can leak

@@ -19,7 +19,19 @@ type Hash [HashLength]byte
 
 /////////// Address
 
+// Address represents the 20 byte address of an Ethereum account.
 type Address [AddressLength]byte
+
+// BytesToAddress returns Address with value b.
+// If b is larger than len(h), b will be cropped from the left.
+func BytesToAddress(b []byte) Address {
+	var a Address
+	a.SetBytes(b)
+	return a
+}
+
+// Bytes gets the string representation of the underlying address.
+func (a Address) Bytes() []byte { return a[:] }
 
 // Hex returns an EIP55-compliant hex string representation of the address.
 func (a Address) Hex() string {
@@ -52,6 +64,15 @@ func (a Address) hex() []byte {
 	copy(buf[:2], "0x")
 	hex.Encode(buf[2:], a[:])
 	return buf[:]
+}
+
+// SetBytes sets the address to the value of b.
+// If b is larger than len(a), b will be cropped from the left.
+func (a *Address) SetBytes(b []byte) {
+	if len(b) > len(a) {
+		b = b[len(b)-AddressLength:]
+	}
+	copy(a[AddressLength-len(b):], b)
 }
 
 // UnprefixedAddress allows marshaling an Address without 0x prefix.

@@ -40,6 +40,8 @@ var (
 	ErrSyntax        = &decError{"invalid hex string"}
 	ErrMissingPrefix = &decError{"hex string without 0x prefix"}
 	ErrOddLength     = &decError{"hex string of odd length"}
+	ErrEmptyNumber   = &decError{"hex string \"0x\""}
+	ErrLeadingZero   = &decError{"hex number with leading zero digits"}
 	ErrUint64Range   = &decError{"hex number > 64 bits"}
 )
 
@@ -53,6 +55,13 @@ func Encode(b []byte) string {
 	copy(enc, "0x")
 	hex.Encode(enc[2:], b)
 	return string(enc)
+}
+
+// EncodeUint64 encodes i as a hex string with 0x prefix.
+func EncodeUint64(i uint64) string {
+	enc := make([]byte, 2, 10)
+	copy(enc, "0x")
+	return string(strconv.AppendUint(enc, i, 16))
 }
 
 const badNibble = ^uint64(0)
