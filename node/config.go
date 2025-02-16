@@ -17,17 +17,27 @@
 package node
 
 import (
+	"crypto/ecdsa"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
 const (
-	datadirDefaultKeyStore = "keystore" // Path within the datadir to the keystore
+	datadirPrivateKey      = "nodekey"            // Path within the datadir to the node's private key
+	datadirJWTKey          = "jwtsecret"          // Path within the datadir to the node's jwt secret
+	datadirDefaultKeyStore = "keystore"           // Path within the datadir to the keystore
+	datadirStaticNodes     = "static-nodes.json"  // Path within the datadir to the static node list
+	datadirTrustedNodes    = "trusted-nodes.json" // Path within the datadir to the trusted node list
+	datadirNodeDatabase    = "nodes"              // Path within the datadir to store the node infos
 )
 
 type Config struct {
@@ -199,6 +209,56 @@ type Config struct {
 	DBEngine string `toml:",omitempty"`
 }
 
+// IPCEndpoint resolves an IPC endpoint based on a configured value, taking into
+// account the set data folders as well as the designated platform we're currently
+// running on.
+func (c *Config) IPCEndpoint() string {
+	// Short circuit if IPC has not been enabled
+	if c.IPCPath == "" {
+		return ""
+	}
+	// On windows we can only use plain top-level pipes
+	if runtime.GOOS == "windows" {
+		if strings.HasPrefix(c.IPCPath, `\\.\pipe\`) {
+			return c.IPCPath
+		}
+		return `\\.\pipe\` + c.IPCPath
+	}
+	if filepath.Base(c.IPCPath) == c.IPCPath {
+		if c.DataDir == "" {
+			return filepath.Join(os.TempDir(), c.IPCPath)
+		}
+		return filepath.Join(c.DataDir, c.IPCPath)
+	}
+	return c.IPCPath
+}
+
+// NodeDB returns the path to the discovery node database.
+func (c *Config) NodeDB() string {
+	if c.DataDir == "" {
+		return "" // ephemeral
+	}
+	return c.ResolvePath(datadirNodeDatabase)
+}
+
+// NodeName returns the devp2p node identifier.
+func (c *Config) NodeName() string {
+	name := c.name()
+	// Backwards compatibility: previous versions used title-cased "Geth", keep that.
+	if name == "geth" || name == "geth-testnet" {
+		name = "Geth"
+	}
+	if c.UserIdent != "" {
+		name += "/" + c.UserIdent
+	}
+	if c.Version != "" {
+		name += "/v" + c.Version
+	}
+	name += "/" + runtime.GOOS + "-" + runtime.GOARCH
+	name += "/" + runtime.Version()
+	return name
+}
+
 func (c *Config) name() string {
 	if c.Name == "" {
 		progname := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
@@ -208,6 +268,118 @@ func (c *Config) name() string {
 		return progname
 	}
 	return c.Name
+}
+
+// These resources are resolved differently for "geth" instances.
+var isOldGethResource = map[string]bool{
+	"chaindata":          true,
+	"nodes":              true,
+	"nodekey":            true,
+	"static-nodes.json":  false, // no warning for these because they have their
+	"trusted-nodes.json": false, // own separate warning.
+}
+
+// ResolvePath resolves path in the instance directory.
+func (c *Config) ResolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if c.DataDir == "" {
+		return ""
+	}
+
+	// Backwards-compatibility: ensure that data directory files created
+	// by geth 1.4 are used if they exist.
+	if warn, isOld := isOldGethResource[path]; isOld {
+		oldpath := ""
+		if c.name() == "geth" {
+			oldpath = filepath.Join(c.DataDir, path)
+		}
+		if oldpath != "" && common.FileExist(oldpath) {
+			if warn && !c.oldGethResourceWarning {
+				c.oldGethResourceWarning = true
+				log.Warn("Using deprecated resource file, please move this file to the 'geth'  subdirectory of datadir.", "file", oldpath)
+			}
+			return oldpath
+		}
+	}
+	return filepath.Join(c.instanceDir(), path)
+}
+
+func (c *Config) instanceDir() string {
+	if c.DataDir == "" {
+		return ""
+	}
+	return filepath.Join(c.DataDir, c.name())
+}
+
+// NodeKey retrieves the currently configured private key of the node, checking
+// first any manually set key, falling back to the one found in the configured
+// data folder. If no key can be found, a new one is generated.
+func (c *Config) NodeKey() *ecdsa.PrivateKey {
+	// Use any specifically configured key.
+	if c.P2P.PrivateKey != nil {
+		return c.P2P.PrivateKey
+	}
+	// Generate ephemeral key if no datadir is being used.
+	if c.DataDir == "" {
+		key, err := crypto.GenerateKey()
+		if err != nil {
+			log.Crit(fmt.Sprintf("Failed to generate ephemeral node key: %v", err))
+		}
+		return key
+	}
+
+	keyfile := c.ResolvePath(datadirPrivateKey)
+	if key, err := crypto.LoadECDSA(keyfile); err == nil {
+		return key
+	}
+	// No persistent key found, generate and store a new one.
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		log.Crit(fmt.Sprintf("Failed to generate node key: %v", err))
+	}
+
+	instanceDir := filepath.Join(c.DataDir, c.name())
+	if err := os.MkdirAll(instanceDir, 0700); err != nil {
+		log.Error(fmt.Sprintf("Failed to persist node key: %v", err))
+	}
+	keyfile = filepath.Join(instanceDir, datadirPrivateKey)
+	if err := crypto.SaveECDSA(keyfile, key); err != nil {
+		log.Error(fmt.Sprintf("Failed to persist node key: %v", err))
+	}
+	return key
+}
+
+// checkLegacyFiles inspects the datadir for signs of legacy static-nodes
+// and trusted-nodes files. If they exist it raises an error.
+func (c *Config) checkLegacyFiles() {
+	c.checkLegacyFile(c.ResolvePath(datadirStaticNodes))
+	c.checkLegacyFile(c.ResolvePath(datadirTrustedNodes))
+}
+
+// checkLegacyFile will only raise an error if a file at the given path exists.
+func (c *Config) checkLegacyFile(path string) {
+	// Short circuit if no node config is present
+	if c.DataDir == "" {
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	logger := c.Logger
+	if logger == nil {
+		logger = log.Root()
+	}
+	switch fname := filepath.Base(path); fname {
+	case "static-nodes.json":
+		logger.Error("The static-nodes.json file is deprecated and ignored. Use P2P.StaticNodes in config.toml instead.")
+	case "trusted-nodes.json":
+		logger.Error("The trusted-nodes.json file is deprecated and ignored. Use P2P.TrustedNodes in config.toml instead.")
+	default:
+		// We shouldn't wind up here, but better print something just in case.
+		logger.Error("Ignoring deprecated file.", "file", path)
+	}
 }
 
 // KeyDirConfig determines the settings for keydirectory

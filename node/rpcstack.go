@@ -17,8 +17,10 @@
 package node
 
 import (
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -49,6 +51,11 @@ type rpcEndpointConfig struct {
 	httpBodyLimit          int
 }
 
+type rpcHandler struct {
+	http.Handler
+	server *rpc.Server
+}
+
 type httpServer struct {
 	log      log.Logger
 	timeouts rpc.HTTPTimeouts
@@ -75,6 +82,14 @@ type httpServer struct {
 	handlerNames map[string]string
 }
 
+func newHTTPServer(log log.Logger, timeouts rpc.HTTPTimeouts) *httpServer {
+	h := &httpServer{log: log, timeouts: timeouts, handlerNames: make(map[string]string)}
+
+	h.httpHandler.Store((*rpcHandler)(nil))
+	h.wsHandler.Store((*rpcHandler)(nil))
+	return h
+}
+
 type ipcServer struct {
 	log      log.Logger
 	endpoint string
@@ -82,4 +97,25 @@ type ipcServer struct {
 	mu       sync.Mutex
 	listener net.Listener
 	srv      *rpc.Server
+}
+
+func newIPCServer(log log.Logger, endpoint string) *ipcServer {
+	return &ipcServer{log: log, endpoint: endpoint}
+}
+
+// validatePrefix checks if 'path' is a valid configuration value for the RPC prefix option.
+func validatePrefix(what, path string) error {
+	if path == "" {
+		return nil
+	}
+	if path[0] != '/' {
+		return fmt.Errorf(`%s RPC path prefix %q does not contain leading "/"`, what, path)
+	}
+	if strings.ContainsAny(path, "?#") {
+		// This is just to avoid confusion. While these would match correctly (i.e. they'd
+		// match if URL-escaped into path), it's not easy to understand for users when
+		// setting that on the command line.
+		return fmt.Errorf("%s RPC path prefix %q contains URL meta-characters", what, path)
+	}
+	return nil
 }
