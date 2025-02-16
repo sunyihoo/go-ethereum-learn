@@ -90,6 +90,24 @@ func NewManager(config *Config, backends ...Backend) *Manager {
 	return am
 }
 
+// Close terminates the account manager's internal notification processes.
+func (am *Manager) Close() error {
+	for _, w := range am.wallets {
+		w.Close()
+	}
+	errc := make(chan error)
+	am.quit <- errc
+	return <-errc
+}
+
+// AddBackend starts the tracking of an additional backend for wallet updates.
+// cmd/geth assumes once this func returns the backends have been already integrated.
+func (am *Manager) AddBackend(backend Backend) {
+	done := make(chan struct{})
+	am.newBackends <- newBackendEvent{backend, done}
+	<-done
+}
+
 // update is the wallet event loop listening for notifications from the backends
 // and updating the cache of wallets.
 func (am *Manager) update() {

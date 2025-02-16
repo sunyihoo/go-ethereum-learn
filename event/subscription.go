@@ -16,6 +16,8 @@
 
 package event
 
+import "sync"
+
 // Subscription represents a stream of events. The carrier of the events is typically a
 // channel, but isn't part of the interface.
 //
@@ -33,4 +35,48 @@ package event
 type Subscription interface {
 	Err() <-chan error // returns the error channel
 	Unsubscribe()      // cancels sending of events, closing the error channel
+}
+
+// NewSubscription runs a producer function as a subscription in a new goroutine. The
+// channel given to the producer is closed when Unsubscribe is called. If fn returns an
+// error, it is sent on the subscription's error channel.
+func NewSubscription(producer func(<-chan struct{}) error) Subscription {
+	s := &funcSub{unsub: make(chan struct{}), err: make(chan error, 1)}
+	go func() {
+		defer close(s.err)
+		err := producer(s.unsub)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if !s.unsubscribed {
+			if err != nil {
+				s.err <- err
+			}
+			s.unsubscribed = true
+		}
+	}()
+	return s
+}
+
+type funcSub struct {
+	unsub        chan struct{}
+	err          chan error
+	mu           sync.Mutex
+	unsubscribed bool
+}
+
+func (s *funcSub) Unsubscribe() {
+	s.mu.Lock()
+	if s.unsubscribed {
+		s.mu.Unlock()
+		return
+	}
+	s.unsubscribed = true
+	close(s.unsub)
+	s.mu.Unlock()
+	// Wait for producer shutdown.
+	<-s.err
+}
+
+func (s *funcSub) Err() <-chan error {
+	return s.err
 }

@@ -20,8 +20,12 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
@@ -34,6 +38,24 @@ var (
 type serviceRegistry struct {
 	mu       sync.Mutex
 	services map[string]service
+}
+
+// callback returns the callback corresponding to the given RPC method name.
+func (r *serviceRegistry) callback(method string) *callback {
+	before, after, found := strings.Cut(method, serviceMethodSeparator)
+	if !found {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.services[before].callbacks[after]
+}
+
+// subscription returns a subscription callback in the given service.
+func (r *serviceRegistry) subscription(service, name string) *callback {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.services[service].subscriptions[name]
 }
 
 // service represents a registered object.
@@ -51,6 +73,41 @@ type callback struct {
 	hasCtx      bool           // method's first argument is a context (not included in argTypes)
 	errPos      int            // err return idx, of -1 when method cannot return error
 	isSubscribe bool           // true if this is a subscription callback
+}
+
+// call invokes the callback.
+func (c *callback) call(ctx context.Context, method string, args []reflect.Value) (res interface{}, errRes error) {
+	// Create the argument slice.
+	fullargs := make([]reflect.Value, 0, 2+len(args))
+	if c.rcvr.IsValid() {
+		fullargs = append(fullargs, c.rcvr)
+	}
+	if c.hasCtx {
+		fullargs = append(fullargs, reflect.ValueOf(ctx))
+	}
+	fullargs = append(fullargs, args...)
+
+	// Catch panic while running the callback.
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			log.Error("RPC method " + method + " crashed: " + fmt.Sprintf("%v\n%s", err, buf))
+			errRes = &internalServerError{errcodePanic, "method handler crashed"}
+		}
+	}()
+	// Run the callback.
+	results := c.fn.Call(fullargs)
+	if len(results) == 0 {
+		return nil, nil
+	}
+	if c.errPos >= 0 && !results[c.errPos].IsNil() {
+		// Method has returned non-nil error value.
+		err := results[c.errPos].Interface().(error)
+		return reflect.Value{}, err
+	}
+	return results[0].Interface(), nil
 }
 
 func (r *serviceRegistry) registerName(name string, rcvr interface{}) error {

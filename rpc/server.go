@@ -17,11 +17,17 @@
 package rpc
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 )
 
 const MetadataApi = "rpc"
+
+// CodecOption specifies which type of messages a codec supports.
+//
+// Deprecated: this option is no longer honored by Server.
+type CodecOption int
 
 // Server is an RPC server.
 type Server struct {
@@ -71,6 +77,47 @@ func (s *Server) RegisterName(name string, receiver interface{}) error {
 	return s.services.registerName(name, receiver)
 }
 
+// ServeCodec reads incoming requests from codec, calls the appropriate callback and writes
+// the response back using the given codec. It will block until the codec is closed or the
+// server is stopped. In either case the codec is closed.
+//
+// Note that codec options are no longer supported.
+func (s *Server) ServeCodec(codec ServerCodec, options CodecOption) {
+	defer codec.close()
+
+	if !s.trackCodec(codec) {
+		return
+	}
+	defer s.untrackCodec(codec)
+
+	cfg := &clientConfig{
+		idgen:              s.idgen,
+		batchItemLimit:     s.batchItemLimit,
+		batchResponseLimit: s.batchResponseLimit,
+	}
+	c := initClient(codec, &s.services, cfg)
+	<-codec.closed()
+	c.Close()
+}
+
+func (s *Server) trackCodec(codec ServerCodec) bool {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.run.Load() {
+		return false // Don't serve if server is stopped.
+	}
+	s.codecs[codec] = struct{}{}
+	return true
+}
+
+func (s *Server) untrackCodec(codec ServerCodec) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	delete(s.codecs, codec)
+}
+
 // RPCService gives meta information about the server.
 // e.g. gives information about the loaded modules.
 type RPCService struct {
@@ -99,4 +146,15 @@ type PeerInfo struct {
 		Origin    string
 		Host      string
 	}
+}
+
+type peerInfoContextKey struct{}
+
+// PeerInfoFromContext returns information about the client's network connection.
+// Use this with the context passed to RPC method handler functions.
+//
+// The zero value is returned if no connection info is present in ctx.
+func PeerInfoFromContext(ctx context.Context) PeerInfo {
+	info, _ := ctx.Value(peerInfoContextKey{}).(PeerInfo)
+	return info
 }

@@ -32,6 +32,7 @@ package hexutil
 
 import (
 	"encoding/hex"
+	"math/big"
 	"strconv"
 )
 
@@ -43,6 +44,7 @@ var (
 	ErrEmptyNumber   = &decError{"hex string \"0x\""}
 	ErrLeadingZero   = &decError{"hex number with leading zero digits"}
 	ErrUint64Range   = &decError{"hex number > 64 bits"}
+	ErrBig256Range   = &decError{"hex number > 256 bits"}
 )
 
 type decError struct{ msg string }
@@ -62,6 +64,33 @@ func EncodeUint64(i uint64) string {
 	enc := make([]byte, 2, 10)
 	copy(enc, "0x")
 	return string(strconv.AppendUint(enc, i, 16))
+}
+
+var bigWordNibbles int
+
+func init() {
+	// This is a weird way to compute the number of nibbles required for big.Word.
+	// The usual way would be to use constant arithmetic but go vet can't handle that.
+	b, _ := new(big.Int).SetString("FFFFFFFFFF", 16)
+	switch len(b.Bits()) {
+	case 1:
+		bigWordNibbles = 16
+	case 2:
+		bigWordNibbles = 8
+	default:
+		panic("weird big.Word size")
+	}
+}
+
+// EncodeBig encodes bigint as a hex string with 0x prefix.
+func EncodeBig(bigint *big.Int) string {
+	if sign := bigint.Sign(); sign == 0 {
+		return "0x0"
+	} else if sign > 0 {
+		return "0x" + bigint.Text(16)
+	} else {
+		return "-0x" + bigint.Text(16)[1:]
+	}
 }
 
 const badNibble = ^uint64(0)

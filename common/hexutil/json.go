@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strconv"
 
@@ -28,6 +29,7 @@ import (
 
 var (
 	bytesT  = reflect.TypeOf(Bytes(nil))
+	bigT    = reflect.TypeOf((*Big)(nil))
 	uint64T = reflect.TypeOf(Uint64(0))
 	u256T   = reflect.TypeOf((*uint256.Int)(nil))
 )
@@ -122,6 +124,88 @@ func UnmarshalFixedUnprefixedText(typname string, input, out []byte) error {
 	}
 	hex.Decode(out, raw)
 	return nil
+}
+
+// Big marshals/unmarshals as a JSON string with 0x prefix.
+// The zero value marshals as "0x0".
+//
+// Negative integers are not supported at this time. Attempting to marshal them will
+// return an error. Values larger than 256bits are rejected by Unmarshal but will be
+// marshaled without error.
+type Big big.Int
+
+// MarshalText implements encoding.TextMarshaler
+func (b Big) MarshalText() ([]byte, error) {
+	return []byte(EncodeBig((*big.Int)(&b))), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (b *Big) UnmarshalJSON(input []byte) error {
+	if !isString(input) {
+		return errNonString(bigT)
+	}
+	return wrapTypeError(b.UnmarshalText(input[1:len(input)-1]), bigT)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler
+func (b *Big) UnmarshalText(input []byte) error {
+	raw, err := checkNumberText(input)
+	if err != nil {
+		return err
+	}
+	if len(raw) > 64 {
+		return ErrBig256Range
+	}
+	words := make([]big.Word, len(raw)/bigWordNibbles+1)
+	end := len(raw)
+	for i := range words {
+		start := end - bigWordNibbles
+		if start < 0 {
+			start = 0
+		}
+		for ri := start; ri < end; ri++ {
+			nib := decodeNibble(raw[ri])
+			if nib == badNibble {
+				return ErrSyntax
+			}
+			words[i] *= 16
+			words[i] += big.Word(nib)
+		}
+		end = start
+	}
+	var dec big.Int
+	dec.SetBits(words)
+	*b = (Big)(dec)
+	return nil
+}
+
+// ToInt converts b to a big.Int.
+func (b *Big) ToInt() *big.Int {
+	return (*big.Int)(b)
+}
+
+// String returns the hex encoding of b.
+func (b *Big) String() string {
+	return EncodeBig(b.ToInt())
+}
+
+// ImplementsGraphQLType returns true if Big implements the provided GraphQL type.
+func (b Big) ImplementsGraphQLType(name string) bool { return name == "BigInt" }
+
+// UnmarshalGraphQL unmarshals the provided GraphQL query data.
+func (b *Big) UnmarshalGraphQL(input interface{}) error {
+	var err error
+	switch input := input.(type) {
+	case string:
+		return b.UnmarshalText([]byte(input))
+	case int32:
+		var num big.Int
+		num.SetInt64(int64(input))
+		*b = Big(num)
+	default:
+		err = fmt.Errorf("unexpected type %T for BigInt", input)
+	}
+	return err
 }
 
 // U256 marshals/unmarshals as a JSON string with 0x prefix.

@@ -148,6 +148,9 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 		utils.Fatalf("Failed to create the protocol stack: %v", err)
 	}
 	// Node doesn't by default populate account manager backends
+	if err := setAccountManagerBackends(stack.Config(), stack.AccountManager(), stack.KeyStoreDir()); err != nil {
+		utils.Fatalf("Failed to set account manager backends: %v", err)
+	}
 
 	// todo NOT implement
 	return stack, gethConfig{}
@@ -173,8 +176,13 @@ func setAccountManagerBackends(conf *node.Config, am *accounts.Manager, keydir s
 	if len(conf.ExternalSigner) > 0 {
 		log.Info("Using external signer", "url", conf.ExternalSigner)
 		if extBackend, err := external.NewExternalBackend(conf.ExternalSigner); err == nil {
-			fmt.Println(extBackend)
+			am.AddBackend(extBackend)
+			return nil
+		} else {
+			return fmt.Errorf("error connecting to external signer: %v", err)
 		}
 	}
+
+	// todo start here
 	return nil
 }
