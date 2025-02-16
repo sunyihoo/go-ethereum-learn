@@ -46,7 +46,7 @@ var DefaultConfig = Config{
 	InfluxDBDatabase: "geth",
 	InfluxDBUsername: "test",
 	InfluxDBPassword: "test",
-	InfluxDBTags:     "test",
+	InfluxDBTags:     "host=localhost",
 
 	// influxdbv2-specific flags
 	EnableInfluxDBV2:     false,
