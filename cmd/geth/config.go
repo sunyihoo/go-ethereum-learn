@@ -24,6 +24,9 @@ import (
 	"reflect"
 	"unicode"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/external"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
@@ -139,11 +142,12 @@ func loadBaseConfig(ctx *cli.Context) gethConfig {
 
 func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	cfg := loadBaseConfig(ctx)
-	fmt.Print(cfg)
+	log.Info("base config", "CONFIG", cfg)
 	stack, err := node.New(&cfg.Node)
 	if err != nil {
 		utils.Fatalf("Failed to create the protocol stack: %v", err)
 	}
+	// Node doesn't by default populate account manager backends
 
 	// todo NOT implement
 	return stack, gethConfig{}
@@ -154,4 +158,23 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	stack, _ := makeConfigNode(ctx)
 
 	return stack
+}
+
+func setAccountManagerBackends(conf *node.Config, am *accounts.Manager, keydir string) error {
+	scryptN := keystore.StandardScryptN
+	scryptP := keystore.StandardScryptP
+	if conf.UseLightweightKDF {
+		scryptN = keystore.LightScryptN
+		scryptP = keystore.LightScryptP
+	}
+	fmt.Println(scryptN, scryptP)
+
+	// Assemble the supported backends
+	if len(conf.ExternalSigner) > 0 {
+		log.Info("Using external signer", "url", conf.ExternalSigner)
+		if extBackend, err := external.NewExternalBackend(conf.ExternalSigner); err == nil {
+			fmt.Println(extBackend)
+		}
+	}
+	return nil
 }

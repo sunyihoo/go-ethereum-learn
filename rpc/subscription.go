@@ -20,7 +20,9 @@ import (
 	crand "crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"math/rand"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -67,4 +69,29 @@ type Subscription struct {
 	ID        ID
 	namespace string
 	err       chan error // closed on unsubscribe
+}
+
+// ClientSubscription is a subscription established through the Client's Subscribe or
+// EthSubscribe methods.
+type ClientSubscription struct {
+	client    *Client
+	etype     reflect.Type
+	channel   reflect.Value
+	namespace string
+	subid     string
+
+	// The in channel receives notification values from client dispatcher.
+	in chan json.RawMessage
+
+	// The error channel receives the error from the forwarding loop.
+	// It is closed by Unsubscribe.
+	err     chan error
+	errOnce sync.Once
+
+	// Closing of the subscription is requested by sending on 'quit'. This is handled by
+	// the forwarding loop, which closes 'forwardDone' when it has stopped sending to
+	// sub.channel. Finally, 'unsubDone' is closed after unsubscribing on the server side.
+	quit        chan error
+	forwardDone chan struct{}
+	unsubDone   chan struct{}
 }
