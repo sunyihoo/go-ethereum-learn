@@ -16,12 +16,57 @@
 
 package rpc
 
-import "time"
+import (
+	"context"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+)
 
 const (
 	defaultBodyLimit = 5 * 1024 * 1024
 	contentType      = "application/json"
 )
+
+type httpConn struct {
+	client    *http.Client
+	url       string
+	closeOnce sync.Once
+	closeCh   chan interface{}
+	mu        sync.Mutex // protects headers
+	headers   http.Header
+	auth      HTTPAuth
+}
+
+// httpConn implements ServerCodec, but it is treated specially by Client
+// and some methods don't work. The panic() stubs here exist to ensure
+// this special treatment is correct.
+
+func (hc *httpConn) writeJSON(context.Context, interface{}, bool) error {
+	panic("writeJSON called on httpConn")
+}
+
+func (hc *httpConn) peerInfo() PeerInfo {
+	panic("peerInfo called on httpConn")
+}
+
+func (hc *httpConn) remoteAddr() string {
+	return hc.url
+}
+
+func (hc *httpConn) readBatch() ([]*jsonrpcMessage, bool, error) {
+	<-hc.closeCh
+	return nil, false, io.EOF
+}
+
+func (hc *httpConn) close() {
+	hc.closeOnce.Do(func() { close(hc.closeCh) })
+}
+
+func (hc *httpConn) closed() <-chan interface{} {
+	return hc.closeCh
+}
 
 // HTTPTimeouts represents the configuration params for the HTTP RPC server.
 type HTTPTimeouts struct {
@@ -62,4 +107,28 @@ var DefaultHTTPTimeouts = HTTPTimeouts{
 	ReadHeaderTimeout: 30 * time.Second,
 	WriteTimeout:      30 * time.Second,
 	IdleTimeout:       120 * time.Second,
+}
+
+func newClientTransportHTTP(endpoint string, cfg *clientConfig) reconnectFunc {
+	headers := make(http.Header, 2+len(cfg.httpHeaders))
+	headers.Set("accept", contentType)
+	headers.Set("content-type", contentType)
+	for key, values := range cfg.httpHeaders {
+		headers[key] = values
+	}
+
+	client := cfg.httpClient
+	if client == nil {
+		client = new(http.Client)
+	}
+	hc := &httpConn{
+		client:  client,
+		headers: headers,
+		url:     endpoint,
+		auth:    cfg.httpAuth,
+		closeCh: make(chan interface{}),
+	}
+	return func(ctx context.Context) (ServerCodec, error) {
+		return hc, nil
+	}
 }

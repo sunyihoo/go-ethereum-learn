@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"sync/atomic"
 )
 
@@ -106,25 +107,25 @@ func DialOptions(ctx context.Context, rawurl string, options ...ClientOption) (*
 	for _, opt := range options {
 		opt.applyOption(cfg)
 	}
-	fmt.Println(u)
-	//var reconnect reconnectFunc
-	//switch u.Scheme {
-	//case "http", "https":
-	//	reconnect = newClientTransportHTTP(rawurl, cfg)
-	//case "ws", "wss":
-	//	rc, err := newClientTransportWS(rawurl, cfg)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	reconnect = rc
-	//case "stdio":
-	//	reconnect = newClientTransportIO(os.Stdin, os.Stdout)
-	//case "":
-	//	reconnect = newClientTransportIPC(rawurl)
-	//default:
-	//	return nil, fmt.Errorf("no known transport for URL scheme %q", u.Scheme)
-	//}
-	//return newClient(ctx, cfg, reconnect)
+
+	var reconnect reconnectFunc
+	switch u.Scheme {
+	case "http", "https":
+		reconnect = newClientTransportHTTP(rawurl, cfg)
+	case "ws", "wss":
+		rc, err := newClientTransportWS(rawurl, cfg)
+		if err != nil {
+			return nil, err
+		}
+		reconnect = rc
+	case "stdio":
+		reconnect = newClientTransportIO(os.Stdin, os.Stdout)
+	case "":
+		reconnect = newClientTransportIPC(rawurl)
+	default:
+		return nil, fmt.Errorf("no known transport for URL scheme %q", u.Scheme)
+	}
+	return newClient(ctx, cfg, reconnect)
 	// todo here to start
 	return nil, err
 }
