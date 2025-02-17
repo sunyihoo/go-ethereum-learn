@@ -183,6 +183,12 @@ func setAccountManagerBackends(conf *node.Config, am *accounts.Manager, keydir s
 		}
 	}
 
+	// For now, we're using EITHER external signer OR local signers.
+	// If/when we implement some form of lockfile for USB and keystore wallets,
+	// we can have both, but it's very confusing for the user to see the same
+	// accounts in both externally and locally, plus very racey.
+	am.AddBackend(keystore.NewKeyStore(keydir, scryptN, scryptP))
+
 	// todo start here
 	return nil
 }

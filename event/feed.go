@@ -1,9 +1,12 @@
 package event
 
 import (
+	"errors"
 	"reflect"
 	"sync"
 )
+
+var errBadChannel = errors.New("event: Subscribe argument does not have sendable channel type")
 
 // Feed implements one-to-many subscriptions where the carrier of events is a channel.
 // Values sent to a Feed are delivered to all subscribed channels simultaneously.
@@ -33,6 +36,33 @@ func (f *Feed) init(etype reflect.Type) {
 	f.sendCases = caseList{{Chan: reflect.ValueOf(f.removeSub), Dir: reflect.SelectRecv}}
 }
 
+// Subscribe adds a channel to the feed. Future sends will be delivered on the channel
+// until the subscription is canceled. All channels added must have the same element type.
+//
+// The channel should have ample buffer space to avoid blocking other subscribers.
+// Slow subscribers are not dropped.
+func (f *Feed) Subscribe(channel interface{}) Subscription {
+	chanval := reflect.ValueOf(channel)
+	chantyp := chanval.Type()
+	if chantyp.Kind() != reflect.Chan || chantyp.ChanDir()&reflect.SendDir == 0 {
+		panic(errBadChannel)
+	}
+	sub := &feedSub{feed: f, channel: chanval, err: make(chan error, 1)}
+
+	f.once.Do(func() { f.init(chantyp.Elem()) })
+	if f.etype != chantyp.Elem() {
+		panic(feedTypeError{op: "Subscribe", got: chantyp, want: reflect.ChanOf(reflect.SendDir, f.etype)})
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Add the select case to the inbox.
+	// The next Send will add it to f.sendCases.
+	cas := reflect.SelectCase{Dir: reflect.SelectSend, Chan: chanval}
+	f.inbox = append(f.inbox, cas)
+	return sub
+}
+
 // This is the index of the first actual subscription channel in sendCases.
 // sendCases[0] is a SelectRecv case for the removeSub channel.
 const firstSubSendCase = 1
@@ -44,6 +74,29 @@ type feedTypeError struct {
 
 func (e feedTypeError) Error() string {
 	return "event: wrong type in " + e.op + " got " + e.got.String() + ", want " + e.want.String()
+}
+
+func (f *Feed) remove(sub *feedSub) {
+	// Delete from inbox first, which covers channels
+	// that have not been added to f.sendCases yet.
+	ch := sub.channel.Interface()
+	f.mu.Lock()
+	index := f.inbox.find(ch)
+	if index != -1 {
+		f.inbox = f.inbox.delete(index)
+		f.mu.Unlock()
+		return
+	}
+	f.mu.Unlock()
+
+	select {
+	case f.removeSub <- ch:
+		// Send will remove the channel from f.sendCases.
+	case <-f.sendLock:
+		// No Send is in progress, delete the channel now that we have the send lock.
+		f.sendCases = f.sendCases.delete(f.sendCases.find(ch))
+		f.sendLock <- struct{}{}
+	}
 }
 
 // Send delivers to all subscribed channels simultaneously.
@@ -108,6 +161,24 @@ func (f *Feed) Send(value interface{}) (nsent int) {
 	}
 	f.sendLock <- struct{}{}
 	return nsent
+}
+
+type feedSub struct {
+	feed    *Feed
+	channel reflect.Value
+	errOnce sync.Once
+	err     chan error
+}
+
+func (sub *feedSub) Unsubscribe() {
+	sub.errOnce.Do(func() {
+		sub.feed.remove(sub)
+		close(sub.err)
+	})
+}
+
+func (sub *feedSub) Err() <-chan error {
+	return sub.err
 }
 
 type caseList []reflect.SelectCase

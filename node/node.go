@@ -147,7 +147,7 @@ func New(conf *Config) (*Node, error) {
 	node.ws = newHTTPServer(node.log, rpc.DefaultHTTPTimeouts)
 	node.wsAuth = newHTTPServer(node.log, rpc.DefaultHTTPTimeouts)
 	node.ipc = newIPCServer(node.log, conf.IPCEndpoint())
-	
+
 	return node, nil
 }
 
@@ -170,6 +170,21 @@ func (n *Node) openDataDir() error {
 		return ErrDatadirUsed
 	}
 	return nil
+}
+
+// Config returns the configuration of node.
+func (n *Node) Config() *Config {
+	return n.config
+}
+
+// KeyStoreDir retrieves the key directory
+func (n *Node) KeyStoreDir() string {
+	return n.keyDir
+}
+
+// AccountManager retrieves the account manager used by the protocol stack.
+func (n *Node) AccountManager() *accounts.Manager {
+	return n.accman
 }
 
 // closeTrackingDB wraps the Close method of a database. When the database is closed by the
