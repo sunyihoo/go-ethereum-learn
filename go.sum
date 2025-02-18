@@ -12,6 +12,8 @@ github.com/consensys/gnark-crypto v0.13.0 h1:VPULb/v6bbYELAPTDFINEVaMTTybV5GLxDd
 github.com/consensys/gnark-crypto v0.13.0/go.mod h1:wKqwsieaKPThcFkHe0d0zMsbHEUWFmZcG7KBCse210o=
 github.com/cpuguy83/go-md2man/v2 v2.0.5 h1:ZtcqGrnekaHpVLArFSe4HK5DoKx1T0rq2DwVB0alcyc=
 github.com/cpuguy83/go-md2man/v2 v2.0.5/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
+github.com/crate-crypto/go-ipa v0.0.0-20240223125850-b1e8a79f509c h1:uQYC5Z1mdLRPrZhHjHxufI8+2UG/i25QG92j0Er9p6I=
+github.com/crate-crypto/go-ipa v0.0.0-20240223125850-b1e8a79f509c/go.mod h1:geZJZH3SzKCqnz5VT0q/DyIG/tvu/dZk+VIfXicupJs=
 github.com/crate-crypto/go-kzg-4844 v1.1.0 h1:EN/u9k2TF6OWSHrCCDBBU6GLNMq88OspHHlMnHfoyU4=
 github.com/crate-crypto/go-kzg-4844 v1.1.0/go.mod h1:JolLjpSff1tCCJKaJx4psrlEdlXuJEC996PL3tTAFks=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -21,6 +23,8 @@ github.com/deckarep/golang-set/v2 v2.7.0 h1:gIloKvD7yH2oip4VLhsv3JyLLFnC0Y2mlusg
 github.com/deckarep/golang-set/v2 v2.7.0/go.mod h1:VAky9rY/yGXJOLEDv3OMci+7wtDpOF4IN+y82NBOac4=
 github.com/ethereum/c-kzg-4844/bindings/go v0.0.0-20230126171313-363c7d7593b4 h1:B2mpK+MNqgPqk2/KNi1LbqwtZDy5F7iy0mynQiBr8VA=
 github.com/ethereum/c-kzg-4844/bindings/go v0.0.0-20230126171313-363c7d7593b4/go.mod h1:y4GA2JbAUama1S4QwYjC2hefgGLU8Ul0GMtL/ADMF1c=
+github.com/ethereum/go-verkle v0.2.2 h1:I2W0WjnrFUIzzVPwm8ykY+7pL2d4VhlsePn4j7cnFk8=
+github.com/ethereum/go-verkle v0.2.2/go.mod h1:M3b90YRnzqKyyzBEWJGqj8Qff4IDeXnzFw0P9bFw3uk=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/gballet/go-libpcsclite v0.0.0-20191108122812-4678299bea08 h1:f6D9Hr8xV8uYKlyuj8XIruxlh9WjVjdh1gIicAS7ays=
 github.com/gballet/go-libpcsclite v0.0.0-20191108122812-4678299bea08/go.mod h1:x7DCsMOv1taUwEWCzT4cmDeAkigA5/QCwUodaVOe8Ww=
@@ -54,8 +58,6 @@ github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839/go.mod h1
 github.com/jackpal/go-nat-pmp v1.0.2 h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
 github.com/jackpal/go-nat-pmp v1.0.2/go.mod h1:QPH045xvCAeXUZOxsnwmrtiCoxIr9eob+4orBN1SBKc=
 github.com/juju/gnuflag v0.0.0-20171113085948-2ce1bb71843d/go.mod h1:2PavIy+JPciBPrBUjwbNvtwB6RQlve+hkpll6QSNmOE=
-github.com/karalabe/hid v1.0.0 h1:+/CIMNXhSU/zIJgnIvBD2nKHxS/bnRHhhs9xBryLpPo=
-github.com/karalabe/hid v1.0.0/go.mod h1:Vr51f8rUOLYrfrWDFlV12GGQgM5AT8sVh+2fY4MPeu8=
 github.com/karalabe/hid v1.0.1-0.20240306101548-573246063e52 h1:msKODTL1m0wigztaqILOtla9HeW1ciscYG4xjLtvk5I=
 github.com/karalabe/hid v1.0.1-0.20240306101548-573246063e52/go.mod h1:qk1sX/IBgppQNcGCRoj90u6EGC056EBoIc1oEjCWla8=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
@@ -85,6 +87,8 @@ github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQD
 github.com/shirou/gopsutil v3.21.11+incompatible h1:+1+c1VGhc88SSonWP6foOcLhvnKlUeu/erjjvaPEYiI=
 github.com/shirou/gopsutil v3.21.11+incompatible/go.mod h1:5b4v6he4MtMOwMlS0TUMTu2PcXUg8+E1lC7eC3UO/RA=
 github.com/spkg/bom v0.0.0-20160624110644-59b7046e48ad/go.mod h1:qLr4V1qq6nMqFKkMo8ZTx3f+BZEkzsRUY10Xsm2mwU0=
+github.com/status-im/keycard-go v0.3.3 h1:qk/JHSkT9sMka+lVXrTOIVSgHIY7lDm46wrUqTsNa4s=
+github.com/status-im/keycard-go v0.3.3/go.mod h1:wlp8ZLbsmrF6g6WjugPAx+IzoLrkdf9+mHxBEeo3Hbg=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=

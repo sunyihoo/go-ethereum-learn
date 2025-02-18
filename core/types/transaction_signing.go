@@ -17,6 +17,7 @@
 package types
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"math/big"
@@ -49,6 +50,16 @@ func LatestSignerForChainID(chainID *big.Int) Signer {
 		signer = HomesteadSigner{}
 	}
 	return signer
+}
+
+// SignTx signs the transaction using the given signer and private key.
+func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, error) {
+	h := s.Hash(tx)
+	sig, err := crypto.Sign(h[:], prv)
+	if err != nil {
+		return nil, err
+	}
+	return tx.WithSignature(s, sig)
 }
 
 // Sender returns the address derived from the signature (V, R, S) using secp256k1

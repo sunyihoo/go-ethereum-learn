@@ -7,6 +7,113 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// Genesis hashes to enforce below configs on.
+var (
+	MainnetGenesisHash = common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
+	HoleskyGenesisHash = common.HexToHash("0xb5f7f912443c940f21fd611f12828d75b534364ed9e95ca4e307729a4661bde4")
+	SepoliaGenesisHash = common.HexToHash("0x25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9")
+)
+
+func newUint64(val uint64) *uint64 { return &val }
+
+var (
+	MainnetTerminalTotalDifficulty, _ = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
+
+	// MainnetChainConfig is the chain parameters to run a node on the main network.
+	MainnetChainConfig = &ChainConfig{
+		ChainID:                 big.NewInt(1),
+		HomesteadBlock:          big.NewInt(1_150_000),
+		DAOForkBlock:            big.NewInt(1_920_000),
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(2_463_000),
+		EIP155Block:             big.NewInt(2_675_000),
+		EIP158Block:             big.NewInt(2_675_000),
+		ByzantiumBlock:          big.NewInt(4_370_000),
+		ConstantinopleBlock:     big.NewInt(7_280_000),
+		PetersburgBlock:         big.NewInt(7_280_000),
+		IstanbulBlock:           big.NewInt(9_069_000),
+		MuirGlacierBlock:        big.NewInt(9_200_000),
+		BerlinBlock:             big.NewInt(12_244_000),
+		LondonBlock:             big.NewInt(12_965_000),
+		ArrowGlacierBlock:       big.NewInt(13_773_000),
+		GrayGlacierBlock:        big.NewInt(15_050_000),
+		TerminalTotalDifficulty: MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
+		ShanghaiTime:            newUint64(1681338455),
+		CancunTime:              newUint64(1710338135),
+		DepositContractAddress:  common.HexToAddress("0x00000000219ab540356cbb839cbe05303d7705fa"),
+		Ethash:                  new(EthashConfig),
+	}
+	// HoleskyChainConfig contains the chain parameters to run a node on the Holesky test network.
+	HoleskyChainConfig = &ChainConfig{
+		ChainID:                 big.NewInt(17000),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        nil,
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(0),
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            newUint64(1696000704),
+		CancunTime:              newUint64(1707305664),
+		Ethash:                  new(EthashConfig),
+	}
+	// SepoliaChainConfig contains the chain parameters to run a node on the Sepolia test network.
+	SepoliaChainConfig = &ChainConfig{
+		ChainID:                 big.NewInt(11155111),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(17_000_000_000_000_000),
+		MergeNetsplitBlock:      big.NewInt(1735371),
+		ShanghaiTime:            newUint64(1677557088),
+		CancunTime:              newUint64(1706655072),
+		Ethash:                  new(EthashConfig),
+	}
+
+	AllDevChainProtocolChanges = &ChainConfig{
+		ChainID:                 big.NewInt(1337),
+		HomesteadBlock:          big.NewInt(0),
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       big.NewInt(0),
+		GrayGlacierBlock:        big.NewInt(0),
+		ShanghaiTime:            newUint64(0),
+		CancunTime:              newUint64(0),
+		TerminalTotalDifficulty: big.NewInt(0),
+		PragueTime:              newUint64(0),
+	}
+)
+
 // ChainConfig is the core config which determines the blockchain settings.
 //
 // ChainConfig is stored in the database on a per block basis. This means

@@ -16,6 +16,8 @@
 
 package params
 
+import "github.com/ethereum/go-ethereum/common"
+
 // MainnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the main Ethereum network.
 var MainnetBootnodes = []string{
@@ -66,4 +68,24 @@ var V5Bootnodes = []string{
 	// Nimbus team's bootnodes
 	"enr:-LK4QA8FfhaAjlb_BXsXxSfiysR7R52Nhi9JBt4F8SPssu8hdE1BXQQEtVDC3qStCW60LSO7hEsVHv5zm8_6Vnjhcn0Bh2F0dG5ldHOIAAAAAAAAAACEZXRoMpC1MD8qAAAAAP__________gmlkgnY0gmlwhAN4aBKJc2VjcDI1NmsxoQJerDhsJ-KxZ8sHySMOCmTO6sHM3iCFQ6VMvLTe948MyYN0Y3CCI4yDdWRwgiOM", // 3.120.104.18 | aws-eu-central-1-frankfurt
 	"enr:-LK4QKWrXTpV9T78hNG6s8AM6IO4XH9kFT91uZtFg1GcsJ6dKovDOr1jtAAFPnS2lvNltkOGA9k29BUN7lFh_sjuc9QBh2F0dG5ldHOIAAAAAAAAAACEZXRoMpC1MD8qAAAAAP__________gmlkgnY0gmlwhANAdd-Jc2VjcDI1NmsxoQLQa6ai7y9PMN5hpLe5HmiJSlYzMuzP7ZhwRiwHvqNXdoN0Y3CCI4yDdWRwgiOM", // 3.64.117.223 | aws-eu-central-1-frankfurt}
+}
+
+const dnsPrefix = "enrtree://AKA3AM6LPBYEUDMVNU3BSVQJ5AD45Y7YPOHJLEF6W26QOE4VTUDPE@"
+
+// KnownDNSNetwork returns the address of a public DNS-based node list for the given
+// genesis hash and protocol. See https://github.com/ethereum/discv4-dns-lists for more
+// information.
+func KnownDNSNetwork(genesis common.Hash, protocol string) string {
+	var net string
+	switch genesis {
+	case MainnetGenesisHash:
+		net = "mainnet"
+	case SepoliaGenesisHash:
+		net = "sepolia"
+	case HoleskyGenesisHash:
+		net = "holesky"
+	default:
+		return ""
+	}
+	return dnsPrefix + protocol + "." + net + ".ethdisco.net"
 }

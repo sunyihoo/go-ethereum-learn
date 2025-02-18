@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2022 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,11 +14,12 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package rawdb
 
-import "errors"
+import "github.com/ethereum/go-ethereum/ethdb"
 
-var (
-	ErrDatadirUsed = errors.New("datadir already used by another process")
-	ErrNodeStopped = errors.New("node not started")
-)
+// ReadSkeletonSyncStatus retrieves the serialized sync status saved at shutdown.
+func ReadSkeletonSyncStatus(db ethdb.KeyValueReader) []byte {
+	data, _ := db.Get(skeletonSyncStatusKey)
+	return data
+}

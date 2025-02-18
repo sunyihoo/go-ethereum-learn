@@ -43,6 +43,34 @@ type clientConfig struct {
 	batchResponseLimit int
 }
 
+func (cfg *clientConfig) initHeaders() {
+	if cfg.httpHeaders == nil {
+		cfg.httpHeaders = make(http.Header)
+	}
+}
+
+func (cfg *clientConfig) setHeader(key, value string) {
+	cfg.initHeaders()
+	cfg.httpHeaders.Set(key, value)
+}
+
+type optionFunc func(*clientConfig)
+
+func (fn optionFunc) applyOption(opt *clientConfig) {
+	fn(opt)
+}
+
+// WithHeaders configures HTTP headers set by the RPC client. Headers set using this
+// option will be used for both HTTP and WebSocket connections.
+func WithHeaders(headers http.Header) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.initHeaders()
+		for k, vs := range headers {
+			cfg.httpHeaders[k] = vs
+		}
+	})
+}
+
 // A HTTPAuth function is called by the client whenever a HTTP request is sent.
 // The function must be safe for concurrent use.
 //

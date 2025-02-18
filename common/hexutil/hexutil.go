@@ -38,6 +38,7 @@ import (
 
 // Errors
 var (
+	ErrEmptyString   = &decError{"empty hex string"}
 	ErrSyntax        = &decError{"invalid hex string"}
 	ErrMissingPrefix = &decError{"hex string without 0x prefix"}
 	ErrOddLength     = &decError{"hex string of odd length"}
@@ -50,6 +51,30 @@ var (
 type decError struct{ msg string }
 
 func (err decError) Error() string { return err.msg }
+
+// Decode decodes a hex string with 0x prefix.
+func Decode(input string) ([]byte, error) {
+	if len(input) == 0 {
+		return nil, ErrEmptyString
+	}
+	if !has0xPrefix(input) {
+		return nil, ErrMissingPrefix
+	}
+	b, err := hex.DecodeString(input[2:])
+	if err != nil {
+		err = mapError(err)
+	}
+	return b, err
+}
+
+// MustDecode decodes a hex string with 0x prefix. It panics for invalid input.
+func MustDecode(input string) []byte {
+	dec, err := Decode(input)
+	if err != nil {
+		panic(err)
+	}
+	return dec
+}
 
 // Encode encodes b as a hex string with 0x prefix
 func Encode(b []byte) string {
@@ -91,6 +116,10 @@ func EncodeBig(bigint *big.Int) string {
 	} else {
 		return "-0x" + bigint.Text(16)[1:]
 	}
+}
+
+func has0xPrefix(input string) bool {
+	return len(input) >= 2 && input[0] == '0' && (input[1] == 'x' || input[1] == 'X')
 }
 
 const badNibble = ^uint64(0)

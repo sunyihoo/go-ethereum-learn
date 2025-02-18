@@ -17,6 +17,7 @@
 package utils
 
 import (
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -26,6 +27,50 @@ var (
 	NoUSBFlag = &cli.BoolFlag{
 		Name:     "nousb",
 		Usage:    "Disables monitoring for and managing USB hardware wallets (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	// Deprecated March 2022
+	LegacyWhitelistFlag = &cli.StringFlag{
+		Name:     "whitelist",
+		Usage:    "Comma separated block number-to-hash mappings to enforce (<number>=<hash>) (deprecated in favor of --eth.requiredblocks)",
+		Category: flags.DeprecatedCategory,
+	}
+	// Deprecated August 2023
+	TxLookupLimitFlag = &cli.Uint64Flag{
+		Name:     "txlookuplimit",
+		Usage:    "Number of recent blocks to maintain transactions index for (default = about one year, 0 = entire chain) (deprecated, use history.transactions instead)",
+		Value:    ethconfig.Defaults.TransactionHistory,
+		Category: flags.DeprecatedCategory,
+	}
+	// Light server and client settings, Deprecated November 2023
+	LightServeFlag = &cli.IntFlag{
+		Name:     "light.serve",
+		Usage:    "Maximum percentage of time allowed for serving LES requests (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	LightIngressFlag = &cli.IntFlag{
+		Name:     "light.ingress",
+		Usage:    "Incoming bandwidth limit for serving light clients (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	LightEgressFlag = &cli.IntFlag{
+		Name:     "light.egress",
+		Usage:    "Outgoing bandwidth limit for serving light clients (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	LightMaxPeersFlag = &cli.IntFlag{
+		Name:     "light.maxpeers",
+		Usage:    "Maximum number of light clients to serve, or light servers to attach to (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	LightNoPruneFlag = &cli.BoolFlag{
+		Name:     "light.nopruning",
+		Usage:    "Disable ancient light chain data pruning (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	LightNoSyncServeFlag = &cli.BoolFlag{
+		Name:     "light.nosyncserve",
+		Usage:    "Enables serving light clients before syncing (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
 	// Deprecated November 2023
@@ -40,6 +85,25 @@ var (
 		Usage:    "Prepends log messages with call-site location (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
+
+	MinerEtherbaseFlag = &cli.StringFlag{
+		Name:     "miner.etherbase",
+		Usage:    "0x prefixed public address for block mining rewards (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+	// Deprecated February 2024
+	MinerNewPayloadTimeoutFlag = &cli.DurationFlag{
+		Name:     "miner.newpayload-timeout",
+		Usage:    "Specify the maximum time allowance for creating a new payload (deprecated)",
+		Value:    ethconfig.Defaults.Miner.Recommit,
+		Category: flags.DeprecatedCategory,
+	}
+	MiningEnabledFlag = &cli.BoolFlag{
+		Name:     "mine",
+		Usage:    "Enable mining (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
+
 	// Deprecated Oct 2024
 	EnablePersonal = &cli.BoolFlag{
 		Name:     "rpc.enabledeprecatedpersonal",

@@ -187,6 +187,44 @@ func (n *Node) AccountManager() *accounts.Manager {
 	return n.accman
 }
 
+// OpenDatabaseWithFreezer opens an existing database with the given name (or
+// creates one if no previous can be found) from within the node's data directory,
+// also attaching a chain freezer to it that moves ancient chain data from the
+// database to immutable append-only files. If the node is an ephemeral one, a
+// memory database is returned.
+func (n *Node) OpenDatabaseWithFreezer(name string, cache, handles int, ancient string, namespace string, readonly bool) (ethdb.Database, error) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	if n.state == closedState {
+		return nil, ErrNodeStopped
+	}
+	var db ethdb.Database
+	var err error
+	// todo start here
+	//if n.config.DataDir == "" {
+	//	db, err = rawdb.NewDatabaseWithFreezer(memorydb.New(), "", namespace, readonly)
+	//} else {
+	//	db, err = openDatabase(openOptions{
+	//		Type:              n.config.DBEngine,
+	//		Directory:         n.ResolvePath(name),
+	//		AncientsDirectory: n.ResolveAncient(name, ancient),
+	//		Namespace:         namespace,
+	//		Cache:             cache,
+	//		Handles:           handles,
+	//		ReadOnly:          readonly,
+	//	})
+	//}
+	//if err == nil {
+	//	db = n.wrapDatabase(db)
+	//}
+	return db, err
+}
+
+// ResolvePath returns the absolute path of a resource in the instance directory.
+func (n *Node) ResolvePath(x string) string {
+	return n.config.ResolvePath(x)
+}
+
 // closeTrackingDB wraps the Close method of a database. When the database is closed by the
 // service, the wrapper removes it from the node's database map. This ensures that Node
 // won't auto-close the database if it is closed by the service that opened it.

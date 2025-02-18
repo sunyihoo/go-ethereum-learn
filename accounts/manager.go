@@ -158,6 +158,14 @@ func (am *Manager) update() {
 	}
 }
 
+// Backends retrieves the backend(s) with the given type from the account manager.
+func (am *Manager) Backends(kind reflect.Type) []Backend {
+	am.lock.RLock()
+	defer am.lock.RUnlock()
+
+	return am.backends[kind]
+}
+
 // merge is a sorted analogue of append for wallets, where the ordering of the
 // origin list is preserved by inserting new wallets at the correct position.
 //

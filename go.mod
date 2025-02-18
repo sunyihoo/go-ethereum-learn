@@ -8,8 +8,10 @@ require (
 	github.com/crate-crypto/go-kzg-4844 v1.1.0
 	github.com/deckarep/golang-set/v2 v2.7.0
 	github.com/ethereum/c-kzg-4844/bindings/go v0.0.0-20230126171313-363c7d7593b4
+	github.com/ethereum/go-verkle v0.2.2
 	github.com/gballet/go-libpcsclite v0.0.0-20191108122812-4678299bea08
 	github.com/gofrs/flock v0.12.1
+	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/holiman/uint256 v1.3.2
@@ -21,11 +23,13 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/naoina/toml v0.1.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
+	github.com/status-im/keycard-go v0.3.3
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/urfave/cli/v2 v2.27.5
 	golang.org/x/crypto v0.33.0
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/sys v0.30.0
+	golang.org/x/text v0.22.0
 	google.golang.org/protobuf v1.36.5
 )
 
@@ -34,8 +38,8 @@ require (
 	github.com/bits-and-blooms/bitset v1.7.0 // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
+	github.com/crate-crypto/go-ipa v0.0.0-20240223125850-b1e8a79f509c // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect

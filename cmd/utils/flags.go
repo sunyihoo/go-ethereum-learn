@@ -18,23 +18,46 @@
 package utils
 
 import (
+	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"math"
+	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
+	godebug "runtime/debug"
+	"strconv"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/fdlimit"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
+	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/gasprice"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/ethdb/remotedb"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	pcsclite "github.com/gballet/go-libpcsclite"
+	gopsutil "github.com/shirou/gopsutil/mem"
 	"github.com/urfave/cli/v2"
 )
 
@@ -54,10 +77,20 @@ var (
 		Value:    flags.DirectoryString(node.DefaultDataDir()),
 		Category: flags.EthCategory,
 	}
+	RemoteDBFlag = &cli.StringFlag{
+		Name:     "remotedb",
+		Usage:    "URL for remote database",
+		Category: flags.LoggingCategory,
+	}
 	DBEngineFlag = &cli.StringFlag{
 		Name:     "db.engine",
 		Usage:    "Backing database implementation to use ('pebble' or 'leveldb')",
 		Value:    node.DefaultConfig.DBEngine,
+		Category: flags.EthCategory,
+	}
+	AncientFlag = &flags.DirectoryFlag{
+		Name:     "datadir.ancient",
+		Usage:    "Root directory for ancient data (default = inside chaindata)",
 		Category: flags.EthCategory,
 	}
 	KeyStoreDirFlag = &flags.DirectoryFlag{
@@ -104,6 +137,12 @@ var (
 		Usage:    "Ephemeral proof-of-authority network with a pre-funded developer account, mining enabled",
 		Category: flags.DevCategory,
 	}
+	DeveloperGasLimitFlag = &cli.Uint64Flag{
+		Name:     "dev.gaslimit",
+		Usage:    "Initial block gas limit",
+		Value:    11500000,
+		Category: flags.DevCategory,
+	}
 
 	IdentityFlag = &cli.StringFlag{
 		Name:     "identity",
@@ -111,10 +150,140 @@ var (
 		Category: flags.NetworkingCategory,
 	}
 
+	// Dump command options.
+
+	SnapshotFlag = &cli.BoolFlag{
+		Name:     "snapshot",
+		Usage:    `Enables snapshot-database mode (default = enable)`,
+		Value:    true,
+		Category: flags.EthCategory,
+	}
 	LightKDFFlag = &cli.BoolFlag{
 		Name:     "lightkdf",
 		Usage:    "Reduce key-derivation RAM & CPU usage at some expense of KDF strength",
 		Category: flags.AccountCategory,
+	}
+	EthRequiredBlocksFlag = &cli.StringFlag{
+		Name:     "eth.requiredblocks",
+		Usage:    "Comma separated block number-to-hash mappings to require for peering (<number>=<hash>)",
+		Category: flags.EthCategory,
+	}
+
+	SyncModeFlag = &cli.StringFlag{
+		Name:     "syncmode",
+		Usage:    `Blockchain sync mode ("snap" or "full")`,
+		Value:    ethconfig.Defaults.SyncMode.String(),
+		Category: flags.StateCategory,
+	}
+	GCModeFlag = &cli.StringFlag{
+		Name:     "gcmode",
+		Usage:    `Blockchain garbage collection mode, only relevant in state.scheme=hash ("full", "archive")`,
+		Value:    "full",
+		Category: flags.StateCategory,
+	}
+	StateSchemeFlag = &cli.StringFlag{
+		Name:     "state.scheme",
+		Usage:    "Scheme to use for storing ethereum state ('hash' or 'path')",
+		Category: flags.StateCategory,
+	}
+	StateHistoryFlag = &cli.Uint64Flag{
+		Name:     "history.state",
+		Usage:    "Number of recent blocks to retain state history for (default = 90,000 blocks, 0 = entire chain)",
+		Value:    ethconfig.Defaults.StateHistory,
+		Category: flags.StateCategory,
+	}
+	TransactionHistoryFlag = &cli.Uint64Flag{
+		Name:     "history.transactions",
+		Usage:    "Number of recent blocks to maintain transactions index for (default = about one year, 0 = entire chain)",
+		Value:    ethconfig.Defaults.TransactionHistory,
+		Category: flags.StateCategory,
+	}
+
+	// Beacon client light sync settings
+
+	// Transaction pool settings
+	TxPoolLocalsFlag = &cli.StringFlag{
+		Name:     "txpool.locals",
+		Usage:    "Comma separated accounts to treat as locals (no flush, priority inclusion)",
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolNoLocalsFlag = &cli.BoolFlag{
+		Name:     "txpool.nolocals",
+		Usage:    "Disables price exemptions for locally submitted transactions",
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolJournalFlag = &cli.StringFlag{
+		Name:     "txpool.journal",
+		Usage:    "Disk journal for local transaction to survive node restarts",
+		Value:    ethconfig.Defaults.TxPool.Journal,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolRejournalFlag = &cli.DurationFlag{
+		Name:     "txpool.rejournal",
+		Usage:    "Time interval to regenerate the local transaction journal",
+		Value:    ethconfig.Defaults.TxPool.Rejournal,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolPriceLimitFlag = &cli.Uint64Flag{
+		Name:     "txpool.pricelimit",
+		Usage:    "Minimum gas price tip to enforce for acceptance into the pool",
+		Value:    ethconfig.Defaults.TxPool.PriceLimit,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolPriceBumpFlag = &cli.Uint64Flag{
+		Name:     "txpool.pricebump",
+		Usage:    "Price bump percentage to replace an already existing transaction",
+		Value:    ethconfig.Defaults.TxPool.PriceBump,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolAccountSlotsFlag = &cli.Uint64Flag{
+		Name:     "txpool.accountslots",
+		Usage:    "Minimum number of executable transaction slots guaranteed per account",
+		Value:    ethconfig.Defaults.TxPool.AccountSlots,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolGlobalSlotsFlag = &cli.Uint64Flag{
+		Name:     "txpool.globalslots",
+		Usage:    "Maximum number of executable transaction slots for all accounts",
+		Value:    ethconfig.Defaults.TxPool.GlobalSlots,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolAccountQueueFlag = &cli.Uint64Flag{
+		Name:     "txpool.accountqueue",
+		Usage:    "Maximum number of non-executable transaction slots permitted per account",
+		Value:    ethconfig.Defaults.TxPool.AccountQueue,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolGlobalQueueFlag = &cli.Uint64Flag{
+		Name:     "txpool.globalqueue",
+		Usage:    "Maximum number of non-executable transaction slots for all accounts",
+		Value:    ethconfig.Defaults.TxPool.GlobalQueue,
+		Category: flags.TxPoolCategory,
+	}
+	TxPoolLifetimeFlag = &cli.DurationFlag{
+		Name:     "txpool.lifetime",
+		Usage:    "Maximum amount of time non-executable transaction are queued",
+		Value:    ethconfig.Defaults.TxPool.Lifetime,
+		Category: flags.TxPoolCategory,
+	}
+	// Blob transaction pool settings
+	BlobPoolDataDirFlag = &cli.StringFlag{
+		Name:     "blobpool.datadir",
+		Usage:    "Data directory to store blob transactions in",
+		Value:    ethconfig.Defaults.BlobPool.Datadir,
+		Category: flags.BlobPoolCategory,
+	}
+	BlobPoolDataCapFlag = &cli.Uint64Flag{
+		Name:     "blobpool.datacap",
+		Usage:    "Disk space to allocate for pending blob transactions (soft limit)",
+		Value:    ethconfig.Defaults.BlobPool.Datacap,
+		Category: flags.BlobPoolCategory,
+	}
+	BlobPoolPriceBumpFlag = &cli.Uint64Flag{
+		Name:     "blobpool.pricebump",
+		Usage:    "Price bump percentage to replace an already existing blob transaction",
+		Value:    ethconfig.Defaults.BlobPool.PriceBump,
+		Category: flags.BlobPoolCategory,
 	}
 
 	// Performance tuning settings
@@ -124,6 +293,89 @@ var (
 		Value:    1024,
 		Category: flags.PerfCategory,
 	}
+	CacheDatabaseFlag = &cli.IntFlag{
+		Name:     "cache.database",
+		Usage:    "Percentage of cache memory allowance to use for database io",
+		Value:    50,
+		Category: flags.PerfCategory,
+	}
+	CacheTrieFlag = &cli.IntFlag{
+		Name:     "cache.trie",
+		Usage:    "Percentage of cache memory allowance to use for trie caching (default = 15% full mode, 30% archive mode)",
+		Value:    15,
+		Category: flags.PerfCategory,
+	}
+	CacheGCFlag = &cli.IntFlag{
+		Name:     "cache.gc",
+		Usage:    "Percentage of cache memory allowance to use for trie pruning (default = 25% full mode, 0% archive mode)",
+		Value:    25,
+		Category: flags.PerfCategory,
+	}
+	CacheSnapshotFlag = &cli.IntFlag{
+		Name:     "cache.snapshot",
+		Usage:    "Percentage of cache memory allowance to use for snapshot caching (default = 10% full mode, 20% archive mode)",
+		Value:    10,
+		Category: flags.PerfCategory,
+	}
+	CacheNoPrefetchFlag = &cli.BoolFlag{
+		Name:     "cache.noprefetch",
+		Usage:    "Disable heuristic state prefetch during block import (less CPU and disk IO, more time waiting for data)",
+		Category: flags.PerfCategory,
+	}
+	CachePreimagesFlag = &cli.BoolFlag{
+		Name:     "cache.preimages",
+		Usage:    "Enable recording the SHA3/keccak preimages of trie keys",
+		Category: flags.PerfCategory,
+	}
+	CacheLogSizeFlag = &cli.IntFlag{
+		Name:     "cache.blocklogs",
+		Usage:    "Size (in number of blocks) of the log cache for filtering",
+		Category: flags.PerfCategory,
+		Value:    ethconfig.Defaults.FilterLogCacheSize,
+	}
+
+	FDLimitFlag = &cli.IntFlag{
+		Name:     "fdlimit",
+		Usage:    "Raise the open file descriptor resource limit (default = system fd limit)",
+		Category: flags.PerfCategory,
+	}
+	CryptoKZGFlag = &cli.StringFlag{
+		Name:     "crypto.kzg",
+		Usage:    "KZG library implementation to use; gokzg (recommended) or ckzg",
+		Value:    "gokzg",
+		Category: flags.PerfCategory,
+	}
+
+	// Miner settings
+	MinerGasLimitFlag = &cli.Uint64Flag{
+		Name:     "miner.gaslimit",
+		Usage:    "Target gas ceiling for mined blocks",
+		Value:    ethconfig.Defaults.Miner.GasCeil,
+		Category: flags.MinerCategory,
+	}
+	MinerGasPriceFlag = &flags.BigFlag{
+		Name:     "miner.gasprice",
+		Usage:    "Minimum gas price for mining a transaction",
+		Value:    ethconfig.Defaults.Miner.GasPrice,
+		Category: flags.MinerCategory,
+	}
+	MinerExtraDataFlag = &cli.StringFlag{
+		Name:     "miner.extradata",
+		Usage:    "Block extra data set by the miner (default = client version)",
+		Category: flags.MinerCategory,
+	}
+	MinerRecommitIntervalFlag = &cli.DurationFlag{
+		Name:     "miner.recommit",
+		Usage:    "Time interval to recreate the block being mined",
+		Value:    ethconfig.Defaults.Miner.Recommit,
+		Category: flags.MinerCategory,
+	}
+	MinerPendingFeeRecipientFlag = &cli.StringFlag{
+		Name:     "miner.pending.feeRecipient",
+		Usage:    "0x prefixed public address for the pending block producer (not used for actual block production)",
+		Category: flags.MinerCategory,
+	}
+
 	// Account settings
 	PasswordFileFlag = &cli.PathFlag{
 		Name:      "password",
@@ -138,6 +390,43 @@ var (
 		Category: flags.AccountCategory,
 	}
 
+	// EVM settings
+	VMEnableDebugFlag = &cli.BoolFlag{
+		Name:     "vmdebug",
+		Usage:    "Record information useful for VM and contract debugging",
+		Category: flags.VMCategory,
+	}
+	VMTraceFlag = &cli.StringFlag{
+		Name:     "vmtrace",
+		Usage:    "Name of tracer which should record internal VM operations (costly)",
+		Category: flags.VMCategory,
+	}
+	VMTraceJsonConfigFlag = &cli.StringFlag{
+		Name:     "vmtrace.jsonconfig",
+		Usage:    "Tracer configuration (JSON)",
+		Value:    "{}",
+		Category: flags.VMCategory,
+	}
+
+	// API options.
+	RPCGlobalGasCapFlag = &cli.Uint64Flag{
+		Name:     "rpc.gascap",
+		Usage:    "Sets a cap on gas that can be used in eth_call/estimateGas (0=infinite)",
+		Value:    ethconfig.Defaults.RPCGasCap,
+		Category: flags.APICategory,
+	}
+	RPCGlobalEVMTimeoutFlag = &cli.DurationFlag{
+		Name:     "rpc.evmtimeout",
+		Usage:    "Sets a timeout used for eth_call (0=infinite)",
+		Value:    ethconfig.Defaults.RPCEVMTimeout,
+		Category: flags.APICategory,
+	}
+	RPCGlobalTxFeeCapFlag = &cli.Float64Flag{
+		Name:     "rpc.txfeecap",
+		Usage:    "Sets a cap on transaction fee (in ether) that can be sent via the RPC APIs (0 = no cap)",
+		Value:    ethconfig.Defaults.RPCTxFeeCap,
+		Category: flags.APICategory,
+	}
 	// Authenticated RPC HTTP settings
 	AuthListenFlag = &cli.StringFlag{
 		Name:     "authrpc.addr",
@@ -161,6 +450,20 @@ var (
 		Name:     "authrpc.jwtsecret",
 		Usage:    "Path to a JWT secret to use for authenticated RPC endpoints",
 		Category: flags.APICategory,
+	}
+
+	// Logging and debug settings
+	EthStatsURLFlag = &cli.StringFlag{
+		Name:     "ethstats",
+		Usage:    "Reporting URL of a ethstats service (nodename:secret@host:port)",
+		Category: flags.MetricsCategory,
+	}
+	// MISC settings
+	SyncTargetFlag = &cli.StringFlag{
+		Name:      "synctarget",
+		Usage:     `Hash of the block to full sync to (dev testing feature)`,
+		TakesFile: true,
+		Category:  flags.MiscCategory,
 	}
 
 	// RPC settings
@@ -345,12 +648,53 @@ var (
 		Usage:    "Restricts network communication to the given IP networks (CIDR masks)",
 		Category: flags.NetworkingCategory,
 	}
+	DNSDiscoveryFlag = &cli.StringFlag{
+		Name:     "discovery.dns",
+		Usage:    "Sets DNS discovery entry points (use \"\" to disable DNS)",
+		Category: flags.NetworkingCategory,
+	}
 	DiscoveryPortFlag = &cli.IntFlag{
 		Name:     "discovery.port",
 		Usage:    "Use a custom UDP port for P2P discovery",
 		Value:    30303,
 		Category: flags.NetworkingCategory,
 	}
+
+	// Console
+	HttpHeaderFlag = &cli.StringSliceFlag{
+		Name:     "header",
+		Aliases:  []string{"H"},
+		Usage:    "Pass custom headers to the RPC server when using --" + RemoteDBFlag.Name + " or the geth attach console. This flag can be given multiple times.",
+		Category: flags.APICategory,
+	}
+
+	// Gas price oracle settings
+	GpoBlocksFlag = &cli.IntFlag{
+		Name:     "gpo.blocks",
+		Usage:    "Number of recent blocks to check for gas prices",
+		Value:    ethconfig.Defaults.GPO.Blocks,
+		Category: flags.GasPriceCategory,
+	}
+	GpoPercentileFlag = &cli.IntFlag{
+		Name:     "gpo.percentile",
+		Usage:    "Suggested gas price is the given percentile of a set of recent transaction gas prices",
+		Value:    ethconfig.Defaults.GPO.Percentile,
+		Category: flags.GasPriceCategory,
+	}
+	GpoMaxGasPriceFlag = &cli.Int64Flag{
+		Name:     "gpo.maxprice",
+		Usage:    "Maximum transaction priority fee (or gasprice before London fork) to be recommended by gpo",
+		Value:    ethconfig.Defaults.GPO.MaxPrice.Int64(),
+		Category: flags.GasPriceCategory,
+	}
+	GpoIgnoreGasPriceFlag = &cli.Int64Flag{
+		Name:     "gpo.ignoreprice",
+		Usage:    "Gas price below which gpo will ignore transactions",
+		Value:    ethconfig.Defaults.GPO.IgnorePrice.Int64(),
+		Category: flags.GasPriceCategory,
+	}
+
+	// Metrics flags
 )
 
 // setNodeKey creates a node key from set command line flags, either loading it
@@ -590,6 +934,75 @@ func setIPC(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
+// setLes shows the deprecation warnings for LES flags.
+func setLes(ctx *cli.Context, cfg *ethconfig.Config) {
+	if ctx.IsSet(LightServeFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightServeFlag.Name)
+	}
+	if ctx.IsSet(LightIngressFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightIngressFlag.Name)
+	}
+	if ctx.IsSet(LightEgressFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightEgressFlag.Name)
+	}
+	if ctx.IsSet(LightMaxPeersFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightMaxPeersFlag.Name)
+	}
+	if ctx.IsSet(LightNoPruneFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightNoPruneFlag.Name)
+	}
+	if ctx.IsSet(LightNoSyncServeFlag.Name) {
+		log.Warn("The light server has been deprecated, please remove this flag", "flag", LightNoSyncServeFlag.Name)
+	}
+}
+
+// MakeDatabaseHandles raises out the number of allowed file handles per process
+// for Geth and returns half of the allowance to assign to the database.
+func MakeDatabaseHandles(max int) int {
+	limit, err := fdlimit.Maximum()
+	if err != nil {
+		Fatalf("Failed to retrieve file descriptor allowance: %v", err)
+	}
+	switch {
+	case max == 0:
+		// User didn't specify a meaningful value, use system limits
+	case max < 128:
+		// User specified something unhealthy, just use system defaults
+		log.Error("File descriptor limit invalid (<128)", "had", max, "updated", limit)
+	case max > limit:
+		// User requested more than the OS allows, notify that we can't allocate it
+		log.Warn("Requested file descriptors denied by OS", "req", max, "limit", limit)
+	default:
+		// User limit is meaningful and within allowed range, use that
+		limit = max
+	}
+	raised, err := fdlimit.Raise(uint64(limit))
+	if err != nil {
+		Fatalf("Failed to raise file descriptor allowance: %v", err)
+	}
+	return int(raised / 2) // Leave half for networking and other stuff
+}
+
+// setEtherbase retrieves the etherbase from the directly specified command line flags.
+func setEtherbase(ctx *cli.Context, cfg *ethconfig.Config) {
+	if ctx.IsSet(MinerEtherbaseFlag.Name) {
+		log.Warn("Option --miner.etherbase is deprecated as the etherbase is set by the consensus client post-merge")
+	}
+	if !ctx.IsSet(MinerPendingFeeRecipientFlag.Name) {
+		return
+	}
+	addr := ctx.String(MinerPendingFeeRecipientFlag.Name)
+	if strings.HasPrefix(addr, "0x") || strings.HasPrefix(addr, "0X") {
+		addr = addr[2:]
+	}
+	b, err := hex.DecodeString(addr)
+	if err != nil || len(b) != common.AddressLength {
+		Fatalf("-%s: invalid pending block producer address %q", MinerPendingFeeRecipientFlag.Name, addr)
+		return
+	}
+	cfg.Miner.PendingFeeRecipient = common.BytesToAddress(b)
+}
+
 func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
 	setNodeKey(ctx, cfg)
 	setNAT(ctx, cfg)
@@ -724,6 +1137,125 @@ func SetDataDir(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
+func setGPO(ctx *cli.Context, cfg *gasprice.Config) {
+	if ctx.IsSet(GpoBlocksFlag.Name) {
+		cfg.Blocks = ctx.Int(GpoBlocksFlag.Name)
+	}
+	if ctx.IsSet(GpoPercentileFlag.Name) {
+		cfg.Percentile = ctx.Int(GpoPercentileFlag.Name)
+	}
+	if ctx.IsSet(GpoMaxGasPriceFlag.Name) {
+		cfg.MaxPrice = big.NewInt(ctx.Int64(GpoMaxGasPriceFlag.Name))
+	}
+	if ctx.IsSet(GpoIgnoreGasPriceFlag.Name) {
+		cfg.IgnorePrice = big.NewInt(ctx.Int64(GpoIgnoreGasPriceFlag.Name))
+	}
+}
+func setTxPool(ctx *cli.Context, cfg *legacypool.Config) {
+	if ctx.IsSet(TxPoolLocalsFlag.Name) {
+		locals := strings.Split(ctx.String(TxPoolLocalsFlag.Name), ",")
+		for _, account := range locals {
+			if trimmed := strings.TrimSpace(account); !common.IsHexAddress(trimmed) {
+				Fatalf("Invalid account in --txpool.locals: %s", trimmed)
+			} else {
+				cfg.Locals = append(cfg.Locals, common.HexToAddress(account))
+			}
+		}
+	}
+	if ctx.IsSet(TxPoolNoLocalsFlag.Name) {
+		cfg.NoLocals = ctx.Bool(TxPoolNoLocalsFlag.Name)
+	}
+	if ctx.IsSet(TxPoolJournalFlag.Name) {
+		cfg.Journal = ctx.String(TxPoolJournalFlag.Name)
+	}
+	if ctx.IsSet(TxPoolRejournalFlag.Name) {
+		cfg.Rejournal = ctx.Duration(TxPoolRejournalFlag.Name)
+	}
+	if ctx.IsSet(TxPoolPriceLimitFlag.Name) {
+		cfg.PriceLimit = ctx.Uint64(TxPoolPriceLimitFlag.Name)
+	}
+	if ctx.IsSet(TxPoolPriceBumpFlag.Name) {
+		cfg.PriceBump = ctx.Uint64(TxPoolPriceBumpFlag.Name)
+	}
+	if ctx.IsSet(TxPoolAccountSlotsFlag.Name) {
+		cfg.AccountSlots = ctx.Uint64(TxPoolAccountSlotsFlag.Name)
+	}
+	if ctx.IsSet(TxPoolGlobalSlotsFlag.Name) {
+		cfg.GlobalSlots = ctx.Uint64(TxPoolGlobalSlotsFlag.Name)
+	}
+	if ctx.IsSet(TxPoolAccountQueueFlag.Name) {
+		cfg.AccountQueue = ctx.Uint64(TxPoolAccountQueueFlag.Name)
+	}
+	if ctx.IsSet(TxPoolGlobalQueueFlag.Name) {
+		cfg.GlobalQueue = ctx.Uint64(TxPoolGlobalQueueFlag.Name)
+	}
+	if ctx.IsSet(TxPoolLifetimeFlag.Name) {
+		cfg.Lifetime = ctx.Duration(TxPoolLifetimeFlag.Name)
+	}
+}
+
+func setBlobPool(ctx *cli.Context, cfg *blobpool.Config) {
+	if ctx.IsSet(BlobPoolDataDirFlag.Name) {
+		cfg.Datadir = ctx.String(BlobPoolDataDirFlag.Name)
+	}
+	if ctx.IsSet(BlobPoolDataCapFlag.Name) {
+		cfg.Datacap = ctx.Uint64(BlobPoolDataCapFlag.Name)
+	}
+	if ctx.IsSet(BlobPoolPriceBumpFlag.Name) {
+		cfg.PriceBump = ctx.Uint64(BlobPoolPriceBumpFlag.Name)
+	}
+}
+
+func setMiner(ctx *cli.Context, cfg *miner.Config) {
+	if ctx.Bool(MiningEnabledFlag.Name) {
+		log.Warn("The flag --mine is deprecated and will be removed")
+	}
+	if ctx.IsSet(MinerExtraDataFlag.Name) {
+		cfg.ExtraData = []byte(ctx.String(MinerExtraDataFlag.Name))
+	}
+	if ctx.IsSet(MinerGasLimitFlag.Name) {
+		cfg.GasCeil = ctx.Uint64(MinerGasLimitFlag.Name)
+	}
+	if ctx.IsSet(MinerGasPriceFlag.Name) {
+		cfg.GasPrice = flags.GlobalBig(ctx, MinerGasPriceFlag.Name)
+	}
+	if ctx.IsSet(MinerRecommitIntervalFlag.Name) {
+		cfg.Recommit = ctx.Duration(MinerRecommitIntervalFlag.Name)
+	}
+	if ctx.IsSet(MinerNewPayloadTimeoutFlag.Name) {
+		log.Warn("The flag --miner.newpayload-timeout is deprecated and will be removed, please use --miner.recommit")
+		cfg.Recommit = ctx.Duration(MinerNewPayloadTimeoutFlag.Name)
+	}
+}
+
+func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
+	requiredBlocks := ctx.String(EthRequiredBlocksFlag.Name)
+	if requiredBlocks == "" {
+		if ctx.IsSet(LegacyWhitelistFlag.Name) {
+			log.Warn("The flag --whitelist is deprecated and will be removed, please use --eth.requiredblocks")
+			requiredBlocks = ctx.String(LegacyWhitelistFlag.Name)
+		} else {
+			return
+		}
+	}
+	cfg.RequiredBlocks = make(map[uint64]common.Hash)
+	for _, entry := range strings.Split(requiredBlocks, ",") {
+		parts := strings.Split(entry, "=")
+		if len(parts) != 2 {
+			Fatalf("Invalid required block entry: %s", entry)
+		}
+		number, err := strconv.ParseUint(parts[0], 0, 64)
+		if err != nil {
+			Fatalf("Invalid required block number %s: %v", parts[0], err)
+		}
+		var hash common.Hash
+		if err = hash.UnmarshalText([]byte(parts[1])); err != nil {
+			Fatalf("Invalid required block hash %s: %v", parts[1], err)
+		}
+		cfg.RequiredBlocks[number] = hash
+	}
+}
+
 // CheckExclusive verifies that only a single instance of the provided flags was
 // set by the user. Each flag might optionally be followed by a string type to
 // specialize it further.
@@ -762,4 +1294,347 @@ func CheckExclusive(ctx *cli.Context, args ...interface{}) {
 	if len(set) > 1 {
 		Fatalf("Flags %v can't be used at the same time", strings.Join(set, ", "))
 	}
+}
+
+// SetEthConfig applies eth-related command line flags to the config.
+func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
+	// Avoid conflicting network flags
+	CheckExclusive(ctx, MainnetFlag, DeveloperFlag, SepoliaFlag, HoleskyFlag)
+	CheckExclusive(ctx, DeveloperFlag, ExternalSignerFlag) // Can't use both ephemeral unlocked and external signer
+
+	// Set configurations from CLI flags
+	setEtherbase(ctx, cfg)
+	setGPO(ctx, &cfg.GPO)
+	setTxPool(ctx, &cfg.TxPool)
+	setBlobPool(ctx, &cfg.BlobPool)
+	setMiner(ctx, &cfg.Miner)
+	setRequiredBlocks(ctx, cfg)
+	setLes(ctx, cfg)
+
+	// TODO learn there
+	// Cap the cache allowance and tune the garbage collector
+	mem, err := gopsutil.VirtualMemory()
+	if err == nil {
+		if 32<<(^uintptr(0)>>63) == 32 && mem.Total > 2*1024*1024*1024 {
+			log.Warn("Lowering memory allowance on 32bit arch", "available", mem.Total/1024/1024, "addressable", 2*1024)
+			mem.Total = 2 * 1024 * 1024 * 1024
+		}
+		allowance := int(mem.Total / 1024 / 1024 / 3)
+		if cache := ctx.Int(CacheFlag.Name); cache > allowance {
+			log.Warn("Sanitizing cache to Go's GC limits", "provided", cache, "updated", allowance)
+			ctx.Set(CacheFlag.Name, strconv.Itoa(allowance))
+		}
+	}
+	// Ensure Go's GC ignores the database cache for trigger percentage
+	cache := ctx.Int(CacheFlag.Name)
+	gogc := math.Max(20, math.Min(100, 100/(float64(cache)/1024)))
+
+	log.Debug("Sanitizing Go's GC trigger", "percent", int(gogc))
+	godebug.SetGCPercent(int(gogc))
+
+	if ctx.IsSet(SyncTargetFlag.Name) {
+		cfg.SyncMode = ethconfig.FullSync // dev sync target forces full sync
+	} else if ctx.IsSet(SyncModeFlag.Name) {
+		if err = cfg.SyncMode.UnmarshalText([]byte(ctx.String(SyncModeFlag.Name))); err != nil {
+			Fatalf("invalid --syncmode flag: %v", err)
+		}
+	}
+	if ctx.IsSet(NetworkIdFlag.Name) {
+		cfg.NetworkId = ctx.Uint64(NetworkIdFlag.Name)
+	}
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheDatabaseFlag.Name) {
+		cfg.DatabaseCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheDatabaseFlag.Name) / 100
+	}
+	cfg.DatabaseHandles = MakeDatabaseHandles(ctx.Int(FDLimitFlag.Name))
+	if ctx.IsSet(AncientFlag.Name) {
+		cfg.DatabaseFreezer = ctx.String(AncientFlag.Name)
+	}
+
+	if gcmode := ctx.String(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
+		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
+	}
+	if ctx.IsSet(GCModeFlag.Name) {
+		cfg.NoPruning = ctx.String(GCModeFlag.Name) == "archive"
+	}
+	if ctx.IsSet(CacheNoPrefetchFlag.Name) {
+		cfg.NoPrefetch = ctx.Bool(CacheNoPrefetchFlag.Name)
+	}
+	// Read the value from the flag no matter if it's set or not.
+	cfg.Preimages = ctx.Bool(CachePreimagesFlag.Name)
+	if cfg.NoPruning && !cfg.Preimages {
+		cfg.Preimages = true
+		log.Info("Enabling recording of key preimages since archive mode is used")
+	}
+	if ctx.IsSet(StateHistoryFlag.Name) {
+		cfg.StateHistory = ctx.Uint64(StateHistoryFlag.Name)
+	}
+	if ctx.IsSet(StateSchemeFlag.Name) {
+		cfg.StateScheme = ctx.String(StateSchemeFlag.Name)
+	}
+	// Parse transaction history flag, if user is still using legacy config
+	// file with 'TxLookupLimit' configured, copy the value to 'TransactionHistory'.
+	if cfg.TransactionHistory == ethconfig.Defaults.TransactionHistory && cfg.TxLookupLimit != ethconfig.Defaults.TxLookupLimit {
+		log.Warn("The config option 'TxLookupLimit' is deprecated and will be removed, please use 'TransactionHistory'")
+		cfg.TransactionHistory = cfg.TxLookupLimit
+	}
+	if ctx.IsSet(TransactionHistoryFlag.Name) {
+		cfg.TransactionHistory = ctx.Uint64(TransactionHistoryFlag.Name)
+	} else if ctx.IsSet(TxLookupLimitFlag.Name) {
+		log.Warn("The flag --txlookuplimit is deprecated and will be removed, please use --history.transactions")
+		cfg.TransactionHistory = ctx.Uint64(TxLookupLimitFlag.Name)
+	}
+	if ctx.String(GCModeFlag.Name) == "archive" && cfg.TransactionHistory != 0 {
+		cfg.TransactionHistory = 0
+		log.Warn("Disabled transaction unindexing for archive node")
+
+		cfg.StateScheme = rawdb.HashScheme
+		log.Warn("Forcing hash state-scheme for archive mode")
+	}
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheTrieFlag.Name) {
+		cfg.TrieCleanCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheTrieFlag.Name) / 100
+	}
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheGCFlag.Name) {
+		cfg.TrieDirtyCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheGCFlag.Name) / 100
+	}
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheSnapshotFlag.Name) {
+		cfg.SnapshotCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheSnapshotFlag.Name) / 100
+	}
+	if ctx.IsSet(CacheLogSizeFlag.Name) {
+		cfg.FilterLogCacheSize = ctx.Int(CacheLogSizeFlag.Name)
+	}
+	if !ctx.Bool(SnapshotFlag.Name) || cfg.SnapshotCache == 0 {
+		// If snap-sync is requested, this flag is also required
+		if cfg.SyncMode == ethconfig.SnapSync {
+			if !ctx.Bool(SnapshotFlag.Name) {
+				log.Warn("Snap sync requested, enabling --snapshot")
+			}
+			if cfg.SnapshotCache == 0 {
+				log.Warn("Snap sync requested, resetting --cache.snapshot")
+				cfg.SnapshotCache = ctx.Int(CacheFlag.Name) * CacheSnapshotFlag.Value / 100
+			}
+		} else {
+			cfg.TrieCleanCache += cfg.SnapshotCache
+			cfg.SnapshotCache = 0 // Disabled
+		}
+	}
+	if ctx.IsSet(VMEnableDebugFlag.Name) {
+		// TODO(fjl): force-enable this in --dev mode
+		cfg.EnablePreimageRecording = ctx.Bool(VMEnableDebugFlag.Name)
+	}
+
+	if ctx.IsSet(RPCGlobalGasCapFlag.Name) {
+		cfg.RPCGasCap = ctx.Uint64(RPCGlobalGasCapFlag.Name)
+	}
+	if cfg.RPCGasCap != 0 {
+		log.Info("Set global gas cap", "cap", cfg.RPCGasCap)
+	} else {
+		log.Info("Global gas cap disabled")
+	}
+	if ctx.IsSet(RPCGlobalEVMTimeoutFlag.Name) {
+		cfg.RPCEVMTimeout = ctx.Duration(RPCGlobalEVMTimeoutFlag.Name)
+	}
+	if ctx.IsSet(RPCGlobalTxFeeCapFlag.Name) {
+		cfg.RPCTxFeeCap = ctx.Float64(RPCGlobalTxFeeCapFlag.Name)
+	}
+	if ctx.IsSet(NoDiscoverFlag.Name) {
+		cfg.EthDiscoveryURLs, cfg.SnapDiscoveryURLs = []string{}, []string{}
+	} else if ctx.IsSet(DNSDiscoveryFlag.Name) {
+		urls := ctx.String(DNSDiscoveryFlag.Name)
+		if urls == "" {
+			cfg.EthDiscoveryURLs = []string{}
+		} else {
+			cfg.EthDiscoveryURLs = SplitAndTrim(urls)
+		}
+	}
+	// Override any default configs for hard coded networks.
+	switch {
+	case ctx.Bool(MainnetFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 1
+		}
+		cfg.Genesis = core.DefaultGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
+	case ctx.Bool(HoleskyFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 17000
+		}
+		cfg.Genesis = core.DefaultHoleskyGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.HoleskyGenesisHash)
+	case ctx.Bool(SepoliaFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 11155111
+		}
+		cfg.Genesis = core.DefaultSepoliaGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.SepoliaGenesisHash)
+	case ctx.Bool(DeveloperFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 1337
+		}
+		cfg.SyncMode = ethconfig.FullSync
+		// Create new developer account or reuse existing one
+		var (
+			developer  accounts.Account
+			passphrase string
+			err        error
+		)
+		if path := ctx.Path(PasswordFileFlag.Name); path != "" {
+			if text, err := os.ReadFile(path); err != nil {
+				Fatalf("Failed to read password file: %v", err)
+			} else {
+				if lines := strings.Split(string(text), "\n"); len(lines) > 0 {
+					passphrase = strings.TrimRight(lines[0], "\r") // Sanitise DOS line endings.
+				}
+			}
+		}
+		// Unlock the developer account by local keystore.
+		var ks *keystore.KeyStore
+		if keystores := stack.AccountManager().Backends(keystore.KeyStoreType); len(keystores) > 0 {
+			ks = keystores[0].(*keystore.KeyStore)
+		}
+		if ks == nil {
+			Fatalf("Keystore is not available")
+		}
+
+		// Figure out the dev account address.
+		// setEtherbase has been called above, configuring the miner address from command line flags.
+		if cfg.Miner.PendingFeeRecipient != (common.Address{}) {
+			developer = accounts.Account{Address: cfg.Miner.PendingFeeRecipient}
+		} else if accs := ks.Accounts(); len(accs) > 0 {
+			developer = ks.Accounts()[0]
+		} else {
+			developer, err = ks.NewAccount(passphrase)
+			if err != nil {
+				Fatalf("Failed to create developer account: %v", err)
+			}
+		}
+		// Make sure the address is configured as fee recipient, otherwise
+		// the miner will fail to start.
+		cfg.Miner.PendingFeeRecipient = developer.Address
+
+		if err := ks.Unlock(developer, passphrase); err != nil {
+			Fatalf("Failed to unlock developer account: %v", err)
+		}
+		log.Info("Using developer account", "address", developer.Address)
+
+		// Create a new developer genesis block or reuse existing one
+		cfg.Genesis = core.DeveloperGenesisBlock(ctx.Uint64(DeveloperGasLimitFlag.Name), &developer.Address)
+		if ctx.IsSet(DataDirFlag.Name) {
+			chaindb := tryMakeReadOnlyDatabase(ctx, stack)
+			if rawdb.ReadCanonicalHash(chaindb, 0) != (common.Hash{}) {
+				cfg.Genesis = nil // fallback to db content
+
+				//validate genesis has PoS enabled in block 0
+				genesis, err := core.ReadGenesis(chaindb)
+				if err != nil {
+					Fatalf("Could not read genesis from database: %v", err)
+				}
+				if genesis.Config.TerminalTotalDifficulty == nil {
+					Fatalf("Bad developer-mode genesis configuration: terminalTotalDifficulty must be specified")
+				} else if genesis.Config.TerminalTotalDifficulty.Cmp(big.NewInt(0)) != 0 {
+					Fatalf("Bad developer-mode genesis configuration: terminalTotalDifficulty must be 0")
+				}
+				if genesis.Difficulty.Cmp(big.NewInt(0)) != 0 {
+					Fatalf("Bad developer-mode genesis configuration: difficulty must be 0")
+				}
+			}
+			chaindb.Close()
+		}
+
+		if !ctx.IsSet(MinerGasPriceFlag.Name) {
+			cfg.Miner.GasPrice = big.NewInt(1)
+		}
+	default:
+		if cfg.NetworkId == 1 {
+			SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
+		}
+	}
+	// Set any dangling config values
+	if ctx.String(CryptoKZGFlag.Name) != "gokzg" && ctx.String(CryptoKZGFlag.Name) != "ckzg" {
+		Fatalf("--%s flag must be 'gokzg' or 'ckzg'", CryptoKZGFlag.Name)
+	}
+	log.Info("Initializing the KZG library", "backend", ctx.String(CryptoKZGFlag.Name))
+	if err := kzg4844.UseCKZG(ctx.String(CryptoKZGFlag.Name) == "ckzg"); err != nil {
+		Fatalf("Failed to set KZG library implementation to %s: %v", ctx.String(CryptoKZGFlag.Name), err)
+	}
+	// VM tracing config.
+	if ctx.IsSet(VMTraceFlag.Name) {
+		if name := ctx.String(VMTraceFlag.Name); name != "" {
+			cfg.VMTrace = name
+			cfg.VMTraceJsonConfig = ctx.String(VMTraceJsonConfigFlag.Name)
+		}
+	}
+}
+
+// SetDNSDiscoveryDefaults configures DNS discovery with the given URL if
+// no URLs are set.
+func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
+	if cfg.EthDiscoveryURLs != nil {
+		return // already set through flags/config
+	}
+	protocol := "all"
+	if url := params.KnownDNSNetwork(genesis, protocol); url != "" {
+		cfg.EthDiscoveryURLs = []string{url}
+		cfg.SnapDiscoveryURLs = cfg.EthDiscoveryURLs
+	}
+}
+
+// MakeChainDatabase opens a database using the flags passed to the client and will hard crash if it fails.
+func MakeChainDatabase(ctx *cli.Context, stack *node.Node, readonly bool) ethdb.Database {
+	var (
+		cache   = ctx.Int(CacheFlag.Name) * ctx.Int(CacheDatabaseFlag.Name) / 100
+		handles = MakeDatabaseHandles(ctx.Int(FDLimitFlag.Name))
+		err     error
+		chainDb ethdb.Database
+	)
+	switch {
+	case ctx.IsSet(RemoteDBFlag.Name):
+		log.Info("Using remote db", "url", ctx.String(RemoteDBFlag.Name), "headers", len(ctx.StringSlice(HttpHeaderFlag.Name)))
+		client, err := DialRPCWithHeaders(ctx.String(RemoteDBFlag.Name), ctx.StringSlice(HttpHeaderFlag.Name))
+		if err != nil {
+			break
+		}
+		chainDb = remotedb.New(client)
+	default:
+		chainDb, err = stack.OpenDatabaseWithFreezer("chaindata", cache, handles, ctx.String(AncientFlag.Name), "", readonly)
+	}
+	if err != nil {
+		Fatalf("Could not open database: %v", err)
+	}
+	return chainDb
+}
+
+// tryMakeReadOnlyDatabase try to open the chain database in read-only mode,
+// or fallback to write mode if the database is not initialized.
+func tryMakeReadOnlyDatabase(ctx *cli.Context, stack *node.Node) ethdb.Database {
+	// If the database doesn't exist we need to open it in write-mode to allow
+	// the engine to create files.
+	readonly := true
+	if rawdb.PreexistingDatabase(stack.ResolvePath("chaindata")) == "" {
+		readonly = false
+	}
+	return MakeChainDatabase(ctx, stack, readonly)
+}
+
+func DialRPCWithHeaders(endpoint string, headers []string) (*rpc.Client, error) {
+	if endpoint == "" {
+		return nil, errors.New("endpoint must be specified")
+	}
+	if strings.HasPrefix(endpoint, "rpc:") || strings.HasPrefix(endpoint, "ipc:") {
+		// Backwards compatibility with geth < 1.5 which required
+		// these prefixes.
+		endpoint = endpoint[4:]
+	}
+	var opts []rpc.ClientOption
+	if len(headers) > 0 {
+		customHeaders := make(http.Header)
+		for _, h := range headers {
+			kv := strings.Split(h, ":")
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("invalid http header directive: %q", h)
+			}
+			customHeaders.Add(kv[0], kv[1])
+		}
+		opts = append(opts, rpc.WithHeaders(customHeaders))
+	}
+	return rpc.DialOptions(context.Background(), endpoint, opts...)
 }

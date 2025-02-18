@@ -154,7 +154,14 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 		utils.Fatalf("Failed to set account manager backends: %v", err)
 	}
 
-	// todo NOT implement
+	utils.SetEthConfig(ctx, stack, &cfg.Eth)
+	if ctx.IsSet(utils.EthStatsURLFlag.Name) {
+		cfg.Ethstats.URL = ctx.String(utils.EthStatsURLFlag.Name)
+	}
+
+	// todo NOT implement start here
+	//applyMetricConfig(ctx, &cfg)
+
 	return stack, gethConfig{}
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2014 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,11 +14,15 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package node
+package types
 
-import "errors"
+const (
+	// BloomByteLength represents the number of bytes used in a header log bloom.
+	BloomByteLength = 256
 
-var (
-	ErrDatadirUsed = errors.New("datadir already used by another process")
-	ErrNodeStopped = errors.New("node not started")
+	// BloomBitLength represents the number of bits used in a header log bloom.
+	BloomBitLength = 8 * BloomByteLength
 )
+
+// Bloom represents a 2048 bit bloom filter.
+type Bloom [BloomByteLength]byte
