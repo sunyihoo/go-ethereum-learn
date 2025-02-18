@@ -18,4 +18,4 @@ all:
 cloc:
 	echo ${d}
 	@#cloc . --exclude-ext=json,js,txt,c,h,sol --not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go" | tee ./stat/${d}.txt
-	cloc . --exclude-ext=json,js,txt,c,h,sol --fullpath --not-match-d=crypto/secp256k1 --not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go" | tee ./stat/${d}.txt
+	cloc . --exclude-ext=json,js,txt,c,h,sol  --not-match-f="(.*?).pb.go"--not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go"  --fullpath --not-match-d=crypto/secp256k1 | tee ./stat/${d}.txt
