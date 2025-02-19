@@ -103,6 +103,11 @@ var (
 		Usage:    "Enable mining (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
+	MetricsEnabledExpensiveFlag = &cli.BoolFlag{
+		Name:     "metrics.expensive",
+		Usage:    "Enable expensive metrics collection and reporting (deprecated)",
+		Category: flags.DeprecatedCategory,
+	}
 
 	// Deprecated Oct 2024
 	EnablePersonal = &cli.BoolFlag{

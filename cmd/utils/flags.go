@@ -48,6 +48,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb/remotedb"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -695,6 +696,93 @@ var (
 	}
 
 	// Metrics flags
+	MetricsEnabledFlag = &cli.BoolFlag{
+		Name:     "metrics",
+		Usage:    "Enable metrics collection and reporting",
+		Category: flags.MetricsCategory,
+	}
+	// MetricsHTTPFlag defines the endpoint for a stand-alone metrics HTTP endpoint.
+	// Since the pprof service enables sensitive/vulnerable behavior, this allows a user
+	// to enable a public-OK metrics endpoint without having to worry about ALSO exposing
+	// other profiling behavior or information.
+	MetricsHTTPFlag = &cli.StringFlag{
+		Name:     "metrics.addr",
+		Usage:    `Enable stand-alone metrics HTTP server listening interface.`,
+		Category: flags.MetricsCategory,
+	}
+	MetricsPortFlag = &cli.IntFlag{
+		Name: "metrics.port",
+		Usage: `Metrics HTTP server listening port.
+Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.`,
+		Value:    metrics.DefaultConfig.Port,
+		Category: flags.MetricsCategory,
+	}
+	MetricsEnableInfluxDBFlag = &cli.BoolFlag{
+		Name:     "metrics.influxdb",
+		Usage:    "Enable metrics export/push to an external InfluxDB database",
+		Category: flags.MetricsCategory,
+	}
+	MetricsInfluxDBEndpointFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.endpoint",
+		Usage:    "InfluxDB API endpoint to report metrics to",
+		Value:    metrics.DefaultConfig.InfluxDBEndpoint,
+		Category: flags.MetricsCategory,
+	}
+	MetricsInfluxDBDatabaseFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.database",
+		Usage:    "InfluxDB database name to push reported metrics to",
+		Value:    metrics.DefaultConfig.InfluxDBDatabase,
+		Category: flags.MetricsCategory,
+	}
+	MetricsInfluxDBUsernameFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.username",
+		Usage:    "Username to authorize access to the database",
+		Value:    metrics.DefaultConfig.InfluxDBUsername,
+		Category: flags.MetricsCategory,
+	}
+	MetricsInfluxDBPasswordFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.password",
+		Usage:    "Password to authorize access to the database",
+		Value:    metrics.DefaultConfig.InfluxDBPassword,
+		Category: flags.MetricsCategory,
+	}
+	// Tags are part of every measurement sent to InfluxDB. Queries on tags are faster in InfluxDB.
+	// For example `host` tag could be used so that we can group all nodes and average a measurement
+	// across all of them, but also so that we can select a specific node and inspect its measurements.
+	// https://docs.influxdata.com/influxdb/v1.4/concepts/key_concepts/#tag-key
+	MetricsInfluxDBTagsFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.tags",
+		Usage:    "Comma-separated InfluxDB tags (key/values) attached to all measurements",
+		Value:    metrics.DefaultConfig.InfluxDBTags,
+		Category: flags.MetricsCategory,
+	}
+
+	MetricsEnableInfluxDBV2Flag = &cli.BoolFlag{
+		Name:     "metrics.influxdbv2",
+		Usage:    "Enable metrics export/push to an external InfluxDB v2 database",
+		Category: flags.MetricsCategory,
+	}
+
+	MetricsInfluxDBTokenFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.token",
+		Usage:    "Token to authorize access to the database (v2 only)",
+		Value:    metrics.DefaultConfig.InfluxDBToken,
+		Category: flags.MetricsCategory,
+	}
+
+	MetricsInfluxDBBucketFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.bucket",
+		Usage:    "InfluxDB bucket name to push reported metrics to (v2 only)",
+		Value:    metrics.DefaultConfig.InfluxDBBucket,
+		Category: flags.MetricsCategory,
+	}
+
+	MetricsInfluxDBOrganizationFlag = &cli.StringFlag{
+		Name:     "metrics.influxdb.organization",
+		Usage:    "InfluxDB organization name (v2 only)",
+		Value:    metrics.DefaultConfig.InfluxDBOrganization,
+		Category: flags.MetricsCategory,
+	}
 )
 
 // setNodeKey creates a node key from set command line flags, either loading it
