@@ -180,6 +180,9 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	// Start metrics export if enabled
 	utils.SetupMetrics(&cfg.Metrics)
 
+	// todo now wip here
+	//backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
+
 	return stack
 }
 

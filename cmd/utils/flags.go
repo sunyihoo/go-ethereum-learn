@@ -1680,6 +1680,12 @@ func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 	}
 }
 
+//// RegisterEthService adds an Ethereum client to the stack.
+//// The second return value is the full node instance.
+//func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (*eth.EthAPIBackend, *eth.Ethereum) {
+//
+//}
+
 // SetupMetrics configures the metrics system.
 func SetupMetrics(cfg *metrics.Config) {
 	if !cfg.Enabled {

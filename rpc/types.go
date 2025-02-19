@@ -49,3 +49,5 @@ type jsonWriter interface {
 	// RemoteAddr returns the peer address of the connection.
 	remoteAddr() string
 }
+
+type BlockNumber int64

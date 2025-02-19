@@ -204,3 +204,5 @@ func (b *Block) WithBody(body Body) *Block {
 	}
 	return block
 }
+
+type Blocks []*Block

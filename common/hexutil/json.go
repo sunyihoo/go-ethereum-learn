@@ -30,6 +30,7 @@ import (
 var (
 	bytesT  = reflect.TypeOf(Bytes(nil))
 	bigT    = reflect.TypeOf((*Big)(nil))
+	uintT   = reflect.TypeOf(Uint(0))
 	uint64T = reflect.TypeOf(Uint64(0))
 	u256T   = reflect.TypeOf((*uint256.Int)(nil))
 )
@@ -312,6 +313,41 @@ func (b *Uint64) UnmarshalGraphQL(input interface{}) error {
 		err = fmt.Errorf("unexpected type %T for Long", input)
 	}
 	return err
+}
+
+// Uint marshals/unmarshals as a JSON string with 0x prefix.
+// The zero value marshals as "0x0".
+type Uint uint
+
+// MarshalText implements encoding.TextMarshaler.
+func (b Uint) MarshalText() ([]byte, error) {
+	return Uint64(b).MarshalText()
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (b *Uint) UnmarshalJSON(input []byte) error {
+	if !isString(input) {
+		return errNonString(uintT)
+	}
+	return wrapTypeError(b.UnmarshalText(input[1:len(input)-1]), uintT)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (b *Uint) UnmarshalText(input []byte) error {
+	var u64 Uint64
+	err := u64.UnmarshalText(input)
+	if u64 > Uint64(^uint(0)) || err == ErrUint64Range {
+		return ErrUintRange
+	} else if err != nil {
+		return err
+	}
+	*b = Uint(u64)
+	return nil
+}
+
+// String returns the hex encoding of b.
+func (b Uint) String() string {
+	return EncodeUint64(uint64(b))
 }
 
 func isString(input []byte) bool {
