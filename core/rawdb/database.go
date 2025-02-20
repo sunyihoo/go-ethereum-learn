@@ -149,6 +149,12 @@ func (db *nofreezedb) AncientDatadir() (string, error) {
 	return "", errNotSupported
 }
 
+// NewDatabase creates a high level database on top of a given key-value data
+// store without a freezer moving immutable chain segments into cold storage.
+func NewDatabase(db ethdb.KeyValueStore) ethdb.Database {
+	return &nofreezedb{KeyValueStore: db}
+}
+
 // resolveChainFreezerDir is a helper function which resolves the absolute path
 // of chain freezer by considering backward compatibility.
 func resolveChainFreezerDir(ancient string) string {
@@ -176,6 +182,7 @@ func resolveChainFreezerDir(ancient string) string {
 // value data store with a freezer moving immutable chain segments into cold
 // storage. The passed ancient indicates the path of root ancient directory
 // where the chain freezer can be opened.
+// TODO learn here
 func NewDatabaseWithFreezer(db ethdb.KeyValueStore, ancient string, namespace string, readonly bool) (ethdb.Database, error) {
 	// Create the idle freezer instance. If the given ancient directory is empty,
 	// in-memory chain freezer is used (e.g. dev mode); otherwise the regular

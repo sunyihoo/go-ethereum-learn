@@ -24,7 +24,9 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -200,23 +202,22 @@ func (n *Node) OpenDatabaseWithFreezer(name string, cache, handles int, ancient 
 	}
 	var db ethdb.Database
 	var err error
-	// todo start here
-	//if n.config.DataDir == "" {
-	//	db, err = rawdb.NewDatabaseWithFreezer(memorydb.New(), "", namespace, readonly)
-	//} else {
-	//	db, err = openDatabase(openOptions{
-	//		Type:              n.config.DBEngine,
-	//		Directory:         n.ResolvePath(name),
-	//		AncientsDirectory: n.ResolveAncient(name, ancient),
-	//		Namespace:         namespace,
-	//		Cache:             cache,
-	//		Handles:           handles,
-	//		ReadOnly:          readonly,
-	//	})
-	//}
-	//if err == nil {
-	//	db = n.wrapDatabase(db)
-	//}
+	if n.config.DataDir == "" {
+		db, err = rawdb.NewDatabaseWithFreezer(memorydb.New(), "", namespace, readonly)
+	} else {
+		db, err = openDatabase(openOptions{
+			Type:              n.config.DBEngine,
+			Directory:         n.ResolvePath(name),
+			AncientsDirectory: n.ResolveAncient(name, ancient),
+			Namespace:         namespace,
+			Cache:             cache,
+			Handles:           handles,
+			ReadOnly:          readonly,
+		})
+	}
+	if err == nil {
+		db = n.wrapDatabase(db)
+	}
 	return db, err
 }
 
@@ -225,10 +226,46 @@ func (n *Node) ResolvePath(x string) string {
 	return n.config.ResolvePath(x)
 }
 
+// ResolveAncient returns the absolute path of the root ancient directory.
+func (n *Node) ResolveAncient(name string, ancient string) string {
+	switch {
+	case ancient == "":
+		ancient = filepath.Join(n.ResolvePath(name), "ancient")
+	case !filepath.IsAbs(ancient):
+		ancient = n.ResolvePath(ancient)
+	}
+	return ancient
+}
+
 // closeTrackingDB wraps the Close method of a database. When the database is closed by the
 // service, the wrapper removes it from the node's database map. This ensures that Node
 // won't auto-close the database if it is closed by the service that opened it.
 type closeTrackingDB struct {
 	ethdb.Database
 	n *Node
+}
+
+func (db *closeTrackingDB) Close() error {
+	db.n.lock.Lock()
+	delete(db.n.databases, db)
+	db.n.lock.Unlock()
+	return db.Database.Close()
+}
+
+// wrapDatabase ensures the database will be auto-closed when Node is closed.
+func (n *Node) wrapDatabase(db ethdb.Database) ethdb.Database {
+	wrapper := &closeTrackingDB{db, n}
+	n.databases[wrapper] = struct{}{}
+	return wrapper
+}
+
+// closeDatabases closes all open databases.
+func (n *Node) closeDatabases() (errors []error) {
+	for db := range n.databases {
+		delete(n.databases, db)
+		if err := db.Database.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+	return errors
 }
