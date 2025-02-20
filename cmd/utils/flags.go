@@ -44,6 +44,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -1680,11 +1681,12 @@ func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 	}
 }
 
-//// RegisterEthService adds an Ethereum client to the stack.
-//// The second return value is the full node instance.
-//func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (*eth.EthAPIBackend, *eth.Ethereum) {
-//
-//}
+// RegisterEthService adds an Ethereum client to the stack.
+// The second return value is the full node instance.
+func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (*eth.EthAPIBackend, *eth.Ethereum) {
+	backend, err := eth.New(stack, cfg)
+
+}
 
 // SetupMetrics configures the metrics system.
 func SetupMetrics(cfg *metrics.Config) {

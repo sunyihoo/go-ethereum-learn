@@ -1,4 +1,4 @@
-// Copyright 2022 The go-ethereum Authors
+// Copyright 2015 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,27 +14,12 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package triedb
+package ethapi
 
-import (
-	"sync"
+import "github.com/ethereum/go-ethereum/p2p"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
-)
-
-// preimageStore is the store for caching preimages of node key.
-type preimageStore struct {
-	lock          sync.RWMutex
-	disk          ethdb.KeyValueStore
-	preimages     map[common.Hash][]byte // Preimages of nodes from the secure trie
-	preimagesSize common.StorageSize     // Storage size of the preimages cache
-}
-
-// newPreimageStore initializes the store for caching preimages.
-func newPreimageStore(disk ethdb.KeyValueStore) *preimageStore {
-	return &preimageStore{
-		disk:      disk,
-		preimages: make(map[common.Hash][]byte),
-	}
+// NetAPI offers network related RPC methods
+type NetAPI struct {
+	net            *p2p.Server
+	networkVersion uint64
 }

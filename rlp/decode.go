@@ -736,6 +736,10 @@ func (s *Stream) uint(maxbits int) (uint64, error) {
 	}
 }
 
+func (s *Stream) Uint64() (uint64, error) {
+	return s.uint(64)
+}
+
 // Bool reads an RLP string of up to 1 byte and returns its contents
 // as a boolean. If the input does not contain an RLP string, the
 // returned error will be ErrExpectedString.

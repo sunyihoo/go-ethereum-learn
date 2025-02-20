@@ -19,6 +19,7 @@ package triedb
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/triedb/database"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
@@ -30,6 +31,14 @@ type Config struct {
 	IsVerkle  bool           // Flag whether the db is holding a verkle tree
 	HashDB    *hashdb.Config // Configs for hash-based scheme
 	PathDB    *pathdb.Config // Configs for experimental path-based scheme
+}
+
+// HashDefaults represents a config for using hash-based scheme with
+// default settings.
+var HashDefaults = &Config{
+	Preimages: false,
+	IsVerkle:  false,
+	HashDB:    hashdb.Defaults,
 }
 
 // backend defines the methods needed to access/update trie nodes in different
@@ -63,4 +72,31 @@ type Database struct {
 	config    *Config        // Configuration for trie database
 	preimages *preimageStore // The store for caching preimages
 	backend   backend        // The backend for managing trie nodes
+}
+
+// NewDatabase initializes the trie database with default settings, note
+// the legacy hash-based scheme is used by default.
+func NewDatabase(diskdb ethdb.Database, config *Config) *Database {
+	// Sanitize the config and use the default one if it's not specified.
+	if config == nil {
+		config = HashDefaults
+	}
+	var preimages *preimageStore
+	if config.Preimages {
+		preimages = newPreimageStore(diskdb)
+	}
+	db := &Database{
+		disk:      diskdb,
+		config:    config,
+		preimages: preimages,
+	}
+	if config.HashDB != nil && config.PathDB != nil {
+		log.Crit("Both 'hash' and 'path' mode are configured")
+	}
+	if config.PathDB != nil {
+		db.backend = pathdb.New(diskdb, config.PathDB, config.IsVerkle)
+	} else {
+		db.backend = hashdb.New(diskdb, config.HashDB)
+	}
+	return db
 }

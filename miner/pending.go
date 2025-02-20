@@ -1,4 +1,4 @@
-// Copyright 2022 The go-ethereum Authors
+// Copyright 2024 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,27 +14,19 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package triedb
+package miner
 
 import (
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
 )
 
-// preimageStore is the store for caching preimages of node key.
-type preimageStore struct {
-	lock          sync.RWMutex
-	disk          ethdb.KeyValueStore
-	preimages     map[common.Hash][]byte // Preimages of nodes from the secure trie
-	preimagesSize common.StorageSize     // Storage size of the preimages cache
-}
-
-// newPreimageStore initializes the store for caching preimages.
-func newPreimageStore(disk ethdb.KeyValueStore) *preimageStore {
-	return &preimageStore{
-		disk:      disk,
-		preimages: make(map[common.Hash][]byte),
-	}
+// pending wraps a pending block with additional metadata.
+type pending struct {
+	created    time.Time
+	parentHash common.Hash
+	result     *newPayloadResult
+	lock       sync.Mutex
 }

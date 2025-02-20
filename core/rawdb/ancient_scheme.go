@@ -40,6 +40,14 @@ var chainFreezerNoSnappy = map[string]bool{
 	ChainFreezerDifficultyTable: true,
 }
 
+const (
+	stateHistoryMeta         = "history.meta"
+	stateHistoryAccountIndex = "account.index"
+	stateHistoryStorageIndex = "storage.index"
+	stateHistoryAccountData  = "account.data"
+	stateHistoryStorageData  = "storage.data"
+)
+
 // The list of identifiers of ancient stores.
 var (
 	ChainFreezerName = "chain" // the folder name of chain segment ancient store.

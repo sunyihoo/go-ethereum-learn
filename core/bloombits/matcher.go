@@ -1,4 +1,4 @@
-// Copyright 2022 The go-ethereum Authors
+// Copyright 2017 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,27 +14,21 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package triedb
+package bloombits
 
-import (
-	"sync"
+import "context"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
-)
+// Retrieval represents a request for retrieval task assignments for a given
+// bit with the given number of fetch elements, or a response for such a request.
+// It can also have the actual results set to be used as a delivery data struct.
+//
+// The context and error fields are used by the light client to terminate matching
+// early if an error is encountered on some path of the pipeline.
+type Retrieval struct {
+	Bit      uint
+	Sections []uint64
+	Bitsets  [][]byte
 
-// preimageStore is the store for caching preimages of node key.
-type preimageStore struct {
-	lock          sync.RWMutex
-	disk          ethdb.KeyValueStore
-	preimages     map[common.Hash][]byte // Preimages of nodes from the secure trie
-	preimagesSize common.StorageSize     // Storage size of the preimages cache
-}
-
-// newPreimageStore initializes the store for caching preimages.
-func newPreimageStore(disk ethdb.KeyValueStore) *preimageStore {
-	return &preimageStore{
-		disk:      disk,
-		preimages: make(map[common.Hash][]byte),
-	}
+	Context context.Context
+	Error   error
 }

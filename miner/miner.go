@@ -19,10 +19,14 @@ package miner
 
 import (
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -45,4 +49,17 @@ var DefaultConfig = Config{
 	// for payload generation. It should be enough for Geth to
 	// run 3 rounds.
 	Recommit: 2 * time.Second,
+}
+
+// Miner is the main object which takes care of submitting new work to consensus
+// engine and gathering the sealing result.
+type Miner struct {
+	confMu      sync.RWMutex // The lock used to protect the config fields: GasCeil, GasTip and Extradata
+	config      *Config
+	chainConfig *params.ChainConfig
+	engine      consensus.Engine
+	txpool      *txpool.TxPool
+	chain       *core.BlockChain
+	pending     *pending
+	pendingMu   sync.Mutex // Lock protects the pending block
 }

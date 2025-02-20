@@ -1,4 +1,4 @@
-// Copyright 2022 The go-ethereum Authors
+// Copyright 2023 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,27 +14,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package triedb
+package types
 
-import (
-	"sync"
+import "github.com/ethereum/go-ethereum/common"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+var (
+	// EmptyRootHash is the known root hash of an empty merkle trie.
+	EmptyRootHash = common.HexToHash("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
+
+	// EmptyVerkleHash is the known hash of an empty verkle trie.
+	EmptyVerkleHash = common.Hash{}
 )
-
-// preimageStore is the store for caching preimages of node key.
-type preimageStore struct {
-	lock          sync.RWMutex
-	disk          ethdb.KeyValueStore
-	preimages     map[common.Hash][]byte // Preimages of nodes from the secure trie
-	preimagesSize common.StorageSize     // Storage size of the preimages cache
-}
-
-// newPreimageStore initializes the store for caching preimages.
-func newPreimageStore(disk ethdb.KeyValueStore) *preimageStore {
-	return &preimageStore{
-		disk:      disk,
-		preimages: make(map[common.Hash][]byte),
-	}
-}

@@ -26,6 +26,19 @@ type Node struct {
 	Blob []byte      // Encoded node blob, nil for the deleted node
 }
 
+// IsDeleted returns the indicator if the node is marked as deleted.
+func (n *Node) IsDeleted() bool {
+	return len(n.Blob) == 0
+}
+
+// New constructs a node with provided node information.
+func New(hash common.Hash, blob []byte) *Node {
+	return &Node{Hash: hash, Blob: blob}
+}
+
+// NewDeleted constructs a node which is deleted.
+func NewDeleted() *Node { return New(common.Hash{}, nil) }
+
 // leaf represents a trie leaf node
 type leaf struct {
 	Blob   []byte      // raw blob of leaf
@@ -37,4 +50,9 @@ type NodeSet struct {
 	Nodes   map[string]*Node
 	updates int // the count of updated and inserted nodes
 	deletes int // the count of deleted nodes
+}
+
+// MergedNodeSet represents a merged node set for a group of tries.
+type MergedNodeSet struct {
+	Sets map[common.Hash]*NodeSet
 }

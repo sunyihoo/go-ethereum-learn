@@ -14,27 +14,17 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package triedb
+package trie
 
 import (
-	"sync"
-
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/triedb/database"
 )
 
-// preimageStore is the store for caching preimages of node key.
-type preimageStore struct {
-	lock          sync.RWMutex
-	disk          ethdb.KeyValueStore
-	preimages     map[common.Hash][]byte // Preimages of nodes from the secure trie
-	preimagesSize common.StorageSize     // Storage size of the preimages cache
-}
-
-// newPreimageStore initializes the store for caching preimages.
-func newPreimageStore(disk ethdb.KeyValueStore) *preimageStore {
-	return &preimageStore{
-		disk:      disk,
-		preimages: make(map[common.Hash][]byte),
-	}
+// trieReader is a wrapper of the underlying node reader. It's not safe
+// for concurrent usage.
+type trieReader struct {
+	owner  common.Hash
+	reader database.NodeReader
+	banned map[string]struct{} // Marker to prevent node from being accessed, for tests
 }

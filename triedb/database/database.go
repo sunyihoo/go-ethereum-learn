@@ -32,6 +32,13 @@ type NodeReader interface {
 	Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error)
 }
 
+// NodeDatabase wraps the methods of a backing trie store.
+type NodeDatabase interface {
+	// NodeReader returns a node reader associated with the specific state.
+	// An error will be returned if the specified state is not available.
+	NodeReader(stateRoot common.Hash) (NodeReader, error)
+}
+
 // StateReader wraps the Account and Storage method of a backing state reader.
 type StateReader interface {
 	// Account directly retrieves the account associated with a particular hash in

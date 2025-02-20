@@ -1,4 +1,4 @@
-// Copyright 2018 The go-ethereum Authors
+// Copyright 2024 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -12,20 +12,21 @@
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
-// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>
 
-package hashdb
+package pathdb
 
-// Config contains the settings for database.
-type Config struct {
-	CleanCacheSize int // Maximum memory allowance (in bytes) for caching clean nodes
-}
+// The types of locations where the node is found.
+const (
+	locDirtyCache = "dirty" // dirty cache
+	locCleanCache = "clean" // clean cache
+	locDiskLayer  = "disk"  // persistent state
+	locDiffLayer  = "diff"  // diff layers
+)
 
-// Defaults is the default setting for database if it's not specified.
-// Notably, clean cache is disabled explicitly,
-var Defaults = &Config{
-	// Explicitly set clean cache size to 0 to avoid creating fastcache,
-	// otherwise database must be closed when it's no longer needed to
-	// prevent memory leak.
-	CleanCacheSize: 0,
+// nodeLoc is a helpful structure that contains the location where the node
+// is found, as it's useful for debugging purposes.
+type nodeLoc struct {
+	loc   string
+	depth int
 }
