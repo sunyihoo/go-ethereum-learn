@@ -17,6 +17,7 @@
 package pathdb
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,4 +52,126 @@ func (tree *layerTree) reset(head layer) {
 		head = head.parentLayer()
 	}
 	tree.layers = layers
+}
+
+// get retrieves a layer belonging to the given state root.
+func (tree *layerTree) get(root common.Hash) layer {
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+
+	return tree.layers[root]
+}
+
+// forEach iterates the stored layers inside and applies the
+// given callback on them.
+func (tree *layerTree) forEach(onLayer func(layer)) {
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+
+	for _, layer := range tree.layers {
+		onLayer(layer)
+	}
+}
+
+// cap traverses downwards the diff tree until the number of allowed diff layers
+// are crossed. All diffs beyond the permitted number are flattened downwards.
+func (tree *layerTree) cap(root common.Hash, layers int) error {
+	// Retrieve the head layer to cap from
+	l := tree.get(root)
+	if l == nil {
+		return fmt.Errorf("triedb layer [%#x] missing", root)
+	}
+	diff, ok := l.(*diffLayer)
+	if !ok {
+		return fmt.Errorf("triedb layer [%#x] is disk layer", root)
+	}
+	tree.lock.Lock()
+	defer tree.lock.Unlock()
+
+	// If full commit was requested, flatten the diffs and merge onto disk
+	if layers == 0 {
+		base, err := diff.persist(true)
+		if err != nil {
+			return err
+		}
+		// Replace the entire layer tree with the flat base
+		tree.layers = map[common.Hash]layer{base.rootHash(): base}
+		return nil
+	}
+	// Dive until we run out of layers or reach the persistent database
+	for i := 0; i < layers-1; i++ {
+		// If we still have diff layers below, continue down
+		if parent, ok := diff.parentLayer().(*diffLayer); ok {
+			diff = parent
+		} else {
+			// Diff stack too shallow, return without modifications
+			return nil
+		}
+	}
+	// We're out of layers, flatten anything below, stopping if it's the disk or if
+	// the memory limit is not yet exceeded.
+	switch parent := diff.parentLayer().(type) {
+	case *diskLayer:
+		return nil
+
+	case *diffLayer:
+		// Hold the lock to prevent any read operations until the new
+		// parent is linked correctly.
+		diff.lock.Lock()
+
+		base, err := parent.persist(false)
+		if err != nil {
+			diff.lock.Unlock()
+			return err
+		}
+		tree.layers[base.rootHash()] = base
+		diff.parent = base
+
+		diff.lock.Unlock()
+
+	default:
+		panic(fmt.Sprintf("unknown data layer in triedb: %T", parent))
+	}
+	// Remove any layer that is stale or links into a stale layer
+	children := make(map[common.Hash][]common.Hash)
+	for root, layer := range tree.layers {
+		if dl, ok := layer.(*diffLayer); ok {
+			parent := dl.parentLayer().rootHash()
+			children[parent] = append(children[parent], root)
+		}
+	}
+	var remove func(root common.Hash)
+	remove = func(root common.Hash) {
+		delete(tree.layers, root)
+		for _, child := range children[root] {
+			remove(child)
+		}
+		delete(children, root)
+	}
+	for root, layer := range tree.layers {
+		if dl, ok := layer.(*diskLayer); ok && dl.isStale() {
+			remove(root)
+		}
+	}
+	return nil
+}
+
+// bottom returns the bottom-most disk layer in this tree.
+func (tree *layerTree) bottom() *diskLayer {
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+
+	if len(tree.layers) == 0 {
+		return nil // Shouldn't happen, empty tree
+	}
+	// pick a random one as the entry point
+	var current layer
+	for _, layer := range tree.layers {
+		current = layer
+		break
+	}
+	for current.parentLayer() != nil {
+		current = current.parentLayer()
+	}
+	return current.(*diskLayer)
 }

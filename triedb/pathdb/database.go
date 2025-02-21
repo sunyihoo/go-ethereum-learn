@@ -123,6 +123,18 @@ func (c *Config) sanitize() *Config {
 	return &conf
 }
 
+// fields returns a list of attributes of config for printing.
+func (c *Config) fields() []interface{} {
+	var list []interface{}
+	if c.ReadOnly {
+		list = append(list, "readonly", true)
+	}
+	list = append(list, "cache", common.StorageSize(c.CleanCacheSize))
+	list = append(list, "buffer", common.StorageSize(c.WriteBufferSize))
+	list = append(list, "history", c.StateHistory)
+	return list
+}
+
 // Defaults contains default settings for Ethereum mainnet.
 var Defaults = &Config{
 	StateHistory:    params.FullImmutabilityThreshold,
@@ -211,4 +223,157 @@ func New(diskdb ethdb.Database, config *Config, isVerkle bool) *Database {
 	// and in-memory layer journal.
 	db.tree = newLayerTree(db.loadLayers())
 
+	// Repair the state history, which might not be aligned with the state
+	// in the key-value store due to an unclean shutdown.
+	if err := db.repairHistory(); err != nil {
+		log.Crit("Failed to repair state history", "err", err)
+	}
+	// Disable database in case node is still in the initial state sync stage.
+	if rawdb.ReadSnapSyncStatusFlag(diskdb) == rawdb.StateSyncRunning && !db.readOnly {
+		if err := db.Disable(); err != nil {
+			log.Crit("Failed to disable database", "err", err) // impossible to happen
+		}
+	}
+	fields := config.fields()
+	if db.isVerkle {
+		fields = append(fields, "verkle", true)
+	}
+	log.Info("Initialized path database", fields...)
+	return db
+}
+
+// repairHistory truncates leftover state history objects, which may occur due
+// to an unclean shutdown or other unexpected reasons.
+func (db *Database) repairHistory() error {
+	// Open the freezer for state history. This mechanism ensures that
+	// only one database instance can be opened at a time to prevent
+	// accidental mutation.
+	ancient, err := db.diskdb.AncientDatadir()
+	if err != nil {
+		// TODO error out if ancient store is disabled. A tons of unit tests
+		// disable the ancient store thus the error here will immediately fail
+		// all of them. Fix the tests first.
+		return nil
+	}
+	freezer, err := rawdb.NewStateFreezer(ancient, db.isVerkle, db.readOnly)
+	if err != nil {
+		log.Crit("Failed to open state history freezer", "err", err)
+	}
+	db.freezer = freezer
+
+	// Reset the entire state histories if the trie database is not initialized
+	// yet. This action is necessary because these state histories are not
+	// expected to exist without an initialized trie database.
+	id := db.tree.bottom().stateID()
+	if id == 0 {
+		frozen, err := db.freezer.Ancients()
+		if err != nil {
+			log.Crit("Failed to retrieve head of state history", "err", err)
+		}
+		if frozen != 0 {
+			err := db.freezer.Reset()
+			if err != nil {
+				log.Crit("Failed to reset state histories", "err", err)
+			}
+			log.Info("Truncated extraneous state history")
+		}
+		return nil
+	}
+	// Truncate the extra state histories above in freezer in case it's not
+	// aligned with the disk layer. It might happen after a unclean shutdown.
+	pruned, err := truncateFromHead(db.diskdb, db.freezer, id)
+	if err != nil {
+		log.Crit("Failed to truncate extra state histories", "err", err)
+	}
+	if pruned != 0 {
+		log.Warn("Truncated extra state histories", "number", pruned)
+	}
+	return nil
+}
+
+// Commit traverses downwards the layer tree from a specified layer with the
+// provided state root and all the layers below are flattened downwards. It
+// can be used alone and mostly for test purposes.
+func (db *Database) Commit(root common.Hash, report bool) error {
+	// Hold the lock to prevent concurrent mutations.
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	// Short circuit if the mutation is not allowed.
+	if err := db.modifyAllowed(); err != nil {
+		return err
+	}
+	return db.tree.cap(root, 0)
+}
+
+// Disable deactivates the database and invalidates all available state layers
+// as stale to prevent access to the persistent state, which is in the syncing
+// stage.
+func (db *Database) Disable() error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	// Short circuit if the database is in read only mode.
+	if db.readOnly {
+		return errDatabaseReadOnly
+	}
+	// Prevent duplicated disable operation.
+	if db.waitSync {
+		log.Error("Reject duplicated disable operation")
+		return nil
+	}
+	db.waitSync = true
+
+	// Mark the disk layer as stale to prevent access to persistent state.
+	db.tree.bottom().markStale()
+
+	// Write the initial sync flag to persist it across restarts.
+	rawdb.WriteSnapSyncStatusFlag(db.diskdb, rawdb.StateSyncRunning)
+	log.Info("Disabled trie database due to state sync")
+	return nil
+}
+
+// Close closes the trie database and the held freezer.
+func (db *Database) Close() error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	// Set the database to read-only mode to prevent all
+	// following mutations.
+	db.readOnly = true
+
+	// Release the memory held by clean cache.
+	db.tree.bottom().resetCache()
+
+	// Close the attached state history freezer.
+	if db.freezer == nil {
+		return nil
+	}
+	return db.freezer.Close()
+}
+
+// Size returns the current storage size of the memory cache in front of the
+// persistent database layer.
+func (db *Database) Size() (diffs common.StorageSize, nodes common.StorageSize) {
+	db.tree.forEach(func(layer layer) {
+		if diff, ok := layer.(*diffLayer); ok {
+			diffs += common.StorageSize(diff.size())
+		}
+		if disk, ok := layer.(*diskLayer); ok {
+			nodes += disk.size()
+		}
+	})
+	return diffs, nodes
+}
+
+// modifyAllowed returns the indicator if mutation is allowed. This function
+// assumes the db.lock is already held.
+func (db *Database) modifyAllowed() error {
+	if db.readOnly {
+		return errDatabaseReadOnly
+	}
+	if db.waitSync {
+		return errDatabaseWaitSync
+	}
+	return nil
 }

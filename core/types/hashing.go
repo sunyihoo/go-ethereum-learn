@@ -75,3 +75,11 @@ func prefixedRlpHash(prefix byte, x interface{}) (h common.Hash) {
 	sha.Read(h[:])
 	return h
 }
+
+// TrieHasher is the tool used to calculate the hash of derivable list.
+// This is internal, do not use.
+type TrieHasher interface {
+	Reset()
+	Update([]byte, []byte) error
+	Hash() common.Hash
+}

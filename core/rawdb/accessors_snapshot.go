@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // ReadSnapshotDisabled retrieves if the snapshot maintenance is disabled.
@@ -39,11 +40,62 @@ func ReadSnapshotRoot(db ethdb.KeyValueReader) common.Hash {
 	return common.BytesToHash(data)
 }
 
+// WriteSnapshotRoot stores the root of the block whose state is contained in
+// the persisted snapshot.
+func WriteSnapshotRoot(db ethdb.KeyValueWriter, root common.Hash) {
+	if err := db.Put(SnapshotRootKey, root[:]); err != nil {
+		log.Crit("Failed to store snapshot root", "err", err)
+	}
+}
+
+// WriteAccountSnapshot stores the snapshot entry of an account trie leaf.
+func WriteAccountSnapshot(db ethdb.KeyValueWriter, hash common.Hash, entry []byte) {
+	if err := db.Put(accountSnapshotKey(hash), entry); err != nil {
+		log.Crit("Failed to store account snapshot", "err", err)
+	}
+}
+
+// DeleteAccountSnapshot removes the snapshot entry of an account trie leaf.
+func DeleteAccountSnapshot(db ethdb.KeyValueWriter, hash common.Hash) {
+	if err := db.Delete(accountSnapshotKey(hash)); err != nil {
+		log.Crit("Failed to delete account snapshot", "err", err)
+	}
+}
+
+// WriteStorageSnapshot stores the snapshot entry of a storage trie leaf.
+func WriteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash common.Hash, entry []byte) {
+	if err := db.Put(storageSnapshotKey(accountHash, storageHash), entry); err != nil {
+		log.Crit("Failed to store storage snapshot", "err", err)
+	}
+}
+
+// DeleteStorageSnapshot removes the snapshot entry of a storage trie leaf.
+func DeleteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash common.Hash) {
+	if err := db.Delete(storageSnapshotKey(accountHash, storageHash)); err != nil {
+		log.Crit("Failed to delete storage snapshot", "err", err)
+	}
+}
+
 // ReadSnapshotJournal retrieves the serialized in-memory diff layers saved at
 // the last shutdown. The blob is expected to be max a few 10s of megabytes.
 func ReadSnapshotJournal(db ethdb.KeyValueReader) []byte {
 	data, _ := db.Get(snapshotJournalKey)
 	return data
+}
+
+// ReadSnapshotGenerator retrieves the serialized snapshot generator saved at
+// the last shutdown.
+func ReadSnapshotGenerator(db ethdb.KeyValueReader) []byte {
+	data, _ := db.Get(snapshotGeneratorKey)
+	return data
+}
+
+// WriteSnapshotGenerator stores the serialized snapshot generator to save at
+// shutdown.
+func WriteSnapshotGenerator(db ethdb.KeyValueWriter, generator []byte) {
+	if err := db.Put(snapshotGeneratorKey, generator); err != nil {
+		log.Crit("Failed to store snapshot generator", "err", err)
+	}
 }
 
 // ReadSnapshotRecoveryNumber retrieves the block number of the last persisted

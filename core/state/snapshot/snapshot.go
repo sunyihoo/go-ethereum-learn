@@ -19,12 +19,21 @@ package snapshot
 
 import (
 	"bytes"
+	"errors"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/triedb"
+)
+
+var (
+	// ErrSnapshotStale is returned from data accessors if the underlying snapshot
+	// layer had been invalidated due to the chain progressing forward far enough
+	// to not maintain the layer's original state.
+	ErrSnapshotStale = errors.New("snapshot stale")
 )
 
 // Snapshot represents the functionality supported by a snapshot storage layer.
@@ -109,4 +118,54 @@ type Tree struct {
 
 	// Test hooks
 	onFlatten func() // Hook invoked when the bottom most diff layers are flattened
+}
+
+// New attempts to load an already existing snapshot from a persistent key-value
+// store (with a number of memory layers from a journal), ensuring that the head
+// of the snapshot matches the expected one.
+//
+// If the snapshot is missing or the disk layer is broken, the snapshot will be
+// reconstructed using both the existing data and the state trie.
+// The repair happens on a background thread.
+//
+// If the memory layers in the journal do not match the disk layer (e.g. there is
+// a gap) or the journal is missing, there are two repair cases:
+//
+//   - if the 'recovery' parameter is true, memory diff-layers and the disk-layer
+//     will all be kept. This case happens when the snapshot is 'ahead' of the
+//     state trie.
+//   - otherwise, the entire snapshot is considered invalid and will be recreated on
+//     a background thread.
+func New(config Config, diskdb ethdb.KeyValueStore, triedb *triedb.Database, root common.Hash) (*Tree, error) {
+	// Create a new, empty snapshot tree
+	snap := &Tree{
+		config: config,
+		diskdb: diskdb,
+		triedb: triedb,
+		layers: make(map[common.Hash]snapshot),
+	}
+	// Attempt to load a previously persisted snapshot and rebuild one if failed
+	head, disabled, err := loadSnapshot(diskdb, triedb, root, config.CacheSize, config.Recovery, config.NoBuild)
+	if disabled {
+		log.Warn("Snapshot maintenance disabled (syncing)")
+		return snap, nil
+	}
+	// Create the building waiter iff the background generation is allowed
+	if !config.NoBuild && !config.AsyncBuild {
+		defer snap.waitBuild()
+	}
+	if err != nil {
+		log.Warn("Failed to load snapshot", "err", err)
+		if !config.NoBuild {
+			snap.Rebuild(root)
+			return snap, nil
+		}
+		return nil, err // Bail out the error, don't rebuild automatically.
+	}
+	// Existing snapshot loaded, seed all the layers
+	for head != nil {
+		snap.layers[head.Root()] = head
+		head = head.Parent()
+	}
+	return snap, nil
 }

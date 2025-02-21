@@ -85,6 +85,19 @@ func Split(b []byte) (k Kind, content, rest []byte, err error) {
 	return k, b[ts : ts+cs], b[ts+cs:], nil
 }
 
+// SplitString splits b into the content of an RLP string
+// and any remaining bytes after the string.
+func SplitString(b []byte) (content, rest []byte, err error) {
+	k, content, rest, err := Split(b)
+	if err != nil {
+		return nil, b, err
+	}
+	if k == List {
+		return nil, b, ErrExpectedString
+	}
+	return content, rest, nil
+}
+
 // SplitList splits b into the content of a list and any remaining
 // bytes after the list.
 func SplitList(b []byte) (content, rest []byte, err error) {
@@ -96,6 +109,19 @@ func SplitList(b []byte) (content, rest []byte, err error) {
 		return nil, b, ErrExpectedList
 	}
 	return content, rest, nil
+}
+
+// CountValues counts the number of encoded values in b.
+func CountValues(b []byte) (int, error) {
+	i := 0
+	for ; len(b) > 0; i++ {
+		_, tagsize, size, err := readKind(b)
+		if err != nil {
+			return 0, err
+		}
+		b = b[tagsize+size:]
+	}
+	return i, nil
 }
 
 func readKind(buf []byte) (k Kind, tagsize, contentsize uint64, err error) {

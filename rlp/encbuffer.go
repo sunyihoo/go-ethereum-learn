@@ -189,6 +189,13 @@ func (buf *encBuffer) writeUint256(z *uint256.Int) {
 	buf.str = append(buf.str, b[32-nBytes:]...)
 }
 
+// list adds a new list header to the header stack. It returns the index of the header.
+// Call listEnd with this index after encoding the content of the list.
+func (buf *encBuffer) list() int {
+	buf.lheads = append(buf.lheads, listhead{offset: len(buf.str), size: buf.lhsize})
+	return len(buf.lheads) - 1
+}
+
 func (buf *encBuffer) listEnd(index int) {
 	lh := &buf.lheads[index]
 	lh.size = buf.size() - lh.offset - lh.size
@@ -197,13 +204,6 @@ func (buf *encBuffer) listEnd(index int) {
 	} else {
 		buf.lhsize += 1 + intsize(uint64(lh.size))
 	}
-}
-
-// list adds a new list header to the header stack. It returns the index of the header.
-// Call listEnd with this index after encoding the content of the list.
-func (buf *encBuffer) list() int {
-	buf.lheads = append(buf.lheads, listhead{offset: len(buf.str), size: buf.lhsize})
-	return len(buf.lheads) - 1
 }
 
 func (buf *encBuffer) encode(val interface{}) error {
@@ -295,6 +295,19 @@ func (w *EncoderBuffer) Flush() error {
 	return err
 }
 
+// ToBytes returns the encoded bytes.
+func (w *EncoderBuffer) ToBytes() []byte {
+	return w.buf.makeBytes()
+}
+
+// AppendToBytes appends the encoded bytes to dst.
+func (w *EncoderBuffer) AppendToBytes(dst []byte) []byte {
+	size := w.buf.size()
+	out := append(dst, make([]byte, size)...)
+	w.buf.copyTo(out[len(dst):])
+	return out
+}
+
 // Write appends b directly to the encoder output.
 func (w EncoderBuffer) Write(b []byte) (int, error) {
 	return w.buf.Write(b)
@@ -303,4 +316,15 @@ func (w EncoderBuffer) Write(b []byte) (int, error) {
 // WriteBytes encodes b as an RLP string.
 func (w EncoderBuffer) WriteBytes(b []byte) {
 	w.buf.writeBytes(b)
+}
+
+// List starts a list. It returns an internal index. Call EndList with
+// this index after encoding the content to finish the list.
+func (w EncoderBuffer) List() int {
+	return w.buf.list()
+}
+
+// ListEnd finishes the given list.
+func (w EncoderBuffer) ListEnd(index int) {
+	w.buf.listEnd(index)
 }

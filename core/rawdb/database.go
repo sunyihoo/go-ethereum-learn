@@ -26,6 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -287,6 +288,12 @@ func NewDatabaseWithFreezer(db ethdb.KeyValueStore, ancient string, namespace st
 		KeyValueStore: db,
 		chainFreezer:  frdb,
 	}, nil
+}
+
+// NewMemoryDatabase creates an ephemeral in-memory key-value database without a
+// freezer moving immutable chain segments into cold storage.
+func NewMemoryDatabase() ethdb.Database {
+	return NewDatabase(memorydb.New())
 }
 
 const (

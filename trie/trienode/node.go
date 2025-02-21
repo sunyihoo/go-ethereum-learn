@@ -16,7 +16,13 @@
 
 package trienode
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"fmt"
+	"maps"
+	"sort"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 // Node is a wrapper which contains the encoded blob of the trie node and its
 // node hash. It is general enough that can be used to represent trie node
@@ -52,7 +58,122 @@ type NodeSet struct {
 	deletes int // the count of deleted nodes
 }
 
+// NewNodeSet initializes a node set. The owner is zero for the account trie and
+// the owning account address hash for storage tries.
+func NewNodeSet(owner common.Hash) *NodeSet {
+	return &NodeSet{
+		Owner: owner,
+		Nodes: make(map[string]*Node),
+	}
+}
+
+// ForEachWithOrder iterates the nodes with the order from bottom to top,
+// right to left, nodes with the longest path will be iterated first.
+func (set *NodeSet) ForEachWithOrder(callback func(path string, n *Node)) {
+	paths := make([]string, 0, len(set.Nodes))
+	for path := range set.Nodes {
+		paths = append(paths, path)
+	}
+	// Bottom-up, the longest path first
+	sort.Sort(sort.Reverse(sort.StringSlice(paths)))
+	for _, path := range paths {
+		callback(path, set.Nodes[path])
+	}
+}
+
+// AddNode adds the provided node into set.
+func (set *NodeSet) AddNode(path []byte, n *Node) {
+	if n.IsDeleted() {
+		set.deletes += 1
+	} else {
+		set.updates += 1
+	}
+	set.Nodes[string(path)] = n
+}
+
+// MergeSet merges this 'set' with 'other'. It assumes that the sets are disjoint,
+// and thus does not deduplicate data (count deletes, dedup leaves etc).
+func (set *NodeSet) MergeSet(other *NodeSet) error {
+	if set.Owner != other.Owner {
+		return fmt.Errorf("nodesets belong to different owner are not mergeable %x-%x", set.Owner, other.Owner)
+	}
+	maps.Copy(set.Nodes, other.Nodes)
+
+	set.deletes += other.deletes
+	set.updates += other.updates
+
+	// Since we assume the sets are disjoint, we can safely append leaves
+	// like this without deduplication.
+	set.Leaves = append(set.Leaves, other.Leaves...)
+	return nil
+}
+
+// Merge adds a set of nodes into the set.
+func (set *NodeSet) Merge(owner common.Hash, nodes map[string]*Node) error {
+	if set.Owner != owner {
+		return fmt.Errorf("nodesets belong to different owner are not mergeable %x-%x", set.Owner, owner)
+	}
+	for path, node := range nodes {
+		prev, ok := set.Nodes[path]
+		if ok {
+			// overwrite happens, revoke the counter
+			if prev.IsDeleted() {
+				set.deletes -= 1
+			} else {
+				set.updates -= 1
+			}
+		}
+		if node.IsDeleted() {
+			set.deletes += 1
+		} else {
+			set.updates += 1
+		}
+		set.Nodes[path] = node
+	}
+	return nil
+}
+
+// AddLeaf adds the provided leaf node into set. TODO(rjl493456442) how can
+// we get rid of it?
+func (set *NodeSet) AddLeaf(parent common.Hash, blob []byte) {
+	set.Leaves = append(set.Leaves, &leaf{Blob: blob, Parent: parent})
+}
+
+// HashSet returns a set of trie nodes keyed by node hash.
+func (set *NodeSet) HashSet() map[common.Hash][]byte {
+	ret := make(map[common.Hash][]byte, len(set.Nodes))
+	for _, n := range set.Nodes {
+		ret[n.Hash] = n.Blob
+	}
+	return ret
+}
+
 // MergedNodeSet represents a merged node set for a group of tries.
 type MergedNodeSet struct {
 	Sets map[common.Hash]*NodeSet
+}
+
+// NewMergedNodeSet initializes an empty merged set.
+func NewMergedNodeSet() *MergedNodeSet {
+	return &MergedNodeSet{Sets: make(map[common.Hash]*NodeSet)}
+}
+
+// Merge merges the provided dirty nodes of a trie into the set. The assumption
+// is held that no duplicated set belonging to the same trie will be merged twice.
+func (set *MergedNodeSet) Merge(other *NodeSet) error {
+	subset, present := set.Sets[other.Owner]
+	if present {
+		return subset.Merge(other.Owner, other.Nodes)
+	}
+	set.Sets[other.Owner] = other
+	return nil
+}
+
+// Flatten returns a two-dimensional map for internal nodes.
+func (set *MergedNodeSet) Flatten() map[common.Hash]map[string]*Node {
+	nodes := make(map[common.Hash]map[string]*Node, len(set.Sets))
+	for owner, set := range set.Sets {
+		nodes[owner] = set.Nodes
+	}
+	return nodes
 }

@@ -93,10 +93,27 @@ func DeleteStorageTrieNode(db ethdb.KeyValueWriter, accountHash common.Hash, pat
 	}
 }
 
+// ReadLegacyTrieNode retrieves the legacy trie node with the given
+// associated node hash.
+func ReadLegacyTrieNode(db ethdb.KeyValueReader, hash common.Hash) []byte {
+	data, err := db.Get(hash.Bytes())
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 // HasLegacyTrieNode checks if the trie node with the provided hash is present in db.
 func HasLegacyTrieNode(db ethdb.KeyValueReader, hash common.Hash) bool {
 	ok, _ := db.Has(hash.Bytes())
 	return ok
+}
+
+// WriteLegacyTrieNode writes the provided legacy trie node to database.
+func WriteLegacyTrieNode(db ethdb.KeyValueWriter, hash common.Hash, node []byte) {
+	if err := db.Put(hash.Bytes(), node); err != nil {
+		log.Crit("Failed to store legacy trie node", "err", err)
+	}
 }
 
 // ReadStateScheme reads the state scheme of persistent state, or none

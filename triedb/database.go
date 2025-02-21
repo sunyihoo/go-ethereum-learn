@@ -100,3 +100,9 @@ func NewDatabase(diskdb ethdb.Database, config *Config) *Database {
 	}
 	return db
 }
+
+// NodeReader returns a reader for accessing trie nodes within the specified state.
+// An error will be returned if the specified state is not available.
+func (db *Database) NodeReader(blockRoot common.Hash) (database.NodeReader, error) {
+	return db.backend.NodeReader(blockRoot)
+}

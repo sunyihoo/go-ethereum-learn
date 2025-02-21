@@ -25,6 +25,39 @@ import "github.com/ethereum/go-ethereum/common"
 // returning them from memory.
 type NodeResolver func(owner common.Hash, path []byte, hash common.Hash) []byte
 
+// Iterator is a key-value trie iterator that traverses a Trie.
+type Iterator struct {
+	nodeIt NodeIterator
+
+	Key   []byte // Current data key on which the iterator is positioned on
+	Value []byte // Current data value on which the iterator is positioned on
+	Err   error
+}
+
+// NewIterator creates a new key-value iterator from a node iterator.
+// Note that the value returned by the iterator is raw. If the content is encoded
+// (e.g. storage value is RLP-encoded), it's caller's duty to decode it.
+func NewIterator(it NodeIterator) *Iterator {
+	return &Iterator{
+		nodeIt: it,
+	}
+}
+
+// Next moves the iterator forward one key-value entry.
+func (it *Iterator) Next() bool {
+	for it.nodeIt.Next(true) {
+		if it.nodeIt.Leaf() {
+			it.Key = it.nodeIt.LeafKey()
+			it.Value = it.nodeIt.LeafBlob()
+			return true
+		}
+	}
+	it.Key = nil
+	it.Value = nil
+	it.Err = it.nodeIt.Error()
+	return false
+}
+
 // NodeIterator is an iterator to traverse the trie pre-order.
 type NodeIterator interface {
 	// Next moves the iterator to the next node. If the parameter is false, any child

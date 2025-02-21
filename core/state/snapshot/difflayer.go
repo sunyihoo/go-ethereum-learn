@@ -41,3 +41,9 @@ type diffLayer struct {
 
 	lock sync.RWMutex
 }
+
+// Stale return whether this layer has become stale (was flattened across) or if
+// it's still live.
+func (dl *diffLayer) Stale() bool {
+	return dl.stale.Load()
+}

@@ -16,10 +16,35 @@
 
 package rawdb
 
-import "github.com/ethereum/go-ethereum/ethdb"
+import (
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+)
 
 // ReadSkeletonSyncStatus retrieves the serialized sync status saved at shutdown.
 func ReadSkeletonSyncStatus(db ethdb.KeyValueReader) []byte {
 	data, _ := db.Get(skeletonSyncStatusKey)
 	return data
+}
+
+const (
+	StateSyncUnknown  = uint8(0) // flags the state snap sync is unknown
+	StateSyncRunning  = uint8(1) // flags the state snap sync is not completed yet
+	StateSyncFinished = uint8(2) // flags the state snap sync is completed
+)
+
+// ReadSnapSyncStatusFlag retrieves the state snap sync status flag.
+func ReadSnapSyncStatusFlag(db ethdb.KeyValueReader) uint8 {
+	blob, err := db.Get(snapSyncStatusFlagKey)
+	if err != nil || len(blob) != 1 {
+		return StateSyncUnknown
+	}
+	return blob[0]
+}
+
+// WriteSnapSyncStatusFlag stores the state snap sync status flag into database.
+func WriteSnapSyncStatusFlag(db ethdb.KeyValueWriter, flag uint8) {
+	if err := db.Put(snapSyncStatusFlagKey, []byte{flag}); err != nil {
+		log.Crit("Failed to store sync status flag", "err", err)
+	}
 }
