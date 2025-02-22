@@ -116,6 +116,25 @@ func WriteLegacyTrieNode(db ethdb.KeyValueWriter, hash common.Hash, node []byte)
 	}
 }
 
+// WriteTrieNode writes the trie node into database with the provided node info.
+//
+// hash-scheme requires the node hash as the identifier.
+// path-scheme requires the node owner and path as the identifier.
+func WriteTrieNode(db ethdb.KeyValueWriter, owner common.Hash, path []byte, hash common.Hash, node []byte, scheme string) {
+	switch scheme {
+	case HashScheme:
+		WriteLegacyTrieNode(db, hash, node)
+	case PathScheme:
+		if owner == (common.Hash{}) {
+			WriteAccountTrieNode(db, path, node)
+		} else {
+			WriteStorageTrieNode(db, owner, path, node)
+		}
+	default:
+		panic(fmt.Sprintf("Unknown scheme %v", scheme))
+	}
+}
+
 // ReadStateScheme reads the state scheme of persistent state, or none
 // if the state is not present in database.
 func ReadStateScheme(db ethdb.Database) string {

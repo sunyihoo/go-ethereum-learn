@@ -174,6 +174,17 @@ func (n *Node) openDataDir() error {
 	return nil
 }
 
+// RegisterAPIs registers the APIs a service provides on the node.
+func (n *Node) RegisterAPIs(apis []rpc.API) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if n.state != initializingState {
+		panic("can't register APIs on running/stopped node")
+	}
+	n.rpcAPIs = append(n.rpcAPIs, apis...)
+}
+
 // Config returns the configuration of node.
 func (n *Node) Config() *Config {
 	return n.config
@@ -187,6 +198,12 @@ func (n *Node) KeyStoreDir() string {
 // AccountManager retrieves the account manager used by the protocol stack.
 func (n *Node) AccountManager() *accounts.Manager {
 	return n.accman
+}
+
+// EventMux retrieves the event multiplexer used by all the network services in
+// the current protocol stack.
+func (n *Node) EventMux() *event.TypeMux {
+	return n.eventmux
 }
 
 // OpenDatabaseWithFreezer opens an existing database with the given name (or

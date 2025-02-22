@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -30,6 +31,11 @@ import (
 type Node struct {
 	Hash common.Hash // Node hash, empty for deleted node
 	Blob []byte      // Encoded node blob, nil for the deleted node
+}
+
+// Size returns the total memory size used by this node.
+func (n *Node) Size() int {
+	return len(n.Blob) + common.HashLength
 }
 
 // IsDeleted returns the indicator if the node is marked as deleted.
@@ -50,6 +56,9 @@ type leaf struct {
 	Blob   []byte      // raw blob of leaf
 	Parent common.Hash // the hash of parent node
 }
+
+// NodeSet contains a set of nodes collected during the commit operation.
+// Each node is keyed by path. It's not thread-safe to use.
 type NodeSet struct {
 	Owner   common.Hash
 	Leaves  []*leaf
@@ -139,6 +148,11 @@ func (set *NodeSet) AddLeaf(parent common.Hash, blob []byte) {
 	set.Leaves = append(set.Leaves, &leaf{Blob: blob, Parent: parent})
 }
 
+// Size returns the number of dirty nodes in set.
+func (set *NodeSet) Size() (int, int) {
+	return set.updates, set.deletes
+}
+
 // HashSet returns a set of trie nodes keyed by node hash.
 func (set *NodeSet) HashSet() map[common.Hash][]byte {
 	ret := make(map[common.Hash][]byte, len(set.Nodes))
@@ -146,6 +160,25 @@ func (set *NodeSet) HashSet() map[common.Hash][]byte {
 		ret[n.Hash] = n.Blob
 	}
 	return ret
+}
+
+// Summary returns a string-representation of the NodeSet.
+func (set *NodeSet) Summary() string {
+	var out = new(strings.Builder)
+	fmt.Fprintf(out, "nodeset owner: %v\n", set.Owner)
+	for path, n := range set.Nodes {
+		// Deletion
+		if n.IsDeleted() {
+			fmt.Fprintf(out, "  [-]: %x\n", path)
+			continue
+		}
+		// Insertion or update
+		fmt.Fprintf(out, "  [+/*]: %x -> %v \n", path, n.Hash)
+	}
+	for _, n := range set.Leaves {
+		fmt.Fprintf(out, "[leaf]: %v\n", n)
+	}
+	return out.String()
 }
 
 // MergedNodeSet represents a merged node set for a group of tries.
@@ -156,6 +189,13 @@ type MergedNodeSet struct {
 // NewMergedNodeSet initializes an empty merged set.
 func NewMergedNodeSet() *MergedNodeSet {
 	return &MergedNodeSet{Sets: make(map[common.Hash]*NodeSet)}
+}
+
+// NewWithNodeSet constructs a merged nodeset with the provided single set.
+func NewWithNodeSet(set *NodeSet) *MergedNodeSet {
+	merged := NewMergedNodeSet()
+	merged.Merge(set)
+	return merged
 }
 
 // Merge merges the provided dirty nodes of a trie into the set. The assumption

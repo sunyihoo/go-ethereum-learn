@@ -16,7 +16,18 @@
 
 package eth
 
-import "github.com/ethereum/go-ethereum/eth/gasprice"
+import (
+	"context"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/gasprice"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
+)
 
 // EthAPIBackend implements ethapi.Backend and tracers.Backend for full nodes
 type EthAPIBackend struct {
@@ -24,4 +35,59 @@ type EthAPIBackend struct {
 	allowUnprotectedTxs bool
 	eth                 *Ethereum
 	gpo                 *gasprice.Oracle
+}
+
+func (e EthAPIBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) RPCGasCap() uint64 {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) ChainConfig() *params.ChainConfig {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) Engine() consensus.Engine {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) ChainDb() ethdb.Database {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) StateAtBlock(ctx context.Context, block *types.Block, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (*state.StateDB, StateReleaseFunc, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e EthAPIBackend) StateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (*types.Transaction, vm.BlockContext, *state.StateDB, StateReleaseFunc, error) {
+	//TODO implement me
+	panic("implement me")
 }

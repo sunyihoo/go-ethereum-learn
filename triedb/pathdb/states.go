@@ -355,3 +355,33 @@ type StateSetWithOrigin struct {
 	// Memory size of the state data (accountOrigin and storageOrigin)
 	size uint64
 }
+
+// NewStateSetWithOrigin constructs the state set with the provided data.
+func NewStateSetWithOrigin(accounts map[common.Hash][]byte, storages map[common.Hash]map[common.Hash][]byte, accountOrigin map[common.Address][]byte, storageOrigin map[common.Address]map[common.Hash][]byte) *StateSetWithOrigin {
+	// Don't panic for the lazy callers, initialize the nil maps instead.
+	if accountOrigin == nil {
+		accountOrigin = make(map[common.Address][]byte)
+	}
+	if storageOrigin == nil {
+		storageOrigin = make(map[common.Address]map[common.Hash][]byte)
+	}
+	// Count the memory size occupied by the set. Note that each slot key here
+	// uses 2*common.HashLength to keep consistent with the calculation method
+	// of stateSet.
+	var size int
+	for _, data := range accountOrigin {
+		size += common.HashLength + len(data)
+	}
+	for _, slots := range storageOrigin {
+		for _, data := range slots {
+			size += 2*common.HashLength + len(data)
+		}
+	}
+	set := newStates(accounts, storages)
+	return &StateSetWithOrigin{
+		stateSet:      set,
+		accountOrigin: accountOrigin,
+		storageOrigin: storageOrigin,
+		size:          set.size + uint64(size),
+	}
+}

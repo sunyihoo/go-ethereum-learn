@@ -24,3 +24,24 @@ type Cache[K comparable, V any] struct {
 	cache BasicLRU[K, V]
 	mu    sync.Mutex
 }
+
+// NewCache creates an LRU cache.
+func NewCache[K comparable, V any](capacity int) *Cache[K, V] {
+	return &Cache[K, V]{cache: NewBasicLRU[K, V](capacity)}
+}
+
+// Add adds a value to the cache. Returns true if an item was evicted to store the new item.
+func (c *Cache[K, V]) Add(key K, value V) (evicted bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.cache.Add(key, value)
+}
+
+// Get retrieves a value from the cache. This marks the key as recently used.
+func (c *Cache[K, V]) Get(key K) (value V, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.cache.Get(key)
+}

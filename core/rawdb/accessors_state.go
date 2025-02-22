@@ -24,6 +24,60 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// ReadPreimage retrieves a single preimage of the provided hash.
+func ReadPreimage(db ethdb.KeyValueReader, hash common.Hash) []byte {
+	data, _ := db.Get(preimageKey(hash))
+	return data
+}
+
+// WritePreimages writes the provided set of preimages to the database.
+func WritePreimages(db ethdb.KeyValueWriter, preimages map[common.Hash][]byte) {
+	for hash, preimage := range preimages {
+		if err := db.Put(preimageKey(hash), preimage); err != nil {
+			log.Crit("Failed to store trie preimage", "err", err)
+		}
+	}
+	preimageCounter.Inc(int64(len(preimages)))
+	preimageHitCounter.Inc(int64(len(preimages)))
+}
+
+// ReadCode retrieves the contract code of the provided code hash.
+func ReadCode(db ethdb.KeyValueReader, hash common.Hash) []byte {
+	// Try with the prefixed code scheme first, if not then try with legacy
+	// scheme.
+	data := ReadCodeWithPrefix(db, hash)
+	if len(data) != 0 {
+		return data
+	}
+	data, _ = db.Get(hash.Bytes())
+	return data
+}
+
+// ReadCodeWithPrefix retrieves the contract code of the provided code hash.
+// The main difference between this function and ReadCode is this function
+// will only check the existence with latest scheme(with prefix).
+func ReadCodeWithPrefix(db ethdb.KeyValueReader, hash common.Hash) []byte {
+	data, _ := db.Get(codeKey(hash))
+	return data
+}
+
+// WriteCode writes the provided contract code database.
+func WriteCode(db ethdb.KeyValueWriter, hash common.Hash, code []byte) {
+	if err := db.Put(codeKey(hash), code); err != nil {
+		log.Crit("Failed to store contract code", "err", err)
+	}
+}
+
+// ReadStateID retrieves the state id with the provided state root.
+func ReadStateID(db ethdb.KeyValueReader, root common.Hash) *uint64 {
+	data, err := db.Get(stateIDKey(root))
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	number := binary.BigEndian.Uint64(data)
+	return &number
+}
+
 // WriteStateID writes the provided state lookup to database.
 func WriteStateID(db ethdb.KeyValueWriter, root common.Hash, id uint64) {
 	var buff [8]byte
@@ -61,6 +115,22 @@ func WritePersistentStateID(db ethdb.KeyValueWriter, number uint64) {
 func ReadTrieJournal(db ethdb.KeyValueReader) []byte {
 	data, _ := db.Get(trieJournalKey)
 	return data
+}
+
+// WriteTrieJournal stores the serialized in-memory trie nodes of layers to save at
+// shutdown.
+func WriteTrieJournal(db ethdb.KeyValueWriter, journal []byte) {
+	if err := db.Put(trieJournalKey, journal); err != nil {
+		log.Crit("Failed to store tries journal", "err", err)
+	}
+}
+
+// DeleteTrieJournal deletes the serialized in-memory trie nodes of layers saved at
+// the last shutdown.
+func DeleteTrieJournal(db ethdb.KeyValueWriter) {
+	if err := db.Delete(trieJournalKey); err != nil {
+		log.Crit("Failed to remove tries journal", "err", err)
+	}
 }
 
 // ReadStateHistoryMeta retrieves the metadata corresponding to the specified

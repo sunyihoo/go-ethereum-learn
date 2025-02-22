@@ -47,6 +47,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/remotedb"
 	"github.com/ethereum/go-ethereum/internal/flags"
@@ -1685,7 +1686,11 @@ func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 // The second return value is the full node instance.
 func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (*eth.EthAPIBackend, *eth.Ethereum) {
 	backend, err := eth.New(stack, cfg)
-
+	if err != nil {
+		Fatalf("Failed to register the Ethereum service: %v", err)
+	}
+	stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
+	return backend.APIBackend, backend
 }
 
 // SetupMetrics configures the metrics system.

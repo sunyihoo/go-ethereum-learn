@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -227,5 +228,60 @@ func (dl *diffLayer) journal(w io.Writer) error {
 		return err
 	}
 	log.Debug("Journaled pathdb diff layer", "root", dl.root, "parent", dl.parent.rootHash(), "id", dl.stateID(), "block", dl.block)
+	return nil
+}
+
+// Journal commits an entire diff hierarchy to disk into a single journal entry.
+// This is meant to be used during shutdown to persist the layer without
+// flattening everything down (bad for reorgs). And this function will mark the
+// database as read-only to prevent all following mutation to disk.
+//
+// The supplied root must be a valid trie hash value.
+func (db *Database) Journal(root common.Hash) error {
+	// Retrieve the head layer to journal from.
+	l := db.tree.get(root)
+	if l == nil {
+		return fmt.Errorf("triedb layer [%#x] missing", root)
+	}
+	disk := db.tree.bottom()
+	if l, ok := l.(*diffLayer); ok {
+		log.Info("Persisting dirty state to disk", "head", l.block, "root", root, "layers", l.id-disk.id+disk.buffer.layers)
+	} else { // disk layer only on noop runs (likely) or deep reorgs (unlikely)
+		log.Info("Persisting dirty state to disk", "root", root, "layers", disk.buffer.layers)
+	}
+	start := time.Now()
+
+	// Run the journaling
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	// Short circuit if the database is in read only mode.
+	if db.readOnly {
+		return errDatabaseReadOnly
+	}
+	// Firstly write out the metadata of journal
+	journal := new(bytes.Buffer)
+	if err := rlp.Encode(journal, journalVersion); err != nil {
+		return err
+	}
+	// Secondly write out the state root in disk, ensure all layers
+	// on top are continuous with disk.
+	diskRoot, err := db.hasher(rawdb.ReadAccountTrieNode(db.diskdb, nil))
+	if err != nil {
+		return err
+	}
+	if err := rlp.Encode(journal, diskRoot); err != nil {
+		return err
+	}
+	// Finally write out the journal of each layer in reverse order.
+	if err := l.journal(journal); err != nil {
+		return err
+	}
+	// Store the journal into the database and return
+	rawdb.WriteTrieJournal(db.diskdb, journal.Bytes())
+
+	// Set the db in read only mode to reject all following mutations
+	db.readOnly = true
+	log.Info("Persisted dirty state to disk", "size", common.StorageSize(journal.Len()), "elapsed", common.PrettyDuration(time.Since(start)))
 	return nil
 }

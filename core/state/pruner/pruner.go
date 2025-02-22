@@ -17,7 +17,10 @@
 package pruner
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +50,121 @@ const (
 	// to avoid triggering range compaction because of small deletion.
 	rangeCompactionThreshold = 100000
 )
+
+func prune(snaptree *snapshot.Tree, root common.Hash, maindb ethdb.Database, stateBloom *stateBloom, bloomPath string, middleStateRoots map[common.Hash]struct{}, start time.Time) error {
+	// Delete all stale trie nodes in the disk. With the help of state bloom
+	// the trie nodes(and codes) belong to the active state will be filtered
+	// out. A very small part of stale tries will also be filtered because of
+	// the false-positive rate of bloom filter. But the assumption is held here
+	// that the false-positive is low enough(~0.05%). The probability of the
+	// dangling node is the state root is super low. So the dangling nodes in
+	// theory will never ever be visited again.
+	var (
+		skipped, count int
+		size           common.StorageSize
+		pstart         = time.Now()
+		logged         = time.Now()
+		batch          = maindb.NewBatch()
+		iter           = maindb.NewIterator(nil, nil)
+	)
+	for iter.Next() {
+		key := iter.Key()
+
+		// All state entries don't belong to specific state and genesis are deleted here
+		// - trie node
+		// - legacy contract code
+		// - new-scheme contract code
+		isCode, codeKey := rawdb.IsCodeKey(key)
+		if len(key) == common.HashLength || isCode {
+			checkKey := key
+			if isCode {
+				checkKey = codeKey
+			}
+			if _, exist := middleStateRoots[common.BytesToHash(checkKey)]; exist {
+				log.Debug("Forcibly delete the middle state roots", "hash", common.BytesToHash(checkKey))
+			} else {
+				if stateBloom.Contain(checkKey) {
+					skipped += 1
+					continue
+				}
+			}
+			count += 1
+			size += common.StorageSize(len(key) + len(iter.Value()))
+			batch.Delete(key)
+
+			var eta time.Duration // Realistically will never remain uninited
+			if done := binary.BigEndian.Uint64(key[:8]); done > 0 {
+				var (
+					left  = math.MaxUint64 - binary.BigEndian.Uint64(key[:8])
+					speed = done/uint64(time.Since(pstart)/time.Millisecond+1) + 1 // +1s to avoid division by zero
+				)
+				eta = time.Duration(left/speed) * time.Millisecond
+			}
+			if time.Since(logged) > 8*time.Second {
+				log.Info("Pruning state data", "nodes", count, "skipped", skipped, "size", size,
+					"elapsed", common.PrettyDuration(time.Since(pstart)), "eta", common.PrettyDuration(eta))
+				logged = time.Now()
+			}
+			// Recreate the iterator after every batch commit in order
+			// to allow the underlying compactor to delete the entries.
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				batch.Write()
+				batch.Reset()
+
+				iter.Release()
+				iter = maindb.NewIterator(nil, key)
+			}
+		}
+	}
+	if batch.ValueSize() > 0 {
+		batch.Write()
+		batch.Reset()
+	}
+	iter.Release()
+	log.Info("Pruned state data", "nodes", count, "size", size, "elapsed", common.PrettyDuration(time.Since(pstart)))
+
+	// Pruning is done, now drop the "useless" layers from the snapshot.
+	// Firstly, flushing the target layer into the disk. After that all
+	// diff layers below the target will all be merged into the disk.
+	if err := snaptree.Cap(root, 0); err != nil {
+		return err
+	}
+	// Secondly, flushing the snapshot journal into the disk. All diff
+	// layers upon are dropped silently. Eventually the entire snapshot
+	// tree is converted into a single disk layer with the pruning target
+	// as the root.
+	if _, err := snaptree.Journal(root); err != nil {
+		return err
+	}
+	// Delete the state bloom, it marks the entire pruning procedure is
+	// finished. If any crashes or manual exit happens before this,
+	// `RecoverPruning` will pick it up in the next restarts to redo all
+	// the things.
+	os.RemoveAll(bloomPath)
+
+	// Start compactions, will remove the deleted data from the disk immediately.
+	// Note for small pruning, the compaction is skipped.
+	if count >= rangeCompactionThreshold {
+		cstart := time.Now()
+		for b := 0x00; b <= 0xf0; b += 0x10 {
+			var (
+				start = []byte{byte(b)}
+				end   = []byte{byte(b + 0x10)}
+			)
+			if b == 0xf0 {
+				end = nil
+			}
+			log.Info("Compacting database", "range", fmt.Sprintf("%#x-%#x", start, end), "elapsed", common.PrettyDuration(time.Since(cstart)))
+			if err := maindb.Compact(start, end); err != nil {
+				log.Error("Database compaction failed", "error", err)
+				return err
+			}
+		}
+		log.Info("Database compaction finished", "elapsed", common.PrettyDuration(time.Since(cstart)))
+	}
+	log.Info("State pruning successful", "pruned", size, "elapsed", common.PrettyDuration(time.Since(start)))
+	return nil
+}
 
 // RecoverPruning will resume the pruning procedure during the system restart.
 // This function is used in this case: user tries to prune state data, but the

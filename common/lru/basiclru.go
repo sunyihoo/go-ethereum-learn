@@ -31,6 +31,82 @@ type cacheItem[K any, V any] struct {
 	value V
 }
 
+// NewBasicLRU creates a new LRU cache.
+func NewBasicLRU[K comparable, V any](capacity int) BasicLRU[K, V] {
+	if capacity <= 0 {
+		capacity = 1
+	}
+	c := BasicLRU[K, V]{
+		items: make(map[K]cacheItem[K, V]),
+		list:  newList[K](),
+		cap:   capacity,
+	}
+	return c
+}
+
+// Add adds a value to the cache. Returns true if an item was evicted to store the new item.
+func (c *BasicLRU[K, V]) Add(key K, value V) (evicted bool) {
+	item, ok := c.items[key]
+	if ok {
+		// Already exists in cache.
+		item.value = value
+		c.items[key] = item
+		c.list.moveToFront(item.elem)
+		return false
+	}
+
+	var elem *listElem[K]
+	if c.Len() >= c.cap {
+		elem = c.list.removeLast()
+		delete(c.items, elem.v)
+		evicted = true
+	} else {
+		elem = new(listElem[K])
+	}
+
+	// Store the new item.
+	// Note that, if another item was evicted, we re-use its list element here.
+	elem.v = key
+	c.items[key] = cacheItem[K, V]{elem, value}
+	c.list.pushElem(elem)
+	return evicted
+}
+
+// Contains reports whether the given key exists in the cache.
+func (c *BasicLRU[K, V]) Contains(key K) bool {
+	_, ok := c.items[key]
+	return ok
+}
+
+// Get retrieves a value from the cache. This marks the key as recently used.
+func (c *BasicLRU[K, V]) Get(key K) (value V, ok bool) {
+	item, ok := c.items[key]
+	if !ok {
+		return value, false
+	}
+	c.list.moveToFront(item.elem)
+	return item.value, true
+}
+
+// Len returns the current number of items in the cache.
+func (c *BasicLRU[K, V]) Len() int {
+	return len(c.items)
+}
+
+// RemoveOldest drops the least recently used item.
+func (c *BasicLRU[K, V]) RemoveOldest() (key K, value V, ok bool) {
+	lastElem := c.list.last()
+	if lastElem == nil {
+		return key, value, false
+	}
+
+	key = lastElem.v
+	item := c.items[key]
+	delete(c.items, key)
+	c.list.remove(lastElem)
+	return key, item.value, true
+}
+
 // list is a doubly-linked list holding items of type he.
 // The zero value is not valid, use newList to create lists.
 type list[T any] struct {
@@ -41,4 +117,56 @@ type listElem[T any] struct {
 	next *listElem[T]
 	prev *listElem[T]
 	v    T
+}
+
+func newList[T any]() *list[T] {
+	l := new(list[T])
+	l.init()
+	return l
+}
+
+// init reinitializes the list, making it empty.
+func (l *list[T]) init() {
+	l.root.next = &l.root
+	l.root.prev = &l.root
+}
+
+// pushElem adds an element to the front of the list.
+func (l *list[T]) pushElem(e *listElem[T]) {
+	e.prev = &l.root
+	e.next = l.root.next
+	l.root.next = e
+	e.next.prev = e
+}
+
+// moveToFront makes 'node' the head of the list.
+func (l *list[T]) moveToFront(e *listElem[T]) {
+	e.prev.next = e.next
+	e.next.prev = e.prev
+	l.pushElem(e)
+}
+
+// remove removes an element from the list.
+func (l *list[T]) remove(e *listElem[T]) {
+	e.prev.next = e.next
+	e.next.prev = e.prev
+	e.next, e.prev = nil, nil
+}
+
+// removeLast removes the last element of the list.
+func (l *list[T]) removeLast() *listElem[T] {
+	last := l.last()
+	if last != nil {
+		l.remove(last)
+	}
+	return last
+}
+
+// last returns the last element of the list, or nil if the list is empty.
+func (l *list[T]) last() *listElem[T] {
+	e := l.root.prev
+	if e == &l.root {
+		return nil
+	}
+	return e
 }

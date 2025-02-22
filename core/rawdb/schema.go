@@ -18,9 +18,11 @@
 package rawdb
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
 // The fields below define the low level database schema prefixing.
@@ -87,6 +89,7 @@ var (
 
 	SnapshotAccountPrefix = []byte("a") // SnapshotAccountPrefix + account hash -> account trie value
 	SnapshotStoragePrefix = []byte("o") // SnapshotStoragePrefix + account hash + storage hash -> storage trie value
+	CodePrefix            = []byte("c") // CodePrefix + code hash -> account code
 
 	// Path-based storage scheme of merkle patricia trie.
 	TrieNodeAccountPrefix = []byte("A") // TrieNodeAccountPrefix + hexPath -> trie node
@@ -100,9 +103,15 @@ var (
 	// (d) State ID lookups, etc.
 	VerklePrefix = []byte("v")
 
-	configPrefix  = []byte("ethereum-config-")  // config prefix for the db
-	genesisPrefix = []byte("ethereum-genesis-") // genesis state prefix for the db
+	PreimagePrefix = []byte("secure-key-")       // PreimagePrefix + hash -> preimage
+	configPrefix   = []byte("ethereum-config-")  // config prefix for the db
+	genesisPrefix  = []byte("ethereum-genesis-") // genesis state prefix for the db
 
+	// BloomBitsIndexPrefix is the data table of a chain indexer to track its progress
+	BloomBitsIndexPrefix = []byte("iB")
+
+	preimageCounter    = metrics.NewRegisteredCounter("db/preimage/total", nil)
+	preimageHitCounter = metrics.NewRegisteredCounter("db/preimage/hits", nil)
 )
 
 // LegacyTxLookupEntry is the legacy TxLookupEntry definition with some unnecessary
@@ -167,6 +176,25 @@ func storageSnapshotKey(accountHash, storageHash common.Hash) []byte {
 	n += copy(buf[n:], accountHash.Bytes())
 	copy(buf[n:], storageHash.Bytes())
 	return buf
+}
+
+// preimageKey = PreimagePrefix + hash
+func preimageKey(hash common.Hash) []byte {
+	return append(PreimagePrefix, hash.Bytes()...)
+}
+
+// codeKey = CodePrefix + hash
+func codeKey(hash common.Hash) []byte {
+	return append(CodePrefix, hash.Bytes()...)
+}
+
+// IsCodeKey reports whether the given byte slice is the key of contract code,
+// if so return the raw code hash as well.
+func IsCodeKey(key []byte) (bool, []byte) {
+	if bytes.HasPrefix(key, CodePrefix) && len(key) == common.HashLength+len(CodePrefix) {
+		return true, key[len(CodePrefix):]
+	}
+	return false, nil
 }
 
 // configKey = configPrefix + hash

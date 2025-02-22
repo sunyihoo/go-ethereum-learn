@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-verkle"
 )
 
@@ -33,9 +34,26 @@ import (
 // out on a block.
 type BlockNonce [8]byte
 
+// EncodeNonce converts the given integer to a block nonce.
+func EncodeNonce(i uint64) BlockNonce {
+	var n BlockNonce
+	binary.BigEndian.PutUint64(n[:], i)
+	return n
+}
+
 // Uint64 returns the integer value of a block nonce.
 func (n BlockNonce) Uint64() uint64 {
 	return binary.BigEndian.Uint64(n[:])
+}
+
+// MarshalText encodes n as a hex string with 0x prefix.
+func (n BlockNonce) MarshalText() ([]byte, error) {
+	return hexutil.Bytes(n[:]).MarshalText()
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (n *BlockNonce) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedText("BlockNonce", input, n[:])
 }
 
 // ExecutionWitness represents the witness + proof used in a verkle context,
@@ -85,6 +103,12 @@ type Header struct {
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
 }
 
+// Hash returns the block hash of the header, which is simply the keccak256 hash of its
+// RLP encoding.
+func (h *Header) Hash() common.Hash {
+	return rlpHash(h)
+}
+
 // Body is a simple (mutable, non-safe) data container for storing and moving
 // a block's data contents (transactions and uncles) together.
 type Body struct {
@@ -131,6 +155,69 @@ type Block struct {
 	ReceivedFrom interface{}
 }
 
+// "external" block encoding. used for eth protocol, etc.
+type extblock struct {
+	Header      *Header
+	Txs         []*Transaction
+	Uncles      []*Header
+	Withdrawals []*Withdrawal `rlp:"optional"`
+}
+
+// NewBlock creates a new block. The input data is copied, changes to header and to the
+// field values will not affect the block.
+//
+// The body elements and the receipts are used to recompute and overwrite the
+// relevant portions of the header.
+func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher) *Block {
+	if body == nil {
+		body = &Body{}
+	}
+	var (
+		b           = NewBlockWithHeader(header)
+		txs         = body.Transactions
+		uncles      = body.Uncles
+		withdrawals = body.Withdrawals
+	)
+
+	if len(txs) == 0 {
+		b.header.TxHash = EmptyTxsHash
+	} else {
+		b.header.TxHash = DeriveSha(Transactions(txs), hasher)
+		b.transactions = make(Transactions, len(txs))
+		copy(b.transactions, txs)
+	}
+
+	if len(receipts) == 0 {
+		b.header.ReceiptHash = EmptyReceiptsHash
+	} else {
+		b.header.ReceiptHash = DeriveSha(Receipts(receipts), hasher)
+		b.header.Bloom = CreateBloom(receipts)
+	}
+
+	if len(uncles) == 0 {
+		b.header.UncleHash = EmptyUncleHash
+	} else {
+		b.header.UncleHash = CalcUncleHash(uncles)
+		b.uncles = make([]*Header, len(uncles))
+		for i := range uncles {
+			b.uncles[i] = CopyHeader(uncles[i])
+		}
+	}
+
+	if withdrawals == nil {
+		b.header.WithdrawalsHash = nil
+	} else if len(withdrawals) == 0 {
+		b.header.WithdrawalsHash = &EmptyWithdrawalsHash
+		b.withdrawals = Withdrawals{}
+	} else {
+		hash := DeriveSha(Withdrawals(withdrawals), hasher)
+		b.header.WithdrawalsHash = &hash
+		b.withdrawals = slices.Clone(withdrawals)
+	}
+
+	return b
+}
+
 // CopyHeader creates a deep copy of a block header.
 func CopyHeader(h *Header) *Header {
 	cpy := *h
@@ -170,16 +257,36 @@ func CopyHeader(h *Header) *Header {
 	return &cpy
 }
 
+// Body returns the non-header content of the block.
+// Note the returned data is not an independent copy.
+func (b *Block) Body() *Body {
+	return &Body{b.transactions, b.uncles, b.withdrawals}
+}
+
 // Header returns the block header (as a copy).
 func (b *Block) Header() *Header {
 	return CopyHeader(b.header)
 }
+
+// Header value accessors. These do copy!
+
+func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
+
+func (b *Block) NumberU64() uint64 { return b.header.Number.Uint64() }
+func (b *Block) Root() common.Hash { return b.header.Root }
 
 type writeCounter uint64
 
 func (c *writeCounter) Write(b []byte) (int, error) {
 	*c += writeCounter(len(b))
 	return len(b), nil
+}
+
+func CalcUncleHash(uncles []*Header) common.Hash {
+	if len(uncles) == 0 {
+		return EmptyUncleHash
+	}
+	return rlpHash(uncles)
 }
 
 // NewBlockWithHeader creates a block with the given header data. The
@@ -203,6 +310,17 @@ func (b *Block) WithBody(body Body) *Block {
 		block.uncles[i] = CopyHeader(body.Uncles[i])
 	}
 	return block
+}
+
+// Hash returns the keccak256 hash of b's header.
+// The hash is computed on the first call and cached thereafter.
+func (b *Block) Hash() common.Hash {
+	if hash := b.hash.Load(); hash != nil {
+		return *hash
+	}
+	h := b.header.Hash()
+	b.hash.Store(&h)
+	return h
 }
 
 type Blocks []*Block

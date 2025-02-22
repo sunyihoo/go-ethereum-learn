@@ -17,9 +17,27 @@
 package types
 
 import (
+	"bytes"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
+)
+
+var (
+	receiptStatusFailedRLP     = []byte{}
+	receiptStatusSuccessfulRLP = []byte{0x01}
+)
+
+var errShortTypedReceipt = errors.New("typed receipt too short")
+
+const (
+	// ReceiptStatusFailed is the status code of a transaction if execution failed.
+	ReceiptStatusFailed = uint64(0)
+
+	// ReceiptStatusSuccessful is the status code of a transaction if execution succeeded.
+	ReceiptStatusSuccessful = uint64(1)
 )
 
 // Receipt represents the results of a transaction.
@@ -47,5 +65,49 @@ type Receipt struct {
 	TransactionIndex uint        `json:"transactionIndex"`
 }
 
+// receiptRLP is the consensus encoding of a receipt.
+type receiptRLP struct {
+	PostStateOrStatus []byte
+	CumulativeGasUsed uint64
+	Bloom             Bloom
+	Logs              []*Log
+}
+
+func (r *Receipt) statusEncoding() []byte {
+	if len(r.PostState) == 0 {
+		if r.Status == ReceiptStatusFailed {
+			return receiptStatusFailedRLP
+		}
+		return receiptStatusSuccessfulRLP
+	}
+	return r.PostState
+}
+
+// ReceiptForStorage is a wrapper around a Receipt with RLP serialization
+// that omits the Bloom field and deserialization that re-computes it.
+type ReceiptForStorage Receipt
+
 // Receipts implements DerivableList for receipts.
 type Receipts []*Receipt
+
+// Len returns the number of receipts in this list.
+func (rs Receipts) Len() int { return len(rs) }
+
+// EncodeIndex encodes the i'th receipt to w.
+func (rs Receipts) EncodeIndex(i int, w *bytes.Buffer) {
+	r := rs[i]
+	data := &receiptRLP{r.statusEncoding(), r.CumulativeGasUsed, r.Bloom, r.Logs}
+	if r.Type == LegacyTxType {
+		rlp.Encode(w, data)
+		return
+	}
+	w.WriteByte(r.Type)
+	switch r.Type {
+	case AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType:
+		rlp.Encode(w, data)
+	default:
+		// For unsupported types, write nothing. Since this is for
+		// DeriveSha, the error will be caught matching the derived hash
+		// to the block.
+	}
+}

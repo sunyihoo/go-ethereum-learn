@@ -55,11 +55,32 @@ func ReadChainConfig(db ethdb.KeyValueReader, hash common.Hash) *params.ChainCon
 	return &config
 }
 
+// WriteChainConfig writes the chain config settings to the database.
+func WriteChainConfig(db ethdb.KeyValueWriter, hash common.Hash, cfg *params.ChainConfig) {
+	if cfg == nil {
+		return
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		log.Crit("Failed to JSON encode chain config", "err", err)
+	}
+	if err := db.Put(configKey(hash), data); err != nil {
+		log.Crit("Failed to store chain config", "err", err)
+	}
+}
+
 // ReadGenesisStateSpec retrieves the genesis state specification based on the
 // given genesis (block-)hash.
 func ReadGenesisStateSpec(db ethdb.KeyValueReader, blockhash common.Hash) []byte {
 	data, _ := db.Get(genesisStateSpecKey(blockhash))
 	return data
+}
+
+// WriteGenesisStateSpec writes the genesis state specification into the disk.
+func WriteGenesisStateSpec(db ethdb.KeyValueWriter, blockhash common.Hash, data []byte) {
+	if err := db.Put(genesisStateSpecKey(blockhash), data); err != nil {
+		log.Crit("Failed to store genesis state", "err", err)
+	}
 }
 
 // genesisStateSpecKey = genesisPrefix + hash

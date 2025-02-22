@@ -19,10 +19,12 @@ package trie
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb/database"
 )
@@ -62,6 +64,19 @@ func (t *Trie) newFlag() nodeFlag {
 	return nodeFlag{dirty: true}
 }
 
+// Copy returns a copy of Trie.
+func (t *Trie) Copy() *Trie {
+	return &Trie{
+		root:        t.root,
+		owner:       t.owner,
+		committed:   t.committed,
+		reader:      t.reader,
+		tracer:      t.tracer.copy(),
+		uncommitted: t.uncommitted,
+		unhashed:    t.unhashed,
+	}
+}
+
 // New creates the trie instance with provided trie id and the read-only
 // database. The state specified by trie id must be available, otherwise
 // an error will be returned. The trie root specified by trie id can be
@@ -94,6 +109,16 @@ func NewEmpty(db database.NodeDatabase) *Trie {
 	return tr
 }
 
+// MustNodeIterator is a wrapper of NodeIterator and will omit any encountered
+// error but just print out an error message.
+func (t *Trie) MustNodeIterator(start []byte) NodeIterator {
+	it, err := t.NodeIterator(start)
+	if err != nil {
+		log.Error("Unhandled trie error in Trie.NodeIterator", "err", err)
+	}
+	return it
+}
+
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration starts at
 // the key after the given start key.
 func (t *Trie) NodeIterator(start []byte) (NodeIterator, error) {
@@ -102,6 +127,16 @@ func (t *Trie) NodeIterator(start []byte) (NodeIterator, error) {
 		return nil, ErrCommitted
 	}
 	return newNodeIterator(t, start), nil
+}
+
+// MustGet is a wrapper of Get and will omit any encountered error but just
+// print out an error message.
+func (t *Trie) MustGet(key []byte) []byte {
+	res, err := t.Get(key)
+	if err != nil {
+		log.Error("Unhandled trie error in Trie.Get", "err", err)
+	}
+	return res
 }
 
 // Get returns the value for key stored in the trie.
@@ -154,6 +189,95 @@ func (t *Trie) get(origNode node, key []byte, pos int) (value []byte, newnode no
 		return value, newnode, true, err
 	default:
 		panic(fmt.Sprintf("%T: invalid node: %v", origNode, origNode))
+	}
+}
+
+// GetNode retrieves a trie node by compact-encoded path. It is not possible
+// to use keybyte-encoding as the path might contain odd nibbles.
+//
+// If the requested node is not present in trie, no error will be returned.
+// If the trie is corrupted, a MissingNodeError is returned.
+func (t *Trie) GetNode(path []byte) ([]byte, int, error) {
+	// Short circuit if the trie is already committed and not usable.
+	if t.committed {
+		return nil, 0, ErrCommitted
+	}
+	item, newroot, resolved, err := t.getNode(t.root, compactToHex(path), 0)
+	if err != nil {
+		return nil, resolved, err
+	}
+	if resolved > 0 {
+		t.root = newroot
+	}
+	return item, resolved, nil
+}
+
+func (t *Trie) getNode(origNode node, path []byte, pos int) (item []byte, newnode node, resolved int, err error) {
+	// If non-existent path requested, abort
+	if origNode == nil {
+		return nil, nil, 0, nil
+	}
+	// If we reached the requested path, return the current node
+	if pos >= len(path) {
+		// Although we most probably have the original node expanded, encoding
+		// that into consensus form can be nasty (needs to cascade down) and
+		// time consuming. Instead, just pull the hash up from disk directly.
+		var hash hashNode
+		if node, ok := origNode.(hashNode); ok {
+			hash = node
+		} else {
+			hash, _ = origNode.cache()
+		}
+		if hash == nil {
+			return nil, origNode, 0, errors.New("non-consensus node")
+		}
+		blob, err := t.reader.node(path, common.BytesToHash(hash))
+		return blob, origNode, 1, err
+	}
+	// Path still needs to be traversed, descend into children
+	switch n := (origNode).(type) {
+	case valueNode:
+		// Path prematurely ended, abort
+		return nil, nil, 0, nil
+
+	case *shortNode:
+		if !bytes.HasPrefix(path[pos:], n.Key) {
+			// Path branches off from short node
+			return nil, n, 0, nil
+		}
+		item, newnode, resolved, err = t.getNode(n.Val, path, pos+len(n.Key))
+		if err == nil && resolved > 0 {
+			n = n.copy()
+			n.Val = newnode
+		}
+		return item, n, resolved, err
+
+	case *fullNode:
+		item, newnode, resolved, err = t.getNode(n.Children[path[pos]], path, pos+1)
+		if err == nil && resolved > 0 {
+			n = n.copy()
+			n.Children[path[pos]] = newnode
+		}
+		return item, n, resolved, err
+
+	case hashNode:
+		child, err := t.resolveAndTrack(n, path[:pos])
+		if err != nil {
+			return nil, n, 1, err
+		}
+		item, newnode, resolved, err := t.getNode(child, path, pos)
+		return item, newnode, resolved + 1, err
+
+	default:
+		panic(fmt.Sprintf("%T: invalid node: %v", origNode, origNode))
+	}
+}
+
+// MustUpdate is a wrapper of Update and will omit any encountered error but
+// just print out an error message.
+func (t *Trie) MustUpdate(key, value []byte) {
+	if err := t.Update(key, value); err != nil {
+		log.Error("Unhandled trie error in Trie.Update", "err", err)
 	}
 }
 
@@ -270,6 +394,14 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 
 	default:
 		panic(fmt.Sprintf("%T: invalid node: %v", n, n))
+	}
+}
+
+// MustDelete is a wrapper of Delete and will omit any encountered error but
+// just print out an error message.
+func (t *Trie) MustDelete(key []byte) {
+	if err := t.Delete(key); err != nil {
+		log.Error("Unhandled trie error in Trie.Delete", "err", err)
 	}
 }
 
@@ -522,4 +654,16 @@ func (t *Trie) hashRoot() (node, node) {
 	}()
 	hashed, cached := h.hash(t.root, true)
 	return hashed, cached
+}
+
+// Witness returns a set containing all trie nodes that have been accessed.
+func (t *Trie) Witness() map[string]struct{} {
+	if len(t.tracer.accessList) == 0 {
+		return nil
+	}
+	witness := make(map[string]struct{}, len(t.tracer.accessList))
+	for _, node := range t.tracer.accessList {
+		witness[string(node)] = struct{}{}
+	}
+	return witness
 }

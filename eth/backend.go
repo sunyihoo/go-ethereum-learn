@@ -40,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // Config contains the configuration options of the ETH protocol.
@@ -118,4 +119,41 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			log.Error("Failed to recover state", "error", err)
 		}
 	}
+	// Transfer mining-related config to the ethash config.
+	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
+	if err != nil {
+		return nil, err
+	}
+	// todo there
+	engine, err := ethconfig.CreateConsensusEngine(chainConfig, chainDb)
+	if err != nil {
+		return nil, err
+	}
+	networkID := config.NetworkId
+	if networkID == 0 {
+		networkID = chainConfig.ChainID.Uint64()
+	}
+	eth := &Ethereum{
+		config:            config,
+		chainDb:           chainDb,
+		eventMux:          stack.EventMux(),
+		accountManager:    stack.AccountManager(),
+		engine:            engine,
+		closeBloomHandler: make(chan struct{}),
+		networkID:         networkID,
+		gasPrice:          config.Miner.GasPrice,
+		bloomRequests:     make(chan chan *bloombits.Retrieval),
+		bloomIndexer:      core.NewBloomIndexer(chainDb, params.BloomBitsBlocks, params.BloomConfirms),
+		p2pServer:         stack.Server(),
+		discmix:           enode.NewFairMix(0),
+		shutdownTracker:   shutdowncheck.NewShutdownTracker(chainDb),
+	}
+	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
+	var dbVer = "<nil>"
+	if bcVersion != nil {
+		dbVer = fmt.Sprintf("%d", *bcVersion)
+	}
+	log.Info("Initialising Ethereum protocol", "network", networkID, "dbversion", dbVer)
+
+	return eth, nil
 }

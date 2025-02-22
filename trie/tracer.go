@@ -16,6 +16,12 @@
 
 package trie
 
+import (
+	"maps"
+
+	"github.com/ethereum/go-ethereum/common"
+)
+
 // tracer tracks the changes of trie nodes. During the trie operations,
 // some nodes can be deleted from the trie, while these deleted nodes
 // won't be captured by trie.Hasher or trie.Committer. Thus, these deleted
@@ -77,6 +83,19 @@ func (t *tracer) onDelete(path []byte) {
 		return
 	}
 	t.deletes[string(path)] = struct{}{}
+}
+
+// copy returns a deep copied tracer instance.
+func (t *tracer) copy() *tracer {
+	accessList := make(map[string][]byte, len(t.accessList))
+	for path, blob := range t.accessList {
+		accessList[path] = common.CopyBytes(blob)
+	}
+	return &tracer{
+		inserts:    maps.Clone(t.inserts),
+		deletes:    maps.Clone(t.deletes),
+		accessList: accessList,
+	}
 }
 
 // deletedNodes returns a list of node paths which are deleted from the trie.

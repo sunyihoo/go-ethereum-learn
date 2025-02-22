@@ -16,13 +16,24 @@
 
 package params
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 const (
+	GenesisGasLimit uint64 = 4712388 // Gas limit of the Genesis block.
+
 	InitialBaseFee = 1000000000 // Initial base fee for EIP-1559 blocks.
 
 	BlobTxBlobGasPerBlob = 1 << 17 // Gas consumption of a single data blob (== blob byte size)=
 
+)
+
+// Difficulty parameters.
+var (
+	GenesisDifficulty = big.NewInt(131072) // Difficulty of the Genesis block.
 )
 
 // System contracts.
