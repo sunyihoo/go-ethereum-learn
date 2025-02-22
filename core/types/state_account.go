@@ -44,6 +44,20 @@ func NewEmptyStateAccount() *StateAccount {
 	}
 }
 
+// Copy returns a deep-copied state account object.
+func (acct *StateAccount) Copy() *StateAccount {
+	var balance *uint256.Int
+	if acct.Balance != nil {
+		balance = new(uint256.Int).Set(acct.Balance)
+	}
+	return &StateAccount{
+		Nonce:    acct.Nonce,
+		Balance:  balance,
+		Root:     acct.Root,
+		CodeHash: common.CopyBytes(acct.CodeHash),
+	}
+}
+
 // SlimAccount is a modified version of an Account, where the root is replaced
 // with a byte slice. This format can be used to represent full-consensus format
 // or slim format which replaces the empty root and code hash as nil byte slice.
