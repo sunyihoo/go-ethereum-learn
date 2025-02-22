@@ -18,6 +18,7 @@ package math
 
 import (
 	"fmt"
+	"math/bits"
 	"strconv"
 )
 
@@ -56,5 +57,10 @@ func ParseUint64(s string) (uint64, bool) {
 	}
 	v, err := strconv.ParseUint(s, 10, 64)
 	return v, err == nil
+}
 
+// SafeAdd returns x+y and checks for overflow.
+func SafeAdd(x, y uint64) (uint64, bool) {
+	sum, carryOut := bits.Add64(x, y, 0)
+	return sum, carryOut != 0
 }
