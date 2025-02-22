@@ -17,6 +17,9 @@
 package stateless
 
 import (
+	"errors"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,4 +44,79 @@ type Witness struct {
 
 	chain HeaderReader // Chain reader to convert block hash ops to header proofs
 	lock  sync.Mutex   // Lock to allow concurrent state insertions
+}
+
+// NewWitness creates an empty witness ready for population.
+func NewWitness(context *types.Header, chain HeaderReader) (*Witness, error) {
+	// When building witnesses, retrieve the parent header, which will *always*
+	// be included to act as a trustless pre-root hash container
+	var headers []*types.Header
+	if chain != nil {
+		parent := chain.GetHeader(context.ParentHash, context.Number.Uint64()-1)
+		if parent == nil {
+			return nil, errors.New("failed to retrieve parent header")
+		}
+		headers = append(headers, parent)
+	}
+	// Create the wtness with a reconstructed gutted out block
+	return &Witness{
+		context: context,
+		Headers: headers,
+		Codes:   make(map[string]struct{}),
+		State:   make(map[string]struct{}),
+		chain:   chain,
+	}, nil
+}
+
+// AddBlockHash adds a "blockhash" to the witness with the designated offset from
+// chain head. Under the hood, this method actually pulls in enough headers from
+// the chain to cover the block being added.
+func (w *Witness) AddBlockHash(number uint64) {
+	// Keep pulling in headers until this hash is populated
+	for int(w.context.Number.Uint64()-number) > len(w.Headers) {
+		tail := w.Headers[len(w.Headers)-1]
+		w.Headers = append(w.Headers, w.chain.GetHeader(tail.ParentHash, tail.Number.Uint64()-1))
+	}
+}
+
+// AddCode adds a bytecode blob to the witness.
+func (w *Witness) AddCode(code []byte) {
+	if len(code) == 0 {
+		return
+	}
+	w.Codes[string(code)] = struct{}{}
+}
+
+// AddState inserts a batch of MPT trie nodes into the witness.
+func (w *Witness) AddState(nodes map[string]struct{}) {
+	if len(nodes) == 0 {
+		return
+	}
+	w.lock.Lock()
+	defer w.lock.Unlock()
+
+	maps.Copy(w.State, nodes)
+}
+
+// Copy deep-copies the witness object.  Witness.Block isn't deep-copied as it
+// is never mutated by Witness
+func (w *Witness) Copy() *Witness {
+	cpy := &Witness{
+		Headers: slices.Clone(w.Headers),
+		Codes:   maps.Clone(w.Codes),
+		State:   maps.Clone(w.State),
+		chain:   w.chain,
+	}
+	if w.context != nil {
+		cpy.context = types.CopyHeader(w.context)
+	}
+	return cpy
+}
+
+// Root returns the pre-state root from the first header.
+//
+// Note, this method will panic in case of a bad witness (but RLP decoding will
+// sanitize it and fail before that).
+func (w *Witness) Root() common.Hash {
+	return w.Headers[0].Root
 }
