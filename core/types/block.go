@@ -263,6 +263,11 @@ func (b *Block) Body() *Body {
 	return &Body{b.transactions, b.uncles, b.withdrawals}
 }
 
+// Accessors for body data. These do not return a copy because the content
+// of the body slices does not affect the cached hash/size in block.
+
+func (b *Block) Uncles() []*Header { return b.uncles }
+
 // Header returns the block header (as a copy).
 func (b *Block) Header() *Header {
 	return CopyHeader(b.header)
@@ -310,6 +315,16 @@ func (b *Block) WithBody(body Body) *Block {
 		block.uncles[i] = CopyHeader(body.Uncles[i])
 	}
 	return block
+}
+
+func (b *Block) WithWitness(witness *ExecutionWitness) *Block {
+	return &Block{
+		header:       b.header,
+		transactions: b.transactions,
+		uncles:       b.uncles,
+		withdrawals:  b.withdrawals,
+		witness:      witness,
+	}
 }
 
 // Hash returns the keccak256 hash of b's header.
