@@ -75,6 +75,12 @@ var (
 	// txIndexTailKey tracks the oldest block whose transactions have been indexed.
 	txIndexTailKey = []byte("TransactionIndexTail")
 
+	// uncleanShutdownKey tracks the list of local crashes
+	uncleanShutdownKey = []byte("unclean-shutdown") // config prefix for the db
+
+	// transitionStatusKey tracks the eth2 transition status.
+	transitionStatusKey = []byte("eth2-transition")
+
 	// snapSyncStatusFlagKey flags that status of snap sync.
 	snapSyncStatusFlagKey = []byte("SnapSyncStatus")
 
@@ -213,6 +219,11 @@ func IsCodeKey(key []byte) (bool, []byte) {
 // configKey = configPrefix + hash
 func configKey(hash common.Hash) []byte {
 	return append(configPrefix, hash.Bytes()...)
+}
+
+// genesisStateSpecKey = genesisPrefix + hash
+func genesisStateSpecKey(hash common.Hash) []byte {
+	return append(genesisPrefix, hash.Bytes()...)
 }
 
 // stateIDKey = stateIDPrefix + root (32 bytes)
