@@ -156,6 +156,16 @@ func Parse(validSchemes enr.IdentityScheme, input string) (*Node, error) {
 	return New(validSchemes, &r)
 }
 
+// ID returns the node identifier.
+func (n *Node) ID() ID {
+	return n.id
+}
+
+// Seq returns the sequence number of the underlying record.
+func (n *Node) Seq() uint64 {
+	return n.r.Seq()
+}
+
 // Load retrieves an entry from the underlying record.
 func (n *Node) Load(k enr.Entry) error {
 	return n.r.Load(k)
