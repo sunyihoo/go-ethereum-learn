@@ -124,7 +124,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	// todo there
 	engine, err := ethconfig.CreateConsensusEngine(chainConfig, chainDb)
 	if err != nil {
 		return nil, err
@@ -154,6 +153,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		dbVer = fmt.Sprintf("%d", *bcVersion)
 	}
 	log.Info("Initialising Ethereum protocol", "network", networkID, "dbversion", dbVer)
+
+	// todo not finish here
 
 	return eth, nil
 }
