@@ -47,6 +47,12 @@ func (h Hash) Bytes() []byte { return h[:] }
 // Hex converts a hash to a hex string.
 func (h Hash) Hex() string { return hexutil.Encode(h[:]) }
 
+// String implements the stringer interface and is used also by the logger when
+// doing full logging into a file.
+func (h Hash) String() string {
+	return h.Hex()
+}
+
 // SetBytes sets the hash to the value of b.
 // If b is larger than len(h), b will be cropped from the left.
 func (h *Hash) SetBytes(b []byte) {

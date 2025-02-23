@@ -88,6 +88,19 @@ func Encode(b []byte) string {
 	return string(enc)
 }
 
+// DecodeUint64 decodes a hex string with 0x prefix as a quantity.
+func DecodeUint64(input string) (uint64, error) {
+	raw, err := checkNumber(input)
+	if err != nil {
+		return 0, err
+	}
+	dec, err := strconv.ParseUint(raw, 16, 64)
+	if err != nil {
+		err = mapError(err)
+	}
+	return dec, err
+}
+
 // EncodeUint64 encodes i as a hex string with 0x prefix.
 func EncodeUint64(i uint64) string {
 	enc := make([]byte, 2, 10)
@@ -124,6 +137,23 @@ func EncodeBig(bigint *big.Int) string {
 
 func has0xPrefix(input string) bool {
 	return len(input) >= 2 && input[0] == '0' && (input[1] == 'x' || input[1] == 'X')
+}
+
+func checkNumber(input string) (raw string, err error) {
+	if len(input) == 0 {
+		return "", ErrEmptyString
+	}
+	if !has0xPrefix(input) {
+		return "", ErrMissingPrefix
+	}
+	input = input[2:]
+	if len(input) == 0 {
+		return "", ErrEmptyNumber
+	}
+	if len(input) > 1 && input[0] == '0' {
+		return "", ErrLeadingZero
+	}
+	return input, nil
 }
 
 const badNibble = ^uint64(0)
