@@ -277,8 +277,9 @@ func (b *Block) Header() *Header {
 
 func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
 
-func (b *Block) NumberU64() uint64 { return b.header.Number.Uint64() }
-func (b *Block) Root() common.Hash { return b.header.Root }
+func (b *Block) NumberU64() uint64       { return b.header.Number.Uint64() }
+func (b *Block) Root() common.Hash       { return b.header.Root }
+func (b *Block) ParentHash() common.Hash { return b.header.ParentHash }
 
 type writeCounter uint64
 
