@@ -84,6 +84,23 @@ func EncodeToBytes(val interface{}) ([]byte, error) {
 	return buf.makeBytes(), nil
 }
 
+// EncodeToReader returns a reader from which the RLP encoding of val
+// can be read. The returned size is the total size of the encoded
+// data.
+//
+// Please see the documentation of Encode for the encoding rules.
+func EncodeToReader(val interface{}) (size int, r io.Reader, err error) {
+	buf := getEncBuffer()
+	if err := buf.encode(val); err != nil {
+		encBufferPool.Put(buf)
+		return 0, nil, err
+	}
+	// Note: can't put the reader back into the pool here
+	// because it is held by encReader. The reader puts it
+	// back when it has been fully consumed.
+	return buf.size(), &encReader{buf: buf}, nil
+}
+
 type listhead struct {
 	offset int // index of this header in string data
 	size   int // total size of encoded data (including list headers)
