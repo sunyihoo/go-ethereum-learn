@@ -33,6 +33,12 @@ var ValidSchemes = enr.SchemeMap{
 	"v4": V4ID{},
 }
 
+// ValidSchemesForTesting is a List of identity schemes for testing.
+var ValidSchemesForTesting = enr.SchemeMap{
+	"v4":   V4ID{},
+	"null": NullID{},
+}
+
 // V4ID is the "v4" identity scheme.
 type V4ID struct{}
 
@@ -129,4 +135,27 @@ func signV4Compat(r *enr.Record, pubkey *ecdsa.PublicKey) {
 	if err := r.SetSig(v4CompatID{}, []byte{}); err != nil {
 		panic(err)
 	}
+}
+
+// NullID is the "null" ENR identity scheme. This scheme stores the node
+// ID in the record without any signature.
+type NullID struct{}
+
+func (NullID) Verify(r *enr.Record, sig []byte) error {
+	return nil
+}
+
+func (NullID) NodeAddr(r *enr.Record) []byte {
+	var id ID
+	r.Load(enr.WithEntry("nulladdr", &id))
+	return id[:]
+}
+
+func SignNull(r *enr.Record, id ID) *Node {
+	r.Set(enr.ID("null"))
+	r.Set(enr.WithEntry("nulladdr", id))
+	if err := r.SetSig(NullID{}, []byte{}); err != nil {
+		panic(err)
+	}
+	return newNodeWithID(r, id)
 }
