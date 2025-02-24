@@ -40,3 +40,95 @@ type ipStatement struct {
 	endpoint netip.AddrPort
 	time     mclock.AbsTime
 }
+
+// NewIPTracker creates an IP tracker.
+//
+// The window parameters configure the amount of past network events which are kept. The
+// minStatements parameter enforces a minimum number of statements which must be recorded
+// before any prediction is made. Higher values for these parameters decrease 'flapping' of
+// predictions as network conditions change. Window duration values should typically be in
+// the range of minutes.
+func NewIPTracker(window, contactWindow time.Duration, minStatements int) *IPTracker {
+	return &IPTracker{
+		window:        window,
+		contactWindow: contactWindow,
+		statements:    make(map[netip.Addr]ipStatement),
+		minStatements: minStatements,
+		contact:       make(map[netip.Addr]mclock.AbsTime),
+		clock:         mclock.System{},
+	}
+}
+
+// PredictFullConeNAT checks whether the local host is behind full cone NAT. It predicts by
+// checking whether any statement has been received from a node we didn't contact before
+// the statement was made.
+func (it *IPTracker) PredictFullConeNAT() bool {
+	now := it.clock.Now()
+	it.gcContact(now)
+	it.gcStatements(now)
+	for host, st := range it.statements {
+		if c, ok := it.contact[host]; !ok || c > st.time {
+			return true
+		}
+	}
+	return false
+}
+
+// PredictEndpoint returns the current prediction of the external endpoint.
+func (it *IPTracker) PredictEndpoint() netip.AddrPort {
+	it.gcStatements(it.clock.Now())
+
+	// The current strategy is simple: find the endpoint with most statements.
+	var (
+		counts   = make(map[netip.AddrPort]int, len(it.statements))
+		maxcount int
+		max      netip.AddrPort
+	)
+	for _, s := range it.statements {
+		c := counts[s.endpoint] + 1
+		counts[s.endpoint] = c
+		if c > maxcount && c >= it.minStatements {
+			maxcount, max = c, s.endpoint
+		}
+	}
+	return max
+}
+
+// AddStatement records that a certain host thinks our external endpoint is the one given.
+func (it *IPTracker) AddStatement(host netip.Addr, endpoint netip.AddrPort) {
+	now := it.clock.Now()
+	it.statements[host] = ipStatement{endpoint, now}
+	if time.Duration(now-it.lastStatementGC) >= it.window {
+		it.gcStatements(now)
+	}
+}
+
+// AddContact records that a packet containing our endpoint information has been sent to a
+// certain host.
+func (it *IPTracker) AddContact(host netip.Addr) {
+	now := it.clock.Now()
+	it.contact[host] = now
+	if time.Duration(now-it.lastContactGC) >= it.contactWindow {
+		it.gcContact(now)
+	}
+}
+
+func (it *IPTracker) gcStatements(now mclock.AbsTime) {
+	it.lastStatementGC = now
+	cutoff := now.Add(-it.window)
+	for host, s := range it.statements {
+		if s.time < cutoff {
+			delete(it.statements, host)
+		}
+	}
+}
+
+func (it *IPTracker) gcContact(now mclock.AbsTime) {
+	it.lastContactGC = now
+	cutoff := now.Add(-it.contactWindow)
+	for host, ct := range it.contact {
+		if ct < cutoff {
+			delete(it.contact, host)
+		}
+	}
+}
