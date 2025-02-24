@@ -17,10 +17,13 @@
 package enode
 
 import (
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/bits"
+	"net"
 	"net/netip"
 	"strings"
 
@@ -171,11 +174,123 @@ func (n *Node) Load(k enr.Entry) error {
 	return n.r.Load(k)
 }
 
+// IP returns the IP address of the node.
+func (n *Node) IP() net.IP {
+	return net.IP(n.ip.AsSlice())
+}
+
+// IPAddr returns the IP address of the node.
+func (n *Node) IPAddr() netip.Addr {
+	return n.ip
+}
+
+// UDP returns the UDP port of the node.
+func (n *Node) UDP() int {
+	return int(n.udp)
+}
+
+// TCP returns the TCP port of the node.
+func (n *Node) TCP() int {
+	return int(n.tcp)
+}
+
 // WithHostname adds a DNS hostname to the node.
 func (n *Node) WithHostname(hostname string) *Node {
 	cpy := *n
 	cpy.hostname = hostname
 	return &cpy
+}
+
+// Hostname returns the DNS name assigned by WithHostname.
+func (n *Node) Hostname() string {
+	return n.hostname
+}
+
+// UDPEndpoint returns the announced UDP endpoint.
+func (n *Node) UDPEndpoint() (netip.AddrPort, bool) {
+	if !n.ip.IsValid() || n.ip.IsUnspecified() || n.udp == 0 {
+		return netip.AddrPort{}, false
+	}
+	return netip.AddrPortFrom(n.ip, n.udp), true
+}
+
+// TCPEndpoint returns the announced TCP endpoint.
+func (n *Node) TCPEndpoint() (netip.AddrPort, bool) {
+	if !n.ip.IsValid() || n.ip.IsUnspecified() || n.tcp == 0 {
+		return netip.AddrPort{}, false
+	}
+	return netip.AddrPortFrom(n.ip, n.tcp), true
+}
+
+// QUICEndpoint returns the announced QUIC endpoint.
+func (n *Node) QUICEndpoint() (netip.AddrPort, bool) {
+	var quic uint16
+	if n.ip.Is4() || n.ip.Is4In6() {
+		n.Load((*enr.QUIC)(&quic))
+	} else if n.ip.Is6() {
+		n.Load((*enr.QUIC6)(&quic))
+	}
+	if !n.ip.IsValid() || n.ip.IsUnspecified() || quic == 0 {
+		return netip.AddrPort{}, false
+	}
+	return netip.AddrPortFrom(n.ip, quic), true
+}
+
+// Pubkey returns the secp256k1 public key of the node, if present.
+func (n *Node) Pubkey() *ecdsa.PublicKey {
+	var key ecdsa.PublicKey
+	if n.Load((*Secp256k1)(&key)) != nil {
+		return nil
+	}
+	return &key
+}
+
+// Record returns the node's record. The return value is a copy and may
+// be modified by the caller.
+func (n *Node) Record() *enr.Record {
+	cpy := n.r
+	return &cpy
+}
+
+// ValidateComplete checks whether n has a valid IP and UDP port.
+// Deprecated: don't use this method.
+func (n *Node) ValidateComplete() error {
+	if !n.ip.IsValid() {
+		return errors.New("missing IP address")
+	}
+	if n.ip.IsMulticast() || n.ip.IsUnspecified() {
+		return errors.New("invalid IP (multicast/unspecified)")
+	}
+	if n.udp == 0 {
+		return errors.New("missing UDP port")
+	}
+	// Validate the node key (on curve, etc.).
+	var key Secp256k1
+	return n.Load(&key)
+}
+
+// String returns the text representation of the record.
+func (n *Node) String() string {
+	if isNewV4(n) {
+		return n.URLv4() // backwards-compatibility glue for NewV4 nodes
+	}
+	enc, _ := rlp.EncodeToBytes(&n.r) // always succeeds because record is valid
+	b64 := base64.RawURLEncoding.EncodeToString(enc)
+	return "enr:" + b64
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (n *Node) MarshalText() ([]byte, error) {
+	return []byte(n.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (n *Node) UnmarshalText(text []byte) error {
+	dec, err := Parse(ValidSchemes, string(text))
+	if err == nil {
+		*n = *dec
+	}
+	return err
 }
 
 // ID is a unique identifier for each node.
@@ -237,4 +352,35 @@ func ParseID(in string) (ID, error) {
 	}
 	copy(id[:], b)
 	return id, nil
+}
+
+// DistCmp compares the distances a->target and b->target.
+// Returns -1 if a is closer to target, 1 if b is closer to target
+// and 0 if they are equal.
+func DistCmp(target, a, b ID) int {
+	for i := range target {
+		da := a[i] ^ target[i]
+		db := b[i] ^ target[i]
+		if da > db {
+			return 1
+		} else if da < db {
+			return -1
+		}
+	}
+	return 0
+}
+
+// LogDist returns the logarithmic distance between a and b, log2(a ^ b).
+func LogDist(a, b ID) int {
+	lz := 0
+	for i := range a {
+		x := a[i] ^ b[i]
+		if x == 0 {
+			lz += 8
+		} else {
+			lz += bits.LeadingZeros8(x)
+			break
+		}
+	}
+	return len(a)*8 - lz
 }

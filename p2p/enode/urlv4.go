@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 )
@@ -33,6 +34,15 @@ import (
 var (
 	incompleteNodeURL = regexp.MustCompile("(?i)^(?:enode://)?([0-9a-f]+)$")
 )
+
+// MustParseV4 parses a node URL. It panics if the URL is not valid.
+func MustParseV4(rawurl string) *Node {
+	n, err := ParseV4(rawurl)
+	if err != nil {
+		panic("invalid node URL: " + err.Error())
+	}
+	return n
+}
 
 // ParseV4 parses a node URL.
 //
@@ -90,6 +100,12 @@ func NewV4(pubkey *ecdsa.PublicKey, ip net.IP, tcp, udp int) *Node {
 	return n
 }
 
+// isNewV4 returns true for nodes created by NewV4.
+func isNewV4(n *Node) bool {
+	var k s256raw
+	return n.r.IdentityScheme() == "" && n.r.Load(&k) == nil && len(n.r.Signature()) == 0
+}
+
 func parseComplete(rawurl string) (*Node, error) {
 	var (
 		id               *ecdsa.PublicKey
@@ -142,4 +158,48 @@ func parsePubkey(in string) (*ecdsa.PublicKey, error) {
 	}
 	b = append([]byte{0x4}, b...)
 	return crypto.UnmarshalPubkey(b)
+}
+
+func (n *Node) URLv4() string {
+	var (
+		scheme enr.ID
+		nodeid string
+		key    ecdsa.PublicKey
+	)
+	n.Load(&scheme)
+	n.Load((*Secp256k1)(&key))
+	switch {
+	case scheme == "v4" || key != ecdsa.PublicKey{}:
+		nodeid = fmt.Sprintf("%x", crypto.FromECDSAPub(&key)[1:])
+	default:
+		nodeid = fmt.Sprintf("%s.%x", scheme, n.id[:])
+	}
+	u := url.URL{Scheme: "enode"}
+	if n.Hostname() != "" {
+		// For nodes with a DNS name: include DNS name, TCP port, and optional UDP port
+		u.User = url.User(nodeid)
+		u.Host = fmt.Sprintf("%s:%d", n.Hostname(), n.TCP())
+		if n.UDP() != n.TCP() {
+			u.RawQuery = "discport=" + strconv.Itoa(n.UDP())
+		}
+	} else if n.ip.IsValid() {
+		// For IP-based nodes: include IP address, TCP port, and optional UDP port
+		addr := net.TCPAddr{IP: n.IP(), Port: n.TCP()}
+		u.User = url.User(nodeid)
+		u.Host = addr.String()
+		if n.UDP() != n.TCP() {
+			u.RawQuery = "discport=" + strconv.Itoa(n.UDP())
+		}
+	} else {
+		u.Host = nodeid
+	}
+	return u.String()
+}
+
+// PubkeyToIDV4 derives the v4 node address from the given public key.
+func PubkeyToIDV4(key *ecdsa.PublicKey) ID {
+	e := make([]byte, 64)
+	math.ReadBits(key.X, e[:len(e)/2])
+	math.ReadBits(key.Y, e[len(e)/2:])
+	return ID(crypto.Keccak256Hash(e))
 }
