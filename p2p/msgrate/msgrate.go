@@ -20,6 +20,8 @@ package msgrate
 import (
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // Tracker estimates the throughput capacity of a peer with regard to each data
