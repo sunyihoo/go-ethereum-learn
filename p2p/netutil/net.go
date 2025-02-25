@@ -19,12 +19,14 @@ package netutil
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"golang.org/x/exp/maps"
 	"net"
 	"net/netip"
 	"slices"
 	"strings"
+
+	"golang.org/x/exp/maps"
 )
 
 var special4, special6 Netlist
@@ -83,6 +85,31 @@ func ParseNetlist(s string) (*Netlist, error) {
 	return &l, nil
 }
 
+// MarshalTOML implements toml.MarshalerRec.
+func (l Netlist) MarshalTOML() interface{} {
+	list := make([]string, 0, len(l))
+	for _, net := range l {
+		list = append(list, net.String())
+	}
+	return list
+}
+
+// UnmarshalTOML implements toml.UnmarshalerRec.
+func (l *Netlist) UnmarshalTOML(fn func(interface{}) error) error {
+	var masks []string
+	if err := fn(&masks); err != nil {
+		return err
+	}
+	for _, mask := range masks {
+		prefix, err := netip.ParsePrefix(mask)
+		if err != nil {
+			return err
+		}
+		*l = append(*l, prefix)
+	}
+	return nil
+}
+
 // Add parses a CIDR mask and appends it to the list. It panics for invalid masks and is
 // intended to be used for setting up static lists.
 func (l *Netlist) Add(cidr string) {
@@ -91,6 +118,130 @@ func (l *Netlist) Add(cidr string) {
 		panic(err)
 	}
 	*l = append(*l, perfix)
+}
+
+// Contains reports whether the given IP is contained in the list.
+func (l *Netlist) Contains(ip net.IP) bool {
+	return l.ContainsAddr(IPToAddr(ip))
+}
+
+// ContainsAddr reports whether the given IP is contained in the list.
+func (l *Netlist) ContainsAddr(ip netip.Addr) bool {
+	if l == nil {
+		return false
+	}
+	for _, net := range *l {
+		if net.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsLAN reports whether an IP is a local network address.
+func IsLAN(ip net.IP) bool {
+	return AddrIsLAN(IPToAddr(ip))
+}
+
+// AddrIsLAN reports whether an IP is a local network address.
+func AddrIsLAN(ip netip.Addr) bool {
+	if ip.Is4In6() {
+		ip = netip.AddrFrom4(ip.As4())
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	return ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
+// IsSpecialNetwork reports whether an IP is located in a special-use network range
+// This includes broadcast, multicast and documentation addresses.
+func IsSpecialNetwork(ip net.IP) bool {
+	return AddrIsSpecialNetwork(IPToAddr(ip))
+}
+
+// AddrIsSpecialNetwork reports whether an IP is located in a special-use network range
+// This includes broadcast, multicast and documentation addresses.
+func AddrIsSpecialNetwork(ip netip.Addr) bool {
+	if ip.Is4In6() {
+		ip = netip.AddrFrom4(ip.As4())
+	}
+	if ip.IsMulticast() {
+		return true
+	}
+	if ip.Is4() {
+		return special4.ContainsAddr(ip)
+	}
+	return special6.ContainsAddr(ip)
+}
+
+var (
+	errInvalid     = errors.New("invalid IP")
+	errUnspecified = errors.New("zero address")
+	errSpecial     = errors.New("special network")
+	errLoopback    = errors.New("loopback address from non-loopback host")
+	errLAN         = errors.New("LAN address from WAN host")
+)
+
+// CheckRelayIP reports whether an IP relayed from the given sender IP
+// is a valid connection target.
+//
+// There are four rules:
+//   - Special network addresses are never valid.
+//   - Loopback addresses are OK if relayed by a loopback host.
+//   - LAN addresses are OK if relayed by a LAN host.
+//   - All other addresses are always acceptable.
+func CheckRelayIP(sender, addr net.IP) error {
+	return CheckRelayAddr(IPToAddr(sender), IPToAddr(addr))
+}
+
+// CheckRelayAddr reports whether an IP relayed from the given sender IP
+// is a valid connection target.
+//
+// There are four rules:
+//   - Special network addresses are never valid.
+//   - Loopback addresses are OK if relayed by a loopback host.
+//   - LAN addresses are OK if relayed by a LAN host.
+//   - All other addresses are always acceptable.
+func CheckRelayAddr(sender, addr netip.Addr) error {
+	if !addr.IsValid() {
+		return errInvalid
+	}
+	if addr.IsUnspecified() {
+		return errUnspecified
+	}
+	if AddrIsSpecialNetwork(addr) {
+		return errSpecial
+	}
+	if addr.IsLoopback() && !sender.IsLoopback() {
+		return errLoopback
+	}
+	if AddrIsLAN(addr) && !AddrIsLAN(sender) {
+		return errLAN
+	}
+	return nil
+}
+
+// SameNet reports whether two IP addresses have an equal prefix of the given bit length.
+func SameNet(bits uint, ip, other net.IP) bool {
+	ip4, other4 := ip.To4(), other.To4()
+	switch {
+	case (ip4 == nil) != (other4 == nil):
+		return false
+	case ip4 != nil:
+		return sameNet(bits, ip4, other4)
+	default:
+		return sameNet(bits, ip.To16(), other.To16())
+	}
+}
+
+func sameNet(bits uint, ip, other net.IP) bool {
+	nb := int(bits / 8)
+	mask := ^byte(0xFF >> (bits % 8))
+	if mask != 0 && nb < len(ip) && ip[nb]&mask != other[nb]&mask {
+		return false
+	}
+	return nb <= len(ip) && ip[:nb].Equal(other[:nb])
 }
 
 // DistinctNetSet tracks IPs, ensuring that at most N of them
