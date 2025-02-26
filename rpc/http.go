@@ -20,9 +20,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -31,6 +36,9 @@ const (
 	defaultBodyLimit = 5 * 1024 * 1024
 	contentType      = "application/json"
 )
+
+// https://www.jsonrpc.org/historical/json-rpc-over-http.html#id13
+var acceptedContentTypes = []string{contentType, "application/json-rpc", "application/jsonrequest"}
 
 type httpConn struct {
 	client    *http.Client
@@ -112,6 +120,28 @@ var DefaultHTTPTimeouts = HTTPTimeouts{
 	IdleTimeout:       120 * time.Second,
 }
 
+// DialHTTP creates a new RPC client that connects to an RPC server over HTTP.
+func DialHTTP(endpoint string) (*Client, error) {
+	return DialHTTPWithClient(endpoint, new(http.Client))
+}
+
+// DialHTTPWithClient creates a new RPC client that connects to an RPC server over HTTP
+// using the provided HTTP Client.
+//
+// Deprecated: use DialOptions and the WithHTTPClient option.
+func DialHTTPWithClient(endpoint string, client *http.Client) (*Client, error) {
+	// Sanity check URL so we don't end up with a client that will fail every request.
+	_, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg clientConfig
+	cfg.httpClient = client
+	fn := newClientTransportHTTP(endpoint, &cfg)
+	return newClient(context.Background(), &cfg, fn)
+}
+
 func newClientTransportHTTP(endpoint string, cfg *clientConfig) reconnectFunc {
 	headers := make(http.Header, 2+len(cfg.httpHeaders))
 	headers.Set("accept", contentType)
@@ -124,6 +154,7 @@ func newClientTransportHTTP(endpoint string, cfg *clientConfig) reconnectFunc {
 	if client == nil {
 		client = new(http.Client)
 	}
+
 	hc := &httpConn{
 		client:  client,
 		headers: headers,
@@ -131,6 +162,7 @@ func newClientTransportHTTP(endpoint string, cfg *clientConfig) reconnectFunc {
 		auth:    cfg.httpAuth,
 		closeCh: make(chan interface{}),
 	}
+
 	return func(ctx context.Context) (ServerCodec, error) {
 		return hc, nil
 	}
@@ -150,6 +182,22 @@ func (c *Client) sendHTTP(ctx context.Context, op *requestOp, msg interface{}) e
 		return err
 	}
 	op.resp <- batch[:]
+	return nil
+}
+
+func (c *Client) sendBatchHTTP(ctx context.Context, op *requestOp, msgs []*jsonrpcMessage) error {
+	hc := c.writeConn.(*httpConn)
+	respBody, err := hc.doRequest(ctx, msgs)
+	if err != nil {
+		return err
+	}
+	defer respBody.Close()
+
+	var respmsgs []*jsonrpcMessage
+	if err := json.NewDecoder(respBody).Decode(&respmsgs); err != nil {
+		return err
+	}
+	op.resp <- respmsgs
 	return nil
 }
 
@@ -196,6 +244,122 @@ func (hc *httpConn) doRequest(ctx context.Context, msg interface{}) (io.ReadClos
 		}
 	}
 	return resp.Body, nil
+}
+
+// httpServerConn turns a HTTP connection into a Conn.
+type httpServerConn struct {
+	io.Reader
+	io.Writer
+	r *http.Request
+}
+
+func (s *Server) newHTTPServerConn(r *http.Request, w http.ResponseWriter) ServerCodec {
+	body := io.LimitReader(r.Body, int64(s.httpBodyLimit))
+	conn := &httpServerConn{Reader: body, Writer: w, r: r}
+
+	encoder := func(v any, isErrorResponse bool) error {
+		if !isErrorResponse {
+			return json.NewEncoder(conn).Encode(v)
+		}
+
+		// It's an error response and requires special treatment.
+		//
+		// In case of a timeout error, the response must be written before the HTTP
+		// server's write timeout occurs. So we need to flush the response. The
+		// Content-Length header also needs to be set to ensure the client knows
+		// when it has the full response.
+		encdata, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		w.Header().Set("content-length", strconv.Itoa(len(encdata)))
+
+		// If this request is wrapped in a handler that might remove Content-Length (such
+		// as the automatic gzip we do in package node), we need to ensure the HTTP server
+		// doesn't perform chunked encoding. In case WriteTimeout is reached, the chunked
+		// encoding might not be finished correctly, and some clients do not like it when
+		// the final chunk is missing.
+		w.Header().Set("transfer-encoding", "identity")
+
+		_, err = w.Write(encdata)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		return err
+	}
+
+	dec := json.NewDecoder(conn)
+	dec.UseNumber()
+
+	return NewFuncCodec(conn, encoder, dec.Decode)
+}
+
+// Close does nothing and always returns nil.
+func (t *httpServerConn) Close() error { return nil }
+
+// RemoteAddr returns the peer address of the underlying connection.
+func (t *httpServerConn) RemoteAddr() string {
+	return t.r.RemoteAddr
+}
+
+// SetWriteDeadline does nothing and always returns nil.
+func (t *httpServerConn) SetWriteDeadline(time.Time) error { return nil }
+
+// ServeHTTP serves JSON-RPC requests over HTTP.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Permit dumb empty requests for remote health-checks (AWS)
+	if r.Method == http.MethodGet && r.ContentLength == 0 && r.URL.RawQuery == "" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if code, err := s.validateRequest(r); err != nil {
+		http.Error(w, err.Error(), code)
+		return
+	}
+
+	// Create request-scoped context.
+	connInfo := PeerInfo{Transport: "http", RemoteAddr: r.RemoteAddr}
+	connInfo.HTTP.Version = r.Proto
+	connInfo.HTTP.Host = r.Host
+	connInfo.HTTP.Origin = r.Header.Get("Origin")
+	connInfo.HTTP.UserAgent = r.Header.Get("User-Agent")
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, peerInfoContextKey{}, connInfo)
+
+	// All checks passed, create a codec that reads directly from the request body
+	// until EOF, writes the response to w, and orders the server to process a
+	// single request.
+	w.Header().Set("content-type", contentType)
+	codec := s.newHTTPServerConn(r, w)
+	defer codec.close()
+	s.serveSingleRequest(ctx, codec)
+}
+
+// validateRequest returns a non-zero response code and error message if the
+// request is invalid.
+func (s *Server) validateRequest(r *http.Request) (int, error) {
+	if r.Method == http.MethodPut || r.Method == http.MethodDelete {
+		return http.StatusMethodNotAllowed, errors.New("method not allowed")
+	}
+	if r.ContentLength > int64(s.httpBodyLimit) {
+		err := fmt.Errorf("content length too large (%d>%d)", r.ContentLength, s.httpBodyLimit)
+		return http.StatusRequestEntityTooLarge, err
+	}
+	// Allow OPTIONS (regardless of content-type)
+	if r.Method == http.MethodOptions {
+		return 0, nil
+	}
+	// Check content-type
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("content-type")); err == nil {
+		for _, accepted := range acceptedContentTypes {
+			if accepted == mt {
+				return 0, nil
+			}
+		}
+	}
+	// Invalid content-type
+	err := fmt.Errorf("invalid content type, only %s is supported", contentType)
+	return http.StatusUnsupportedMediaType, err
 }
 
 // ContextRequestTimeout returns the request timeout derived from the given context.
