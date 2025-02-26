@@ -36,6 +36,14 @@ const (
 	DefaultAuthPort = 8551        // Default port for the authenticated apis
 )
 
+const (
+	// Engine API batch limits: these are not configurable by users, and should cover the
+	// needs of all CLs.
+	engineAPIBatchItemLimit         = 2000
+	engineAPIBatchResponseSizeLimit = 250 * 1000 * 1000
+	engineAPIBodyLimit              = 128 * 1024 * 1024
+)
+
 var (
 	DefaultAuthCors    = []string{"localhost"} // Default cors domain for the authenticated apis
 	DefaultAuthVhosts  = []string{"localhost"} // Default virtual hosts for the authenticated apis
@@ -65,7 +73,6 @@ var DefaultConfig = Config{
 		NAT:        nat.Any(),
 	},
 	DBEngine: "", // Use whatever exists, will default to Pebble if non-existent and supported
-
 }
 
 // DefaultDataDir is the default data directory to use for the databases and other
@@ -98,6 +105,9 @@ func DefaultDataDir() string {
 func windowsAppData() string {
 	v := os.Getenv("LOCALAPPDATA")
 	if v == "" {
+		// Windows XP and below don't have LocalAppData. Crash here because
+		// we don't support Windows XP and undefining the variable will cause
+		// other issues.
 		panic("environment variable LocalAppData is undefined")
 	}
 	return v
