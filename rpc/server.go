@@ -18,16 +18,30 @@ package rpc
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 const MetadataApi = "rpc"
+const EngineApi = "engine"
 
 // CodecOption specifies which type of messages a codec supports.
 //
 // Deprecated: this option is no longer honored by Server.
 type CodecOption int
+
+const (
+	// OptionMethodInvocation is an indication that the codec supports RPC method calls
+	OptionMethodInvocation CodecOption = 1 << iota
+
+	// OptionSubscriptions is an indication that the codec supports RPC notifications
+	OptionSubscriptions = 1 << iota // support pub sub
+)
 
 // Server is an RPC server.
 type Server struct {
@@ -67,6 +81,13 @@ func NewServer() *Server {
 func (s *Server) SetBatchLimits(itemLimit, maxResponseSize int) {
 	s.batchItemLimit = itemLimit
 	s.batchResponseLimit = maxResponseSize
+}
+
+// SetHTTPBodyLimit sets the size limit for HTTP requests.
+//
+// This method should be called before processing any requests via ServeHTTP.
+func (s *Server) SetHTTPBodyLimit(limit int) {
+	s.httpBodyLimit = limit
 }
 
 // RegisterName creates a service for the given receiver type under the given name. When no
@@ -118,10 +139,79 @@ func (s *Server) untrackCodec(codec ServerCodec) {
 	delete(s.codecs, codec)
 }
 
+// serveSingleRequest reads and processes a single RPC request from the given codec. This
+// is used to serve HTTP connections. Subscriptions and reverse calls are not allowed in
+// this mode.
+func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
+	// Don't serve if server is stopped.
+	if !s.run.Load() {
+		return
+	}
+
+	h := newHandler(ctx, codec, s.idgen, &s.services, s.batchItemLimit, s.batchResponseLimit)
+	h.allowSubscribe = false
+	defer h.close(io.EOF, nil)
+
+	reqs, batch, err := codec.readBatch()
+	if err != nil {
+		if msg := messageForReadError(err); msg != "" {
+			resp := errorMessage(&invalidMessageError{msg})
+			codec.writeJSON(ctx, resp, true)
+		}
+		return
+	}
+	if batch {
+		h.handleBatch(reqs)
+	} else {
+		h.handleMsg(reqs[0])
+	}
+}
+
+func messageForReadError(err error) string {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return "read timeout"
+		} else {
+			return "read error"
+		}
+	} else if err != io.EOF {
+		return "parse error"
+	}
+	return ""
+}
+
+// Stop stops reading new requests, waits for stopPendingRequestTimeout to allow pending
+// requests to finish, then closes all codecs which will cancel pending requests and
+// subscriptions.
+func (s *Server) Stop() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.run.CompareAndSwap(true, false) {
+		log.Debug("RPC server shutting down")
+		for codec := range s.codecs {
+			codec.close()
+		}
+	}
+}
+
 // RPCService gives meta information about the server.
 // e.g. gives information about the loaded modules.
 type RPCService struct {
 	server *Server
+}
+
+// Modules returns the list of RPC services with their version number
+func (s *RPCService) Modules() map[string]string {
+	s.server.services.mu.Lock()
+	defer s.server.services.mu.Unlock()
+
+	modules := make(map[string]string)
+	for name := range s.server.services.services {
+		modules[name] = "1.0"
+	}
+	return modules
 }
 
 // PeerInfo contains information about the remote end of the network connection.

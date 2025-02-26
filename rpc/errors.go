@@ -45,12 +45,14 @@ type DataError interface {
 	ErrorData() interface{} // returns the error data
 }
 
+// Error types defined below are the built-in JSON-RPC errors.
+
 var (
-	//_ Error = new(methodNotFoundError)
+	_ Error = new(methodNotFoundError)
 	_ Error = new(subscriptionNotFoundError)
 	_ Error = new(parseError)
 	_ Error = new(invalidRequestError)
-	//_ Error = new(invalidMessageError)
+	_ Error = new(invalidMessageError)
 	_ Error = new(invalidParamsError)
 	_ Error = new(internalServerError)
 )
@@ -87,6 +89,26 @@ func (e notificationsUnsupportedError) Error() string {
 
 func (e notificationsUnsupportedError) ErrorCode() int { return -32601 }
 
+// Is checks for equivalence to another error. Here we define that all errors with code
+// -32601 (method not found) are equivalent to notificationsUnsupportedError. This is
+// done to enable the following pattern:
+//
+//	sub, err := client.Subscribe(...)
+//	if errors.Is(err, rpc.ErrNotificationsUnsupported) {
+//		// server doesn't support subscriptions
+//	}
+func (e notificationsUnsupportedError) Is(other error) bool {
+	if other == (notificationsUnsupportedError{}) {
+		return true
+	}
+	rpcErr, ok := other.(Error)
+	if ok {
+		code := rpcErr.ErrorCode()
+		return code == -32601 || code == legacyErrcodeNotificationsUnsupported
+	}
+	return false
+}
+
 type subscriptionNotFoundError struct{ namespace, subscription string }
 
 func (e *subscriptionNotFoundError) ErrorCode() int { return -32601 }
@@ -108,6 +130,13 @@ type invalidRequestError struct{ message string }
 func (e *invalidRequestError) ErrorCode() int { return -32600 }
 
 func (e *invalidRequestError) Error() string { return e.message }
+
+// received message is invalid
+type invalidMessageError struct{ message string }
+
+func (e *invalidMessageError) ErrorCode() int { return -32700 }
+
+func (e *invalidMessageError) Error() string { return e.message }
 
 // unable to decode supplied params, or an invalid number of parameters
 type invalidParamsError struct{ message string }
