@@ -26,6 +26,7 @@ type BasicLRU[K comparable, V any] struct {
 	items map[K]cacheItem[K, V]
 	cap   int
 }
+
 type cacheItem[K any, V any] struct {
 	elem  *listElem[K]
 	value V
@@ -88,9 +89,43 @@ func (c *BasicLRU[K, V]) Get(key K) (value V, ok bool) {
 	return item.value, true
 }
 
+// GetOldest retrieves the least-recently-used item.
+// Note that this does not update the item's recency.
+func (c *BasicLRU[K, V]) GetOldest() (key K, value V, ok bool) {
+	lastElem := c.list.last()
+	if lastElem == nil {
+		return key, value, false
+	}
+	key = lastElem.v
+	item := c.items[key]
+	return key, item.value, true
+}
+
 // Len returns the current number of items in the cache.
 func (c *BasicLRU[K, V]) Len() int {
 	return len(c.items)
+}
+
+// Peek retrieves a value from the cache, but does not mark the key as recently used.
+func (c *BasicLRU[K, V]) Peek(key K) (value V, ok bool) {
+	item, ok := c.items[key]
+	return item.value, ok
+}
+
+// Purge empties the cache.
+func (c *BasicLRU[K, V]) Purge() {
+	c.list.init()
+	clear(c.items)
+}
+
+// Remove drops an item from the cache. Returns true if the key was present in cache.
+func (c *BasicLRU[K, V]) Remove(key K) bool {
+	item, ok := c.items[key]
+	if ok {
+		delete(c.items, key)
+		c.list.remove(item.elem)
+	}
+	return ok
 }
 
 // RemoveOldest drops the least recently used item.
@@ -105,6 +140,12 @@ func (c *BasicLRU[K, V]) RemoveOldest() (key K, value V, ok bool) {
 	delete(c.items, key)
 	c.list.remove(lastElem)
 	return key, item.value, true
+}
+
+// Keys returns all keys in the cache.
+func (c *BasicLRU[K, V]) Keys() []K {
+	keys := make([]K, 0, len(c.items))
+	return c.list.appendTo(keys)
 }
 
 // list is a doubly-linked list holding items of type he.
@@ -169,4 +210,12 @@ func (l *list[T]) last() *listElem[T] {
 		return nil
 	}
 	return e
+}
+
+// appendTo appends all list elements to a slice.
+func (l *list[T]) appendTo(slice []T) []T {
+	for e := l.root.prev; e != &l.root; e = e.prev {
+		slice = append(slice, e.v)
+	}
+	return slice
 }
