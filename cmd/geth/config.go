@@ -182,8 +182,8 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	// Start metrics export if enabled
 	utils.SetupMetrics(&cfg.Metrics)
 
-	// todo now wip here
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
+
 	// Create gauge with geth system and build information
 	if eth != nil { // The 'eth' backend may be nil in light mode
 		var protos []string

@@ -154,7 +154,11 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 	log.Info("Initialising Ethereum protocol", "network", networkID, "dbversion", dbVer)
 
-	// todo not finish here
+	if !config.SkipBcVersionCheck {
+		if bcVersion != nil && *bcVersion > core.BlockChainVersion {
+
+		}
+	}
 
 	return eth, nil
 }

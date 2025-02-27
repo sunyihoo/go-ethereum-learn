@@ -280,6 +280,7 @@ func (b *Block) Header() *Header {
 // Header value accessors. These do copy!
 
 func (b *Block) Number() *big.Int { return new(big.Int).Set(b.header.Number) }
+func (b *Block) GasLimit() uint64 { return b.header.GasLimit }
 func (b *Block) GasUsed() uint64  { return b.header.GasUsed }
 
 func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
