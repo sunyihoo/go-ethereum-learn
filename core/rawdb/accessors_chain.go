@@ -22,10 +22,12 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -240,6 +242,14 @@ func ReadTxIndexTail(db ethdb.KeyValueReader) *uint64 {
 	return &number
 }
 
+// WriteTxIndexTail stores the number of oldest indexed block
+// into database.
+func WriteTxIndexTail(db ethdb.KeyValueWriter, number uint64) {
+	if err := db.Put(txIndexTailKey, encodeBlockNumber(number)); err != nil {
+		log.Crit("Failed to store the transaction index tail", "err", err)
+	}
+}
+
 // ReadHeaderRange returns the rlp-encoded headers, starting at 'number', and going
 // backwards towards genesis. This method assumes that the caller already has
 // placed a cap on count, to prevent DoS issues.
@@ -404,11 +414,41 @@ func ReadBodyRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue 
 	return data
 }
 
+// ReadCanonicalBodyRLP retrieves the block body (transactions and uncles) for the canonical
+// block at number, in RLP encoding.
+func ReadCanonicalBodyRLP(db ethdb.Reader, number uint64) rlp.RawValue {
+	var data []byte
+	db.ReadAncients(func(reader ethdb.AncientReaderOp) error {
+		data, _ = reader.Ancient(ChainFreezerBodiesTable, number)
+		if len(data) > 0 {
+			return nil
+		}
+		// Block is not in ancients, read from leveldb by hash and number.
+		// Note: ReadCanonicalHash cannot be used here because it also
+		// calls ReadAncients internally.
+		hash, _ := db.Get(headerHashKey(number))
+		data, _ = db.Get(blockBodyKey(number, common.BytesToHash(hash)))
+		return nil
+	})
+	return data
+}
+
 // WriteBodyRLP stores an RLP encoded block body into the database.
 func WriteBodyRLP(db ethdb.KeyValueWriter, hash common.Hash, number uint64, rlp rlp.RawValue) {
 	if err := db.Put(blockBodyKey(number, hash), rlp); err != nil {
 		log.Crit("Failed to store block body", "err", err)
 	}
+}
+
+// HasBody verifies the existence of a block body corresponding to the hash.
+func HasBody(db ethdb.Reader, hash common.Hash, number uint64) bool {
+	if isCanon(db, number, hash) {
+		return true
+	}
+	if has, err := db.Has(blockBodyKey(number, hash)); !has || err != nil {
+		return false
+	}
+	return true
 }
 
 // ReadBody retrieves the block body corresponding to the hash.
@@ -489,6 +529,18 @@ func DeleteTd(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	}
 }
 
+// HasReceipts verifies the existence of all the transaction receipts belonging
+// to a block.
+func HasReceipts(db ethdb.Reader, hash common.Hash, number uint64) bool {
+	if isCanon(db, number, hash) {
+		return true
+	}
+	if has, err := db.Has(blockReceiptsKey(number, hash)); !has || err != nil {
+		return false
+	}
+	return true
+}
+
 // ReadReceiptsRLP retrieves all the transaction receipts belonging to a block in RLP encoding.
 func ReadReceiptsRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 	var data []byte
@@ -503,6 +555,66 @@ func ReadReceiptsRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawVa
 		return nil
 	})
 	return data
+}
+
+// ReadRawReceipts retrieves all the transaction receipts belonging to a block.
+// The receipt metadata fields are not guaranteed to be populated, so they
+// should not be used. Use ReadReceipts instead if the metadata is needed.
+func ReadRawReceipts(db ethdb.Reader, hash common.Hash, number uint64) types.Receipts {
+	// Retrieve the flattened receipt slice
+	data := ReadReceiptsRLP(db, hash, number)
+	if len(data) == 0 {
+		return nil
+	}
+	// Convert the receipts from their storage form to their internal representation
+	storageReceipts := []*types.ReceiptForStorage{}
+	if err := rlp.DecodeBytes(data, &storageReceipts); err != nil {
+		log.Error("Invalid receipt array RLP", "hash", hash, "err", err)
+		return nil
+	}
+	receipts := make(types.Receipts, len(storageReceipts))
+	for i, storageReceipt := range storageReceipts {
+		receipts[i] = (*types.Receipt)(storageReceipt)
+	}
+	return receipts
+}
+
+// ReadReceipts retrieves all the transaction receipts belonging to a block, including
+// its corresponding metadata fields. If it is unable to populate these metadata
+// fields then nil is returned.
+//
+// The current implementation populates these metadata fields by reading the receipts'
+// corresponding block body, so if the block body is not found it will return nil even
+// if the receipt itself is stored.
+func ReadReceipts(db ethdb.Reader, hash common.Hash, number uint64, time uint64, config *params.ChainConfig) types.Receipts {
+	// We're deriving many fields from the block body, retrieve beside the receipt
+	receipts := ReadRawReceipts(db, hash, number)
+	if receipts == nil {
+		return nil
+	}
+	body := ReadBody(db, hash, number)
+	if body == nil {
+		log.Error("Missing body but have receipt", "hash", hash, "number", number)
+		return nil
+	}
+	header := ReadHeader(db, hash, number)
+
+	var baseFee *big.Int
+	if header == nil {
+		baseFee = big.NewInt(0)
+	} else {
+		baseFee = header.BaseFee
+	}
+	// Compute effective blob gas price.
+	var blobGasPrice *big.Int
+	if header != nil && header.ExcessBlobGas != nil {
+		blobGasPrice = eip4844.CalcBlobFee(*header.ExcessBlobGas)
+	}
+	if err := receipts.DeriveFields(config, hash, number, time, baseFee, blobGasPrice, body.Transactions); err != nil {
+		log.Error("Failed to derive block receipts fields", "hash", hash, "number", number, "err", err)
+		return nil
+	}
+	return receipts
 }
 
 // WriteReceipts stores all the transaction receipts belonging to a block.

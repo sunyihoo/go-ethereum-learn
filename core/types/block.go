@@ -18,6 +18,7 @@
 package types
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"math/big"
 	"slices"
@@ -267,7 +268,9 @@ func (b *Block) Body() *Body {
 // Accessors for body data. These do not return a copy because the content
 // of the body slices does not affect the cached hash/size in block.
 
-func (b *Block) Uncles() []*Header { return b.uncles }
+func (b *Block) Uncles() []*Header          { return b.uncles }
+func (b *Block) Transactions() Transactions { return b.transactions }
+func (b *Block) Withdrawals() Withdrawals   { return b.withdrawals }
 
 // Header returns the block header (as a copy).
 func (b *Block) Header() *Header {
@@ -275,6 +278,9 @@ func (b *Block) Header() *Header {
 }
 
 // Header value accessors. These do copy!
+
+func (b *Block) Number() *big.Int { return new(big.Int).Set(b.header.Number) }
+func (b *Block) GasUsed() uint64  { return b.header.GasUsed }
 
 func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
 
@@ -296,11 +302,38 @@ func CalcUncleHash(uncles []*Header) common.Hash {
 	return rlpHash(uncles)
 }
 
+// CalcRequestsHash creates the block requestsHash value for a list of requests.
+func CalcRequestsHash(requests [][]byte) common.Hash {
+	h1, h2 := sha256.New(), sha256.New()
+	var buf common.Hash
+	for _, item := range requests {
+		if len(item) > 1 { // skip items with only requestType and no data.
+			h1.Reset()
+			h1.Write(item)
+			h2.Write(h1.Sum(buf[:0]))
+		}
+	}
+	h2.Sum(buf[:0])
+	return buf
+}
+
 // NewBlockWithHeader creates a block with the given header data. The
 // header data is copied, changes to header and to the field values
 // will not affect the block.
 func NewBlockWithHeader(header *Header) *Block {
 	return &Block{header: CopyHeader(header)}
+}
+
+// WithSeal returns a new block with the data from b but the header replaced with
+// the sealed one.
+func (b *Block) WithSeal(header *Header) *Block {
+	return &Block{
+		header:       CopyHeader(header),
+		transactions: b.transactions,
+		uncles:       b.uncles,
+		withdrawals:  b.withdrawals,
+		witness:      b.witness,
+	}
 }
 
 // WithBody returns a new block with the original header and a deep copy of the

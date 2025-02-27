@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 var ErrInvalidChainId = errors.New("invalid chain id for signer")
@@ -33,6 +34,28 @@ var ErrInvalidChainId = errors.New("invalid chain id for signer")
 type sigCache struct {
 	signer Signer
 	from   common.Address
+}
+
+// MakeSigner returns a Signer based on the given chain config and block number.
+func MakeSigner(config *params.ChainConfig, blockNumber *big.Int, blockTime uint64) Signer {
+	var signer Signer
+	switch {
+	case config.IsPrague(blockNumber, blockTime):
+		signer = NewPragueSigner(config.ChainID)
+	case config.IsCancun(blockNumber, blockTime):
+		signer = NewCancunSigner(config.ChainID)
+	case config.IsLondon(blockNumber):
+		signer = NewLondonSigner(config.ChainID)
+	case config.IsBerlin(blockNumber):
+		signer = NewEIP2930Signer(config.ChainID)
+	case config.IsEIP155(blockNumber):
+		signer = NewEIP155Signer(config.ChainID)
+	case config.IsHomestead(blockNumber):
+		signer = HomesteadSigner{}
+	default:
+		signer = FrontierSigner{}
+	}
+	return signer
 }
 
 // LatestSignerForChainID returns the 'most permissive' Signer available. Specifically,

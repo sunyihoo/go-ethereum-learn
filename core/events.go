@@ -21,6 +21,13 @@ import "github.com/ethereum/go-ethereum/core/types"
 // NewTxsEvent is posted when a batch of transactions enter the transaction pool.
 type NewTxsEvent struct{ Txs []*types.Transaction }
 
+// RemovedLogsEvent is posted when a reorg happens
+type RemovedLogsEvent struct{ Logs []*types.Log }
+
+type ChainEvent struct {
+	Header *types.Header
+}
+
 type ChainHeadEvent struct {
 	Header *types.Header
 }
