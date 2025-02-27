@@ -22,7 +22,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 
+// The list of table names of chain freezer.
 const (
+	// ChainFreezerHeaderTable indicates the name of the freezer header table.
+	ChainFreezerHeaderTable = "headers"
+
 	// ChainFreezerHashTable indicates the name of the freezer canonical hash table.
 	ChainFreezerHashTable = "hashes"
 

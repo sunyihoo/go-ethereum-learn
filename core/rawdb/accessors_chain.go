@@ -29,12 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-// The list of table names of chain freezer.
-const (
-	// ChainFreezerHeaderTable indicates the name of the freezer header table.
-	ChainFreezerHeaderTable = "headers"
-)
-
 // ReadCanonicalHash retrieves the hash assigned to a canonical block number.
 func ReadCanonicalHash(db ethdb.Reader, number uint64) common.Hash {
 	var data []byte
@@ -78,6 +72,70 @@ func ReadAllHashes(db ethdb.Iteratee, number uint64) []common.Hash {
 		}
 	}
 	return hashes
+}
+
+type NumberHash struct {
+	Number uint64
+	Hash   common.Hash
+}
+
+// ReadAllHashesInRange retrieves all the hashes assigned to blocks at certain
+// heights, both canonical and reorged forks included.
+// This method considers both limits to be _inclusive_.
+func ReadAllHashesInRange(db ethdb.Iteratee, first, last uint64) []*NumberHash {
+	var (
+		start     = encodeBlockNumber(first)
+		keyLength = len(headerPrefix) + 8 + 32
+		hashes    = make([]*NumberHash, 0, 1+last-first)
+		it        = db.NewIterator(headerPrefix, start)
+	)
+	defer it.Release()
+	for it.Next() {
+		key := it.Key()
+		if len(key) != keyLength {
+			continue
+		}
+		num := binary.BigEndian.Uint64(key[len(headerPrefix) : len(headerPrefix)+8])
+		if num > last {
+			break
+		}
+		hash := common.BytesToHash(key[len(key)-32:])
+		hashes = append(hashes, &NumberHash{num, hash})
+	}
+	return hashes
+}
+
+// ReadAllCanonicalHashes retrieves all canonical number and hash mappings at the
+// certain chain range. If the accumulated entries reaches the given threshold,
+// abort the iteration and return the semi-finish result.
+func ReadAllCanonicalHashes(db ethdb.Iteratee, from uint64, to uint64, limit int) ([]uint64, []common.Hash) {
+	// Short circuit if the limit is 0.
+	if limit == 0 {
+		return nil, nil
+	}
+	var (
+		numbers []uint64
+		hashes  []common.Hash
+	)
+	// Construct the key prefix of start point.
+	start, end := headerHashKey(from), headerHashKey(to)
+	it := db.NewIterator(nil, start)
+	defer it.Release()
+
+	for it.Next() {
+		if bytes.Compare(it.Key(), end) >= 0 {
+			break
+		}
+		if key := it.Key(); len(key) == len(headerPrefix)+8+1 && bytes.Equal(key[len(key)-1:], headerHashSuffix) {
+			numbers = append(numbers, binary.BigEndian.Uint64(key[len(headerPrefix):len(headerPrefix)+8]))
+			hashes = append(hashes, common.BytesToHash(it.Value()))
+			// If the accumulated entries reaches the limit threshold, return.
+			if len(numbers) >= limit {
+				break
+			}
+		}
+	}
+	return numbers, hashes
 }
 
 // ReadHeaderNumber returns the header number assigned to a hash.
@@ -182,6 +240,61 @@ func ReadTxIndexTail(db ethdb.KeyValueReader) *uint64 {
 	return &number
 }
 
+// ReadHeaderRange returns the rlp-encoded headers, starting at 'number', and going
+// backwards towards genesis. This method assumes that the caller already has
+// placed a cap on count, to prevent DoS issues.
+// Since this method operates in head-towards-genesis mode, it will return an empty
+// slice in case the head ('number') is missing. Hence, the caller must ensure that
+// the head ('number') argument is actually an existing header.
+//
+// N.B: Since the input is a number, as opposed to a hash, it's implicit that
+// this method only operates on canon headers.
+func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValue {
+	var rlpHeaders []rlp.RawValue
+	if count == 0 {
+		return rlpHeaders
+	}
+	i := number
+	if count-1 > number {
+		// It's ok to request block 0, 1 item
+		count = number + 1
+	}
+	limit, _ := db.Ancients()
+	// First read live blocks
+	if i >= limit {
+		// If we need to read live blocks, we need to figure out the hash first
+		hash := ReadCanonicalHash(db, number)
+		for ; i >= limit && count > 0; i-- {
+			if data, _ := db.Get(headerKey(i, hash)); len(data) > 0 {
+				rlpHeaders = append(rlpHeaders, data)
+				// Get the parent hash for next query
+				hash = types.HeaderParentHashFromRLP(data)
+			} else {
+				break // Maybe got moved to ancients
+			}
+			count--
+		}
+	}
+	if count == 0 {
+		return rlpHeaders
+	}
+	// read remaining from ancients, cap at 2M
+	data, err := db.AncientRange(ChainFreezerHeaderTable, i+1-count, count, 2*1024*1024)
+	if err != nil {
+		log.Error("Failed to read headers from freezer", "err", err)
+		return rlpHeaders
+	}
+	if uint64(len(data)) != count {
+		log.Warn("Incomplete read of headers from freezer", "wanted", count, "read", len(data))
+		return rlpHeaders
+	}
+	// The data is on the order [h, h+1, .., n] -- reordering needed
+	for i := range data {
+		rlpHeaders = append(rlpHeaders, data[len(data)-1-i])
+	}
+	return rlpHeaders
+}
+
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
 func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 	var data []byte
@@ -198,6 +311,17 @@ func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValu
 		return nil
 	})
 	return data
+}
+
+// HasHeader verifies the existence of a block header corresponding to the hash.
+func HasHeader(db ethdb.Reader, hash common.Hash, number uint64) bool {
+	if isCanon(db, number, hash) {
+		return true
+	}
+	if has, err := db.Has(headerKey(number, hash)); !has || err != nil {
+		return false
+	}
+	return true
 }
 
 // ReadHeader retrieves the block header corresponding to the hash.
@@ -331,6 +455,20 @@ func ReadTdRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 		return nil
 	})
 	return data
+}
+
+// ReadTd retrieves a block's total difficulty corresponding to the hash.
+func ReadTd(db ethdb.Reader, hash common.Hash, number uint64) *big.Int {
+	data := ReadTdRLP(db, hash, number)
+	if len(data) == 0 {
+		return nil
+	}
+	td := new(big.Int)
+	if err := rlp.DecodeBytes(data, td); err != nil {
+		log.Error("Invalid block total difficulty RLP", "hash", hash, "err", err)
+		return nil
+	}
+	return td
 }
 
 // WriteTd stores the total difficulty of a block into the database.
