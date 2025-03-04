@@ -38,6 +38,9 @@ import (
 // SignatureLength indicates the byte length required to carry a signature with recovery id.
 const SignatureLength = 64 + 1 // 64 bytes ECDSA signature + 1 byte recovery id
 
+// RecoveryIDOffset points to the byte offset within the signature that contains the recovery id.
+const RecoveryIDOffset = 64
+
 // DigestLength sets the signature digest exact length
 const DigestLength = 32
 
@@ -52,7 +55,7 @@ var errInvalidPubkey = errors.New("invalid secp256k1 public key")
 type EllipticCurve interface {
 	elliptic.Curve
 
-	// Point marshaling/unmarshaling.
+	// Point marshaling/unmarshaing.
 	Marshal(x, y *big.Int) []byte
 	Unmarshal(data []byte) (x, y *big.Int)
 }
@@ -100,16 +103,43 @@ func Keccak256Hash(data ...[]byte) (h common.Hash) {
 	return h
 }
 
+// Keccak512 calculates and returns the Keccak512 hash of the input data.
+func Keccak512(data ...[]byte) []byte {
+	d := sha3.NewLegacyKeccak512()
+	for _, b := range data {
+		d.Write(b)
+	}
+	return d.Sum(nil)
+}
+
 // CreateAddress creates an ethereum address given the bytes and the nonce
 func CreateAddress(b common.Address, nonce uint64) common.Address {
 	data, _ := rlp.EncodeToBytes([]interface{}{b, nonce})
 	return common.BytesToAddress(Keccak256(data)[12:])
 }
 
+// CreateAddress2 creates an ethereum address given the address bytes, initial
+// contract code hash and a salt.
+func CreateAddress2(b common.Address, salt [32]byte, inithash []byte) common.Address {
+	return common.BytesToAddress(Keccak256([]byte{0xff}, b.Bytes(), salt[:], inithash)[12:])
+}
+
+// ToECDSA creates a private key with the given D value.
 func ToECDSA(d []byte) (*ecdsa.PrivateKey, error) {
 	return toECDSA(d, true)
 }
 
+// ToECDSAUnsafe blindly converts a binary blob to a private key. It should almost
+// never be used unless you are sure the input is valid and want to avoid hitting
+// errors due to bad origin encoding (0 prefixes cut off).
+func ToECDSAUnsafe(d []byte) *ecdsa.PrivateKey {
+	priv, _ := toECDSA(d, false)
+	return priv
+}
+
+// toECDSA creates a private key with the given D value. The strict parameter
+// controls whether the key's length should be enforced at the curve size or
+// it can also accept legacy encodings (0 prefixes).
 func toECDSA(d []byte, strict bool) (*ecdsa.PrivateKey, error) {
 	priv := new(ecdsa.PrivateKey)
 	priv.PublicKey.Curve = S256()
@@ -120,7 +150,7 @@ func toECDSA(d []byte, strict bool) (*ecdsa.PrivateKey, error) {
 
 	// The priv.D must < N
 	if priv.D.Cmp(secp256k1N) >= 0 {
-		return nil, errors.New("invalid private key, >= N")
+		return nil, errors.New("invalid private key, >=N")
 	}
 	// The priv.D must not be zero or negative.
 	if priv.D.Sign() <= 0 {
@@ -158,6 +188,7 @@ func FromECDSAPub(pub *ecdsa.PublicKey) []byte {
 	return S256().Marshal(pub.X, pub.Y)
 }
 
+// HexToECDSA parses a secp256k1 private key.
 func HexToECDSA(hexkey string) (*ecdsa.PrivateKey, error) {
 	b, err := hex.DecodeString(hexkey)
 	if byteErr, ok := err.(hex.InvalidByteError); ok {
@@ -168,6 +199,7 @@ func HexToECDSA(hexkey string) (*ecdsa.PrivateKey, error) {
 	return ToECDSA(b)
 }
 
+// LoadECDSA loads a secp256k1 private key from the given file.
 func LoadECDSA(file string) (*ecdsa.PrivateKey, error) {
 	fd, err := os.Open(file)
 	if err != nil {
@@ -183,6 +215,10 @@ func LoadECDSA(file string) (*ecdsa.PrivateKey, error) {
 	} else if n != len(buf) {
 		return nil, errors.New("key file too short, want 64 hex characters")
 	}
+	if err := checkKeyFileEnd(r); err != nil {
+		return nil, err
+	}
+
 	return HexToECDSA(string(buf))
 }
 
@@ -199,6 +235,23 @@ func readASCII(buf []byte, r *bufio.Reader) (n int, err error) {
 		}
 	}
 	return n, nil
+}
+
+// checkKeyFileEnd skips over additional newlines at the end of a key file.
+func checkKeyFileEnd(r *bufio.Reader) error {
+	for i := 0; ; i++ {
+		b, err := r.ReadByte()
+		switch {
+		case err == io.EOF:
+			return nil
+		case err != nil:
+			return err
+		case b != '\n' && b != '\r':
+			return fmt.Errorf("invalid character %q at end of key file", b)
+		case i >= 2:
+			return errors.New("key file too long, want 64 hex characters")
+		}
+	}
 }
 
 // SaveECDSA saves a secp256k1 private key to the given file with
