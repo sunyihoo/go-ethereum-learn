@@ -42,6 +42,17 @@ func ReadDatabaseVersion(db ethdb.KeyValueReader) *uint64 {
 	return &version
 }
 
+// WriteDatabaseVersion stores the version number of the database
+func WriteDatabaseVersion(db ethdb.KeyValueWriter, version uint64) {
+	enc, err := rlp.EncodeToBytes(version)
+	if err != nil {
+		log.Crit("Failed to encode database version", "err", err)
+	}
+	if err = db.Put(databaseVersionKey, enc); err != nil {
+		log.Crit("Failed to store the database version", "err", err)
+	}
+}
+
 // ReadChainConfig retrieves the consensus settings based on the given genesis hash.
 func ReadChainConfig(db ethdb.KeyValueReader, hash common.Hash) *params.ChainConfig {
 	data, _ := db.Get(configKey(hash))
