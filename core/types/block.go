@@ -20,7 +20,10 @@ package types
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"math/big"
+	"reflect"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -105,10 +108,74 @@ type Header struct {
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
 }
 
+// field type overrides for gencodec
+type headerMarshaling struct {
+	Difficulty    *hexutil.Big
+	Number        *hexutil.Big
+	GasLimit      hexutil.Uint64
+	GasUsed       hexutil.Uint64
+	Time          hexutil.Uint64
+	Extra         hexutil.Bytes
+	BaseFee       *hexutil.Big
+	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
+	BlobGasUsed   *hexutil.Uint64
+	ExcessBlobGas *hexutil.Uint64
+}
+
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
 // RLP encoding.
 func (h *Header) Hash() common.Hash {
 	return rlpHash(h)
+}
+
+var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
+
+// Size returns the approximate memory used by all internal contents. It is used
+// to approximate and limit the memory consumption of various caches.
+func (h *Header) Size() common.StorageSize {
+	var baseFeeBits int
+	if h.BaseFee != nil {
+		baseFeeBits = h.BaseFee.BitLen()
+	}
+	return headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen()+baseFeeBits)/8)
+}
+
+// SanityCheck checks a few basic things -- these checks are way beyond what
+// any 'sane' production values should hold, and can mainly be used to prevent
+// that the unbounded fields are stuffed with junk data to add processing
+// overhead
+func (h *Header) SanityCheck() error {
+	if h.Number != nil && !h.Number.IsUint64() {
+		return fmt.Errorf("too large block number: bitlen %d", h.Number.BitLen())
+	}
+	if h.Difficulty != nil {
+		if diffLen := h.Difficulty.BitLen(); diffLen > 80 {
+			return fmt.Errorf("too large block difficulty: bitlen %d", diffLen)
+		}
+	}
+	if eLen := len(h.Extra); eLen > 100*1024 {
+		return fmt.Errorf("too large block extradata: size %d", eLen)
+	}
+	if h.BaseFee != nil {
+		if bfLen := h.BaseFee.BitLen(); bfLen > 256 {
+			return fmt.Errorf("too large base fee: bitlen %d", bfLen)
+		}
+	}
+	return nil
+}
+
+// EmptyBody returns true if there is no additional 'body' to complete the header
+// that is: no transactions, no uncles and no withdrawals.
+func (h *Header) EmptyBody() bool {
+	var (
+		emptyWithdrawals = h.WithdrawalsHash == nil || *h.WithdrawalsHash == EmptyWithdrawalsHash
+	)
+	return h.TxHash == EmptyTxsHash && h.UncleHash == EmptyUncleHash && emptyWithdrawals
+}
+
+// EmptyReceipts returns true if there are no receipts for this header/block.
+func (h *Header) EmptyReceipts() bool {
+	return h.ReceiptHash == EmptyReceiptsHash
 }
 
 // Body is a simple (mutable, non-safe) data container for storing and moving
@@ -259,6 +326,28 @@ func CopyHeader(h *Header) *Header {
 	return &cpy
 }
 
+// DecodeRLP decodes a block from RLP.
+func (b *Block) DecodeRLP(s *rlp.Stream) error {
+	var eb extblock
+	_, size, _ := s.Kind()
+	if err := s.Decode(&eb); err != nil {
+		return err
+	}
+	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
+	b.size.Store(rlp.ListSize(size))
+	return nil
+}
+
+// EncodeRLP serializes a block as RLP.
+func (b *Block) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, &extblock{
+		Header:      b.header,
+		Txs:         b.transactions,
+		Uncles:      b.uncles,
+		Withdrawals: b.withdrawals,
+	})
+}
+
 // Body returns the non-header content of the block.
 // Note the returned data is not an independent copy.
 func (b *Block) Body() *Body {
@@ -272,6 +361,15 @@ func (b *Block) Uncles() []*Header          { return b.uncles }
 func (b *Block) Transactions() Transactions { return b.transactions }
 func (b *Block) Withdrawals() Withdrawals   { return b.withdrawals }
 
+func (b *Block) Transaction(hash common.Hash) *Transaction {
+	for _, transaction := range b.transactions {
+		if transaction.Hash() == hash {
+			return transaction
+		}
+	}
+	return nil
+}
+
 // Header returns the block header (as a copy).
 func (b *Block) Header() *Header {
 	return CopyHeader(b.header)
@@ -279,15 +377,72 @@ func (b *Block) Header() *Header {
 
 // Header value accessors. These do copy!
 
-func (b *Block) Number() *big.Int { return new(big.Int).Set(b.header.Number) }
-func (b *Block) GasLimit() uint64 { return b.header.GasLimit }
-func (b *Block) GasUsed() uint64  { return b.header.GasUsed }
-
+func (b *Block) Number() *big.Int     { return new(big.Int).Set(b.header.Number) }
+func (b *Block) GasLimit() uint64     { return b.header.GasLimit }
+func (b *Block) GasUsed() uint64      { return b.header.GasUsed }
 func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
+func (b *Block) Time() uint64         { return b.header.Time }
 
-func (b *Block) NumberU64() uint64       { return b.header.Number.Uint64() }
-func (b *Block) Root() common.Hash       { return b.header.Root }
-func (b *Block) ParentHash() common.Hash { return b.header.ParentHash }
+func (b *Block) NumberU64() uint64        { return b.header.Number.Uint64() }
+func (b *Block) MixDigest() common.Hash   { return b.header.MixDigest }
+func (b *Block) Nonce() uint64            { return binary.BigEndian.Uint64(b.header.Nonce[:]) }
+func (b *Block) Bloom() Bloom             { return b.header.Bloom }
+func (b *Block) Coinbase() common.Address { return b.header.Coinbase }
+func (b *Block) Root() common.Hash        { return b.header.Root }
+func (b *Block) ParentHash() common.Hash  { return b.header.ParentHash }
+func (b *Block) TxHash() common.Hash      { return b.header.TxHash }
+func (b *Block) ReceiptHash() common.Hash { return b.header.ReceiptHash }
+func (b *Block) UncleHash() common.Hash   { return b.header.UncleHash }
+func (b *Block) Extra() []byte            { return common.CopyBytes(b.header.Extra) }
+
+func (b *Block) BaseFee() *big.Int {
+	if b.header.BaseFee == nil {
+		return nil
+	}
+	return new(big.Int).Set(b.header.BaseFee)
+}
+
+func (b *Block) BeaconRoot() *common.Hash   { return b.header.ParentBeaconRoot }
+func (b *Block) RequestsHash() *common.Hash { return b.header.RequestsHash }
+
+func (b *Block) ExcessBlobGas() *uint64 {
+	var excessBlobGas *uint64
+	if b.header.ExcessBlobGas != nil {
+		excessBlobGas = new(uint64)
+		*excessBlobGas = *b.header.ExcessBlobGas
+	}
+	return excessBlobGas
+}
+
+func (b *Block) BlobGasUsed() *uint64 {
+	var blobGasUsed *uint64
+	if b.header.BlobGasUsed != nil {
+		blobGasUsed = new(uint64)
+		*blobGasUsed = *b.header.BlobGasUsed
+	}
+	return blobGasUsed
+}
+
+// ExecutionWitness returns the verkle execution witneess + proof for a block
+func (b *Block) ExecutionWitness() *ExecutionWitness { return b.witness }
+
+// Size returns the true RLP encoded storage size of the block, either by encoding
+// and returning it, or returning a previously cached value.
+func (b *Block) Size() uint64 {
+	if size := b.size.Load(); size > 0 {
+		return size
+	}
+	c := writeCounter(0)
+	rlp.Encode(&c, b)
+	b.size.Store(uint64(c))
+	return uint64(c)
+}
+
+// SanityCheck can be used to prevent that unbounded fields are
+// stuffed with junk data to add processing overhead
+func (b *Block) SanityCheck() error {
+	return b.header.SanityCheck()
+}
 
 type writeCounter uint64
 
