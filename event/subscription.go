@@ -116,6 +116,21 @@ func (sc *SubscriptionScope) Track(s Subscription) Subscription {
 	return ss
 }
 
+// Close calls Unsubscribe on all tracked subscriptions and prevents further additions to
+// the tracked set. Calls to Track after Close return nil.
+func (sc *SubscriptionScope) Close() {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.closed {
+		return
+	}
+	sc.closed = true
+	for s := range sc.subs {
+		s.s.Unsubscribe()
+	}
+	sc.subs = nil
+}
+
 // Count returns the number of tracked subscriptions.
 // It is meant to be used for debugging.
 func (sc *SubscriptionScope) Count() int {

@@ -172,6 +172,16 @@ func ReadSnapshotRecoveryNumber(db ethdb.KeyValueReader) *uint64 {
 	return &number
 }
 
+// WriteSnapshotRecoveryNumber stores the block number of the last persisted
+// snapshot layer.
+func WriteSnapshotRecoveryNumber(db ethdb.KeyValueWriter, number uint64) {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], number)
+	if err := db.Put(snapshotRecoveryKey, buf[:]); err != nil {
+		log.Crit("Failed to store snapshot recovery number", "err", err)
+	}
+}
+
 // ReadSnapshotSyncStatus retrieves the serialized sync status saved at shutdown.
 func ReadSnapshotSyncStatus(db ethdb.KeyValueReader) []byte {
 	data, _ := db.Get(snapshotSyncStatusKey)
