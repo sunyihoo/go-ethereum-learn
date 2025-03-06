@@ -58,6 +58,36 @@ func MakeSigner(config *params.ChainConfig, blockNumber *big.Int, blockTime uint
 	return signer
 }
 
+// LatestSigner returns the 'most permissive' Signer available for the given chain
+// configuration. Specifically, this enables support of all types of transactions
+// when their respective forks are scheduled to occur at any block number (or time)
+// in the chain config.
+//
+// Use this in transaction-handling code where the current block number is unknown. If you
+// have the current block number available, use MakeSigner instead.
+func LatestSigner(config *params.ChainConfig) Signer {
+	var signer Signer
+	if config.ChainID != nil {
+		switch {
+		case config.PragueTime != nil:
+			signer = NewPragueSigner(config.ChainID)
+		case config.CancunTime != nil:
+			signer = NewCancunSigner(config.ChainID)
+		case config.LondonBlock != nil:
+			signer = NewLondonSigner(config.ChainID)
+		case config.BerlinBlock != nil:
+			signer = NewEIP2930Signer(config.ChainID)
+		case config.EIP155Block != nil:
+			signer = NewEIP155Signer(config.ChainID)
+		default:
+			signer = HomesteadSigner{}
+		}
+	} else {
+		signer = HomesteadSigner{}
+	}
+	return signer
+}
+
 // LatestSignerForChainID returns the 'most permissive' Signer available. Specifically,
 // this enables support for EIP-155 replay protection and all implemented EIP-2718
 // transaction types if chainID is non-nil.
@@ -83,6 +113,21 @@ func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, err
 		return nil, err
 	}
 	return tx.WithSignature(s, sig)
+}
+
+// SignNewTx creates a transaction and signs it.
+func SignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, error) {
+	return SignTx(NewTx(txdata), s, prv)
+}
+
+// MustSignNewTx creates a transaction and signs it.
+// This panics if the transaction cannot be signed.
+func MustSignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) *Transaction {
+	tx, err := SignNewTx(prv, s, txdata)
+	if err != nil {
+		panic(err)
+	}
+	return tx
 }
 
 // Sender returns the address derived from the signature (V, R, S) using secp256k1
@@ -420,29 +465,6 @@ func (s eip2930Signer) Hash(tx *Transaction) common.Hash {
 	}
 }
 
-func decodeSignature(sig []byte) (r, s, v *big.Int) {
-	if len(sig) != crypto.SignatureLength {
-		panic(fmt.Sprintf("wrong size for signature: got %d, want %d", len(sig), crypto.SignatureLength))
-	}
-	r = new(big.Int).SetBytes(sig[:32])
-	s = new(big.Int).SetBytes(sig[32:64])
-	v = new(big.Int).SetBytes([]byte{sig[64] + 27})
-	return r, s, v
-}
-
-// deriveChainId derives the chain id from the given v parameter
-func deriveChainId(v *big.Int) *big.Int {
-	if v.BitLen() <= 64 {
-		v := v.Uint64()
-		if v == 27 || v == 28 {
-			return new(big.Int)
-		}
-		return new(big.Int).SetUint64((v - 35) / 2)
-	}
-	vCopy := new(big.Int).Sub(v, big.NewInt(35))
-	return vCopy.Rsh(vCopy, 1)
-}
-
 // EIP155Signer implements Signer using the EIP-155 rules. This accepts transactions which
 // are replay-protected as well as unprotected homestead transactions.
 type EIP155Signer struct {
@@ -585,6 +607,16 @@ func (fs FrontierSigner) Hash(tx *Transaction) common.Hash {
 	})
 }
 
+func decodeSignature(sig []byte) (r, s, v *big.Int) {
+	if len(sig) != crypto.SignatureLength {
+		panic(fmt.Sprintf("wrong size for signature: got %d, want %d", len(sig), crypto.SignatureLength))
+	}
+	r = new(big.Int).SetBytes(sig[:32])
+	s = new(big.Int).SetBytes(sig[32:64])
+	v = new(big.Int).SetBytes([]byte{sig[64] + 27})
+	return r, s, v
+}
+
 func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (common.Address, error) {
 	if Vb.BitLen() > 8 {
 		return common.Address{}, ErrInvalidSig
@@ -610,4 +642,17 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	var addr common.Address
 	copy(addr[:], crypto.Keccak256(pub[1:])[12:])
 	return addr, nil
+}
+
+// deriveChainId derives the chain id from the given v parameter
+func deriveChainId(v *big.Int) *big.Int {
+	if v.BitLen() <= 64 {
+		v := v.Uint64()
+		if v == 27 || v == 28 {
+			return new(big.Int)
+		}
+		return new(big.Int).SetUint64((v - 35) / 2)
+	}
+	vCopy := new(big.Int).Sub(v, big.NewInt(35))
+	return vCopy.Rsh(vCopy, 1)
 }
