@@ -1,3 +1,19 @@
+// Copyright 2016 The go-ethereum Authors
+// This file is part of the go-ethereum library.
+//
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The go-ethereum library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+
 package event
 
 import (
@@ -17,7 +33,7 @@ var errBadChannel = errors.New("event: Subscribe argument does not have sendable
 //
 // The zero value is ready to use.
 type Feed struct {
-	once      sync.Once        // ensure that init only runs once
+	once      sync.Once        // ensures that init only runs once
 	sendLock  chan struct{}    // sendLock has a one-element buffer and is empty when held.It protects sendCases.
 	removeSub chan interface{} // interrupts Send
 	sendCases caseList         // the active set of select cases used by Send
@@ -26,6 +42,19 @@ type Feed struct {
 	mu    sync.Mutex
 	inbox caseList
 	etype reflect.Type
+}
+
+// This is the index of the first actual subscription channel in sendCases.
+// sendCases[0] is a SelectRecv case for the removeSub channel.
+const firstSubSendCase = 1
+
+type feedTypeError struct {
+	got, want reflect.Type
+	op        string
+}
+
+func (e feedTypeError) Error() string {
+	return "event: wrong type in " + e.op + " got " + e.got.String() + ", want " + e.want.String()
 }
 
 func (f *Feed) init(etype reflect.Type) {
@@ -61,19 +90,6 @@ func (f *Feed) Subscribe(channel interface{}) Subscription {
 	cas := reflect.SelectCase{Dir: reflect.SelectSend, Chan: chanval}
 	f.inbox = append(f.inbox, cas)
 	return sub
-}
-
-// This is the index of the first actual subscription channel in sendCases.
-// sendCases[0] is a SelectRecv case for the removeSub channel.
-const firstSubSendCase = 1
-
-type feedTypeError struct {
-	got, want reflect.Type
-	op        string
-}
-
-func (e feedTypeError) Error() string {
-	return "event: wrong type in " + e.op + " got " + e.got.String() + ", want " + e.want.String()
 }
 
 func (f *Feed) remove(sub *feedSub) {
@@ -204,3 +220,19 @@ func (cs caseList) deactivate(index int) caseList {
 	cs[index], cs[last] = cs[last], cs[index]
 	return cs[:last]
 }
+
+// func (cs caseList) String() string {
+//     s := "["
+//     for i, cas := range cs {
+//             if i != 0 {
+//                     s += ", "
+//             }
+//             switch cas.Dir {
+//             case reflect.SelectSend:
+//                     s += fmt.Sprintf("%v<-", cas.Chan.Interface())
+//             case reflect.SelectRecv:
+//                     s += fmt.Sprintf("<-%v", cas.Chan.Interface())
+//             }
+//     }
+//     return s + "]"
+// }
