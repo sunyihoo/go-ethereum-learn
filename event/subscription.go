@@ -16,7 +16,13 @@
 
 package event
 
-import "sync"
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common/mclock"
+)
 
 // Subscription represents a stream of events. The carrier of the events is typically a
 // channel, but isn't part of the interface.
@@ -79,6 +85,147 @@ func (s *funcSub) Unsubscribe() {
 
 func (s *funcSub) Err() <-chan error {
 	return s.err
+}
+
+// Resubscribe calls fn repeatedly to keep a subscription established. When the
+// subscription is established, Resubscribe waits for it to fail and calls fn again. This
+// process repeats until Unsubscribe is called or the active subscription ends
+// successfully.
+//
+// Resubscribe applies backoff between calls to fn. The time between calls is adapted
+// based on the error rate, but will never exceed backoffMax.
+func Resubscribe(backoffMax time.Duration, fn ResubscribeFunc) Subscription {
+	return ResubscribeErr(backoffMax, func(ctx context.Context, _ error) (Subscription, error) {
+		return fn(ctx)
+	})
+}
+
+// A ResubscribeFunc attempts to establish a subscription.
+type ResubscribeFunc func(context.Context) (Subscription, error)
+
+// ResubscribeErr calls fn repeatedly to keep a subscription established. When the
+// subscription is established, ResubscribeErr waits for it to fail and calls fn again. This
+// process repeats until Unsubscribe is called or the active subscription ends
+// successfully.
+//
+// The difference between Resubscribe and ResubscribeErr is that with ResubscribeErr,
+// the error of the failing subscription is available to the callback for logging
+// purposes.
+//
+// ResubscribeErr applies backoff between calls to fn. The time between calls is adapted
+// based on the error rate, but will never exceed backoffMax.
+func ResubscribeErr(backoffMax time.Duration, fn ResubscribeErrFunc) Subscription {
+	s := &resubscribeSub{
+		waitTime:   backoffMax / 10,
+		backoffMax: backoffMax,
+		fn:         fn,
+		err:        make(chan error),
+		unsub:      make(chan struct{}, 1),
+	}
+	go s.loop()
+	return s
+}
+
+// A ResubscribeErrFunc attempts to establish a subscription.
+// For every call but the first, the second argument to this function is
+// the error that occurred with the previous subscription.
+type ResubscribeErrFunc func(context.Context, error) (Subscription, error)
+
+type resubscribeSub struct {
+	fn                   ResubscribeErrFunc
+	err                  chan error
+	unsub                chan struct{}
+	unsubOnce            sync.Once
+	lastTry              mclock.AbsTime
+	lastSubErr           error
+	waitTime, backoffMax time.Duration
+}
+
+func (s *resubscribeSub) Unsubscribe() {
+	s.unsubOnce.Do(func() {
+		s.unsub <- struct{}{}
+		<-s.err
+	})
+}
+
+func (s *resubscribeSub) Err() <-chan error {
+	return s.err
+}
+
+func (s *resubscribeSub) loop() {
+	defer close(s.err)
+	var done bool
+	for !done {
+		sub := s.subscribe()
+		if sub == nil {
+			break
+		}
+		done = s.waitForError(sub)
+		sub.Unsubscribe()
+	}
+}
+
+func (s *resubscribeSub) subscribe() Subscription {
+	subscribed := make(chan error)
+	var sub Subscription
+	for {
+		s.lastTry = mclock.Now()
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			rsub, err := s.fn(ctx, s.lastSubErr)
+			sub = rsub
+			subscribed <- err
+		}()
+		select {
+		case err := <-subscribed:
+			cancel()
+			if err == nil {
+				if sub == nil {
+					panic("event: ResubscribeFunc returned nil subscription and no error")
+				}
+				return sub
+			}
+			// Subscribing failed, wait before launching the next try.
+			if s.backoffWait() {
+				return nil // unsubscribed during wait
+			}
+		case <-s.unsub:
+			cancel()
+			<-subscribed // avoid leaking the s.fn goroutine.
+			return nil
+		}
+	}
+}
+
+func (s *resubscribeSub) waitForError(sub Subscription) bool {
+	defer sub.Unsubscribe()
+	select {
+	case err := <-sub.Err():
+		s.lastSubErr = err
+		return err == nil
+	case <-s.unsub:
+		return true
+	}
+}
+
+func (s *resubscribeSub) backoffWait() bool {
+	if time.Duration(mclock.Now()-s.lastTry) > s.backoffMax {
+		s.waitTime = s.backoffMax / 10
+	} else {
+		s.waitTime *= 2
+		if s.waitTime > s.backoffMax {
+			s.waitTime = s.backoffMax
+		}
+	}
+
+	t := time.NewTimer(s.waitTime)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return false
+	case <-s.unsub:
+		return true
+	}
 }
 
 // SubscriptionScope provides a facility to unsubscribe multiple subscriptions at once.
