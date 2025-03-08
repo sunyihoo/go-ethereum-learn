@@ -61,6 +61,26 @@ func ReadCodeWithPrefix(db ethdb.KeyValueReader, hash common.Hash) []byte {
 	return data
 }
 
+// HasCode checks if the contract code corresponding to the
+// provided code hash is present in the db.
+func HasCode(db ethdb.KeyValueReader, hash common.Hash) bool {
+	// Try with the prefixed code scheme first, if not then try with legacy
+	// scheme.
+	if ok := HasCodeWithPrefix(db, hash); ok {
+		return true
+	}
+	ok, _ := db.Has(hash.Bytes())
+	return ok
+}
+
+// HasCodeWithPrefix checks if the contract code corresponding to the
+// provided code hash is present in the db. This function will only check
+// presence using the prefix-scheme.
+func HasCodeWithPrefix(db ethdb.KeyValueReader, hash common.Hash) bool {
+	ok, _ := db.Has(codeKey(hash))
+	return ok
+}
+
 // WriteCode writes the provided contract code database.
 func WriteCode(db ethdb.KeyValueWriter, hash common.Hash, code []byte) {
 	if err := db.Put(codeKey(hash), code); err != nil {

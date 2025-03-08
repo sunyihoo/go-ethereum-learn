@@ -195,3 +195,10 @@ func DeleteSnapshotRecoveryNumber(db ethdb.KeyValueWriter) {
 		log.Crit("Failed to remove snapshot recovery number", "err", err)
 	}
 }
+
+// WriteSnapshotSyncStatus stores the serialized sync status to save at shutdown.
+func WriteSnapshotSyncStatus(db ethdb.KeyValueWriter, status []byte) {
+	if err := db.Put(snapshotSyncStatusKey, status); err != nil {
+		log.Crit("Failed to store snapshot sync status", "err", err)
+	}
+}

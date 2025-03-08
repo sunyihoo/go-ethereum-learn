@@ -22,6 +22,13 @@ import (
 	"math/big"
 )
 
+// Various big integer limit values.
+var (
+	tt256     = BigPow(2, 256)
+	tt256m1   = new(big.Int).Sub(tt256, big.NewInt(1))
+	MaxBig256 = new(big.Int).Set(tt256m1)
+)
+
 const (
 	// number of bits in a big.Word
 	wordBits = 32 << (uint64(^big.Word(0)) >> 63)
@@ -83,6 +90,21 @@ func ParseBig256(s string) (*big.Int, bool) {
 		bigint, ok = nil, false
 	}
 	return bigint, ok
+}
+
+// MustParseBig256 parses s as a 256 bit big integer and panics if the string is invalid.
+func MustParseBig256(s string) *big.Int {
+	v, ok := ParseBig256(s)
+	if !ok {
+		panic("invalid 256 bit integer: " + s)
+	}
+	return v
+}
+
+// BigPow returns a ** b as a big integer.
+func BigPow(a, b int64) *big.Int {
+	r := big.NewInt(a)
+	return r.Exp(r, big.NewInt(b), nil)
 }
 
 // PaddedBigBytes encodes a big integer as a big-endian byte slice. The length

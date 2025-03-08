@@ -18,8 +18,10 @@ package rawdb
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -42,6 +44,25 @@ const HashScheme = "hash"
 // area of the disk with good data locality property. But this scheme needs to rely
 // on extra state diffs to survive deep reorg.
 const PathScheme = "path"
+
+// hasher is used to compute the sha256 hash of the provided data.
+type hasher struct{ sha crypto.KeccakState }
+
+var hasherPool = sync.Pool{
+	New: func() interface{} { return &hasher{sha: crypto.NewKeccakState()} },
+}
+
+func newHasher() *hasher {
+	return hasherPool.Get().(*hasher)
+}
+
+func (h *hasher) hash(data []byte) common.Hash {
+	return crypto.HashData(h.sha, data)
+}
+
+func (h *hasher) release() {
+	hasherPool.Put(h)
+}
 
 // ReadAccountTrieNode retrieves the account trie node with the specified node path.
 func ReadAccountTrieNode(db ethdb.KeyValueReader, path []byte) []byte {
@@ -123,6 +144,57 @@ func HasLegacyTrieNode(db ethdb.KeyValueReader, hash common.Hash) bool {
 func WriteLegacyTrieNode(db ethdb.KeyValueWriter, hash common.Hash, node []byte) {
 	if err := db.Put(hash.Bytes(), node); err != nil {
 		log.Crit("Failed to store legacy trie node", "err", err)
+	}
+}
+
+// HasTrieNode checks the trie node presence with the provided node info and
+// the associated node hash.
+func HasTrieNode(db ethdb.KeyValueReader, owner common.Hash, path []byte, hash common.Hash, scheme string) bool {
+	switch scheme {
+	case HashScheme:
+		return HasLegacyTrieNode(db, hash)
+	case PathScheme:
+		var blob []byte
+		if owner == (common.Hash{}) {
+			blob = ReadAccountTrieNode(db, path)
+		} else {
+			blob = ReadStorageTrieNode(db, owner, path)
+		}
+		if len(blob) == 0 {
+			return false
+		}
+		h := newHasher()
+		defer h.release()
+		return h.hash(blob) == hash // exists but not match
+	default:
+		panic(fmt.Sprintf("Unknown scheme %v", scheme))
+	}
+}
+
+// ReadTrieNode retrieves the trie node from database with the provided node info
+// and associated node hash.
+func ReadTrieNode(db ethdb.KeyValueReader, owner common.Hash, path []byte, hash common.Hash, scheme string) []byte {
+	switch scheme {
+	case HashScheme:
+		return ReadLegacyTrieNode(db, hash)
+	case PathScheme:
+		var blob []byte
+		if owner == (common.Hash{}) {
+			blob = ReadAccountTrieNode(db, path)
+		} else {
+			blob = ReadStorageTrieNode(db, owner, path)
+		}
+		if len(blob) == 0 {
+			return nil
+		}
+		h := newHasher()
+		defer h.release()
+		if h.hash(blob) != hash {
+			return nil // exists but not match
+		}
+		return blob
+	default:
+		panic(fmt.Sprintf("Unknown scheme %v", scheme))
 	}
 }
 
