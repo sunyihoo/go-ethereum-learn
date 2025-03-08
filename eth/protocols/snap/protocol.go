@@ -16,6 +16,52 @@
 
 package snap
 
+import "errors"
+
+// Constants to match up protocol versions and messages
+const (
+	SNAP1 = 1
+)
+
+// ProtocolName is the official short name of the `snap` protocol used during
+// devp2p capability negotiation.
+const ProtocolName = "snap"
+
+// ProtocolVersions are the supported versions of the `snap` protocol (first
+// is primary).
+var ProtocolVersions = []uint{SNAP1}
+
+// protocolLengths are the number of implemented message corresponding to
+// different protocol versions.
+var protocolLengths = map[uint]uint64{SNAP1: 8}
+
+// maxMessageSize is the maximum cap on the size of a protocol message.
+const maxMessageSize = 10 * 1024 * 1024
+
+const (
+	GetAccountRangeMsg  = 0x00
+	AccountRangeMsg     = 0x01
+	GetStorageRangesMsg = 0x02
+	StorageRangesMsg    = 0x03
+	GetByteCodesMsg     = 0x04
+	ByteCodesMsg        = 0x05
+	GetTrieNodesMsg     = 0x06
+	TrieNodesMsg        = 0x07
+)
+
+var (
+	errMsgTooLarge    = errors.New("message too long")
+	errDecode         = errors.New("invalid message")
+	errInvalidMsgCode = errors.New("invalid message code")
+	errBadRequest     = errors.New("bad request")
+)
+
+// Packet represents a p2p message in the `snap` protocol.
+type Packet interface {
+	Name() string // Name returns a string corresponding to the message type.
+	Kind() byte   // Kind returns the message type.
+}
+
 // TrieNodePathSet is a list of trie node paths to retrieve. A naive way to
 // represent trie nodes would be a simple list of `account || storage` path
 // segments concatenated, but that would be very wasteful on the network.
