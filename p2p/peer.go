@@ -288,6 +288,7 @@ loop:
 		}
 	}
 
+	close(p.closed)
 	p.rw.close(reason)
 	p.wg.Wait()
 	return remoteRequested, err
@@ -310,6 +311,7 @@ func (p *Peer) pingLoop() {
 
 		case <-p.pingRecv:
 			SendItems(p.rw, pongMsg)
+
 		case <-p.closed:
 			return
 		}
@@ -466,7 +468,7 @@ type protoRW struct {
 	Protocol
 	in     chan Msg        // receives read messages
 	closed <-chan struct{} // receives when peer is shutting down
-	wstart <-chan struct{} // receives the write may start
+	wstart <-chan struct{} // receives when write may start
 	werr   chan<- error    // for write results
 	offset uint64
 	w      MsgWriter

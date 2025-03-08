@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"math/big"
+	"reflect"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"golang.org/x/crypto/sha3"
@@ -15,6 +16,17 @@ const (
 	HashLength = 32
 	// AddressLength is the expected length of the address
 	AddressLength = 20
+)
+
+var (
+	hashT    = reflect.TypeOf(Hash{})
+	addressT = reflect.TypeOf(Address{})
+
+	// MaxAddress represents the maximum possible address value.
+	MaxAddress = HexToAddress("0xffffffffffffffffffffffffffffffffffffffff")
+
+	// MaxHash represents the maximum possible hash value.
+	MaxHash = HexToHash("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 )
 
 type Hash [HashLength]byte
