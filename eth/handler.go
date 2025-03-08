@@ -17,6 +17,7 @@
 package eth
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/fetcher"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
@@ -137,5 +139,51 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		handlerDoneCh:  make(chan struct{}),
 		handlerStartCh: make(chan struct{}),
 	}
+	if config.Sync == ethconfig.FullSync {
+		// The database seems empty as the current block is the genesis. Yet the snap
+		// block is ahead, so snap sync was enabled for this node at a certain point.
+		// The scenarios where this can happen is
+		// * if the user manually (or via a bad block) rolled back a snap sync node
+		//   below the sync point.
+		// * the last snap sync is not finished while user specifies a full sync this
+		//   time. But we don't have any recent state for full sync.
+		// In these cases however it's safe to reenable snap sync.
+		fullBlock, snapBlock := h.chain.CurrentBlock(), h.chain.CurrentSnapBlock()
+		if fullBlock.Number.Uint64() == 0 && snapBlock.Number.Uint64() > 0 {
+			h.snapSync.Store(true)
+			log.Warn("Switch sync mode from full sync to snap sync", "reason", "snap sync incomplete")
+		} else if !h.chain.HasState(fullBlock.Root) {
+			h.snapSync.Store(true)
+			log.Warn("Switch sync mode from full sync to snap sync", "reason", "head state missing")
+		}
+	} else {
+		head := h.chain.CurrentBlock()
+		if head.Number.Uint64() > 0 && h.chain.HasState(head.Root) {
+			// Print warning log if database is not empty to run snap sync.
+			log.Warn("Switch sync mode from snap sync to full sync", "reason", "snap sync complete")
+		} else {
+			// If snap sync was requested and our database is empty, grant it
+			h.snapSync.Store(true)
+			log.Info("Enabled snap sync", "head", head.Number, "hash", head.Hash())
+		}
+	}
+	// If snap sync is requested but snapshots are disabled, fail loudly
+	if h.snapSync.Load() && config.Chain.Snapshots() == nil {
+		return nil, errors.New("snap sync not supported with snapshots disabled")
+	}
+	// Construct the downloader (long sync)
+	h.downloader = downloader.New(config.Database, h.eventMux, h.chain, h.removePeer, h.enableSyncedFeatures)
 
+	fetchTx := func(peer string, hashes []common.Hash) error {
+		p := h.peers.peer(peer)
+		if p == nil {
+			return errors.New("unknown peer")
+		}
+		return p.RequestTxs(hashes)
+	}
+	addTxs := func(txs []*types.Transaction) []error {
+		return h.txpool.Add(txs, false, false)
+	}
+	h.txFetcher = fetcher.NewTxFetcher(h.txpool.Has, addTxs, fetchTx, h.removePeer)
+	return h, nil
 }
