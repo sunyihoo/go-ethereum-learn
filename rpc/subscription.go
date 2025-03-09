@@ -47,8 +47,15 @@ var (
 	ErrSubscriptionNotFound = errors.New("subscription not found")
 )
 
+var globalGen = randomIDGenerator()
+
 // ID defines a pseudo random number that is used to identify RPC subscriptions.
 type ID string
+
+// NewID returns a new, random ID.
+func NewID() ID {
+	return globalGen()
+}
 
 // randomIDGenerator returns a function generates a random IDs.
 func randomIDGenerator() func() ID {
@@ -103,6 +110,41 @@ type Notifier struct {
 	activated    bool
 }
 
+// CreateSubscription returns a new subscription that is coupled to the
+// RPC connection. By default subscriptions are inactive and notifications
+// are dropped until the subscription is marked as active. This is done
+// by the RPC server after the subscription ID is send to the client.
+func (n *Notifier) CreateSubscription() *Subscription {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.sub != nil {
+		panic("can't create multiple subscriptions with Notifier")
+	} else if n.callReturned {
+		panic("can't create subscription after subscribe call has returned")
+	}
+	n.sub = &Subscription{ID: n.h.idgen(), namespace: n.namespace, err: make(chan error, 1)}
+	return n.sub
+}
+
+// Notify sends a notification to the client with the given data as payload.
+// If an error occurs the RPC connection is closed and the error is returned.
+func (n *Notifier) Notify(id ID, data any) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.sub == nil {
+		panic("can't Notify before subscription is created")
+	} else if n.sub.ID != id {
+		panic("Notify with wrong ID")
+	}
+	if n.activated {
+		return n.send(n.sub, data)
+	}
+	n.buffer = append(n.buffer, data)
+	return nil
+}
+
 // takeSubscription returns the subscription (if one has been created). No subscription can
 // be created after this call.
 func (n *Notifier) takeSubscription() *Subscription {
@@ -148,6 +190,16 @@ type Subscription struct {
 	err       chan error // closed on unsubscribe
 }
 
+// Err returns a channel that is closed when the client send an unsubscribe request.
+func (s *Subscription) Err() <-chan error {
+	return s.err
+}
+
+// MarshalJSON marshals a subscription as its ID.
+func (s *Subscription) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.ID)
+}
+
 // ClientSubscription is a subscription established through the Client's Subscribe or
 // EthSubscribe methods.
 type ClientSubscription struct {
@@ -175,6 +227,46 @@ type ClientSubscription struct {
 
 // This is the sentinel value sent on sub.quit when Unsubscribe is called.
 var errUnsubscribed = errors.New("unsubscribed")
+
+func newClientSubscription(c *Client, namespace string, channel reflect.Value) *ClientSubscription {
+	sub := &ClientSubscription{
+		client:      c,
+		namespace:   namespace,
+		etype:       channel.Type().Elem(),
+		channel:     channel,
+		in:          make(chan json.RawMessage),
+		quit:        make(chan error),
+		forwardDone: make(chan struct{}),
+		unsubDone:   make(chan struct{}),
+		err:         make(chan error, 1),
+	}
+	return sub
+}
+
+// Err returns the subscription error channel. The intended use of Err is to schedule
+// resubscription when the client connection is closed unexpectedly.
+//
+// The error channel receives a value when the subscription has ended due to an error. The
+// received error is nil if Close has been called on the underlying client and no other
+// error has occurred.
+//
+// The error channel is closed when Unsubscribe is called on the subscription.
+func (sub *ClientSubscription) Err() <-chan error {
+	return sub.err
+}
+
+// Unsubscribe unsubscribes the notification and closes the error channel.
+// It can safely be called more than once.
+func (sub *ClientSubscription) Unsubscribe() {
+	sub.errOnce.Do(func() {
+		select {
+		case sub.quit <- errUnsubscribed:
+			<-sub.unsubDone
+		case <-sub.unsubDone:
+		}
+		close(sub.err)
+	})
+}
 
 // deliver is called by the client's message dispatcher to send a notification value.
 func (sub *ClientSubscription) deliver(result json.RawMessage) (ok bool) {
