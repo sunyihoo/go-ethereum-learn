@@ -19,7 +19,9 @@ package types
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math/big"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -75,6 +77,25 @@ type receiptRLP struct {
 	Logs              []*Log
 }
 
+func (r *Receipt) setFromRLP(data receiptRLP) error {
+	r.CumulativeGasUsed, r.Bloom, r.Logs = data.CumulativeGasUsed, data.Bloom, data.Logs
+	return r.setStatus(data.PostStateOrStatus)
+}
+
+func (r *Receipt) setStatus(postStateOrStatus []byte) error {
+	switch {
+	case bytes.Equal(postStateOrStatus, receiptStatusSuccessfulRLP):
+		r.Status = ReceiptStatusSuccessful
+	case bytes.Equal(postStateOrStatus, receiptStatusFailedRLP):
+		r.Status = ReceiptStatusFailed
+	case len(postStateOrStatus) == len(common.Hash{}):
+		r.PostState = postStateOrStatus
+	default:
+		return fmt.Errorf("invalid receipt status %x", postStateOrStatus)
+	}
+	return nil
+}
+
 func (r *Receipt) statusEncoding() []byte {
 	if len(r.PostState) == 0 {
 		if r.Status == ReceiptStatusFailed {
@@ -83,6 +104,17 @@ func (r *Receipt) statusEncoding() []byte {
 		return receiptStatusSuccessfulRLP
 	}
 	return r.PostState
+}
+
+// Size returns the approximate memory used by all internal contents. It is used
+// to approximate and limit the memory consumption of various caches.
+func (r *Receipt) Size() common.StorageSize {
+	size := common.StorageSize(unsafe.Sizeof(*r)) + common.StorageSize(len(r.PostState))
+	size += common.StorageSize(len(r.Logs)) * common.StorageSize(unsafe.Sizeof(Log{}))
+	for _, log := range r.Logs {
+		size += common.StorageSize(len(log.Topics)*common.HashLength + len(log.Data))
+	}
+	return size
 }
 
 // ReceiptForStorage is a wrapper around a Receipt with RLP serialization
