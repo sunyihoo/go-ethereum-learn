@@ -171,6 +171,28 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 	}
 }
 
+// UnmarshalBinary decodes the canonical encoding of transactions.
+// It supports legacy RLP transactions and EIP-2718 typed transactions.
+func (tx *Transaction) UnmarshalBinary(b []byte) error {
+	if len(b) > 0 && b[0] > 0x7f {
+		// It's a legacy transaction.
+		var data LegacyTx
+		err := rlp.DecodeBytes(b, &data)
+		if err != nil {
+			return err
+		}
+		tx.setDecoded(&data, uint64(len(b)))
+		return nil
+	}
+	// It's an EIP-2718 typed transaction envelope.
+	inner, err := tx.decodeTyped(b)
+	if err != nil {
+		return err
+	}
+	tx.setDecoded(inner, uint64(len(b)))
+	return nil
+}
+
 // decodeTyped decodes a typed transaction from the canonical format.
 func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 	if len(b) <= 1 {
