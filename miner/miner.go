@@ -18,6 +18,7 @@
 package miner
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -26,20 +27,30 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 )
+
+// Backend wraps all methods required for mining. Only full node is capable
+// to offer all the functions here.
+type Backend interface {
+	BlockChain() *core.BlockChain
+	TxPool() *txpool.TxPool
+}
 
 // Config is the configuration parameters of mining.
 type Config struct {
 	Etherbase           common.Address `toml:"-"`          // Deprecated
-	PendingFeeRecipient common.Address `toml:"-"`          // Address for pending block rewords.
+	PendingFeeRecipient common.Address `toml:"-"`          // Address for pending block rewards.
 	ExtraData           hexutil.Bytes  `toml:",omitempty"` // Block extra data set by the miner
-	GasCeil             uint64         // Target gas ceiling for mined blocks
+	GasCeil             uint64         // Target gas ceiling for mined blocks.
 	GasPrice            *big.Int       // Minimum gas price for mining a transaction
 	Recommit            time.Duration  // The time interval for miner to re-create mining work.
 }
 
+// DefaultConfig contains default settings for miner.
 var DefaultConfig = Config{
 	GasCeil:  30_000_000,
 	GasPrice: big.NewInt(params.GWei / 1000),
@@ -62,4 +73,93 @@ type Miner struct {
 	chain       *core.BlockChain
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
+}
+
+// New creates a new miner with provided config.
+func New(eth Backend, config Config, engine consensus.Engine) *Miner {
+	return &Miner{
+		config:      &config,
+		chainConfig: eth.BlockChain().Config(),
+		engine:      engine,
+		txpool:      eth.TxPool(),
+		chain:       eth.BlockChain(),
+		pending:     &pending{},
+	}
+}
+
+// Pending returns the currently pending block and associated receipts, logs
+// and statedb. The returned values can be nil in case the pending block is
+// not initialized.
+func (miner *Miner) Pending() (*types.Block, types.Receipts, *state.StateDB) {
+	pending := miner.getPending()
+	if pending == nil {
+		return nil, nil, nil
+	}
+	return pending.block, pending.receipts, pending.stateDB.Copy()
+}
+
+// SetExtra sets the content used to initialize the block extra field.
+func (miner *Miner) SetExtra(extra []byte) error {
+	if uint64(len(extra)) > params.MaximumExtraDataSize {
+		return fmt.Errorf("extra exceeds max length. %d > %v", len(extra), params.MaximumExtraDataSize)
+	}
+	miner.confMu.Lock()
+	miner.config.ExtraData = extra
+	miner.confMu.Unlock()
+	return nil
+}
+
+// SetGasCeil sets the gaslimit to strive for when mining blocks post 1559.
+// For pre-1559 blocks, it sets the ceiling.
+func (miner *Miner) SetGasCeil(ceil uint64) {
+	miner.confMu.Lock()
+	miner.config.GasCeil = ceil
+	miner.confMu.Unlock()
+}
+
+// SetGasTip sets the minimum gas tip for inclusion.
+func (miner *Miner) SetGasTip(tip *big.Int) error {
+	miner.confMu.Lock()
+	miner.config.GasPrice = tip
+	miner.confMu.Unlock()
+	return nil
+}
+
+// BuildPayload builds the payload according to the provided parameters.
+func (miner *Miner) BuildPayload(args *BuildPayloadArgs, witness bool) (*Payload, error) {
+	return miner.buildPayload(args, witness)
+}
+
+// getPending retrieves the pending block based on the current head block.
+// The result might be nil if pending generation is failed.
+func (miner *Miner) getPending() *newPayloadResult {
+	header := miner.chain.CurrentHeader()
+	miner.pendingMu.Lock()
+	defer miner.pendingMu.Unlock()
+	if cached := miner.pending.resolve(header.Hash()); cached != nil {
+		return cached
+	}
+
+	var (
+		timestamp  = uint64(time.Now().Unix())
+		withdrawal types.Withdrawals
+	)
+	if miner.chainConfig.IsShanghai(new(big.Int).Add(header.Number, big.NewInt(1)), timestamp) {
+		withdrawal = []*types.Withdrawal{}
+	}
+	ret := miner.generateWork(&generateParams{
+		timestamp:   timestamp,
+		forceTime:   false,
+		parentHash:  header.Hash(),
+		coinbase:    miner.config.PendingFeeRecipient,
+		random:      common.Hash{},
+		withdrawals: withdrawal,
+		beaconRoot:  nil,
+		noTxs:       false,
+	}, false) // we will never make a witness for a pending block
+	if ret.err != nil {
+		return nil
+	}
+	miner.pending.update(header.Hash(), ret)
+	return ret
 }
