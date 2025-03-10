@@ -19,6 +19,7 @@ package node
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,6 +41,9 @@ const (
 	datadirNodeDatabase    = "nodes"              // Path within the datadir to store the node infos
 )
 
+// Config represents a small collection of configuration values to fine tune the
+// P2P network layer of a protocol stack. These values can be further extended by
+// all registered services.
 type Config struct {
 	// Name sets the instance name of the node. It must not contain the / character and is
 	// used in the devp2p node identifier. The instance name of geth is "geth". If no
@@ -239,6 +243,54 @@ func (c *Config) NodeDB() string {
 		return "" // ephemeral
 	}
 	return c.ResolvePath(datadirNodeDatabase)
+}
+
+// DefaultIPCEndpoint returns the IPC path used by default.
+func DefaultIPCEndpoint(clientIdentifier string) string {
+	if clientIdentifier == "" {
+		clientIdentifier = strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+		if clientIdentifier == "" {
+			panic("empty executable name")
+		}
+	}
+	config := &Config{DataDir: DefaultDataDir(), IPCPath: clientIdentifier + ".ipc"}
+	return config.IPCEndpoint()
+}
+
+// HTTPEndpoint resolves an HTTP endpoint based on the configured host interface
+// and port parameters.
+func (c *Config) HTTPEndpoint() string {
+	if c.HTTPHost == "" {
+		return ""
+	}
+	return net.JoinHostPort(c.HTTPHost, fmt.Sprintf("%d", c.HTTPPort))
+}
+
+// DefaultHTTPEndpoint returns the HTTP endpoint used by default.
+func DefaultHTTPEndpoint() string {
+	config := &Config{HTTPHost: DefaultHTTPHost, HTTPPort: DefaultHTTPPort, AuthPort: DefaultAuthPort}
+	return config.HTTPEndpoint()
+}
+
+// WSEndpoint resolves a websocket endpoint based on the configured host interface
+// and port parameters.
+func (c *Config) WSEndpoint() string {
+	if c.WSHost == "" {
+		return ""
+	}
+	return net.JoinHostPort(c.WSHost, fmt.Sprintf("%d", c.WSPort))
+}
+
+// DefaultWSEndpoint returns the websocket endpoint used by default.
+func DefaultWSEndpoint() string {
+	config := &Config{WSHost: DefaultWSHost, WSPort: DefaultWSPort}
+	return config.WSEndpoint()
+}
+
+// ExtRPCEnabled returns the indicator whether node enables the external
+// RPC(http, ws or graphql).
+func (c *Config) ExtRPCEnabled() bool {
+	return c.HTTPHost != "" || c.WSHost != ""
 }
 
 // NodeName returns the devp2p node identifier.
