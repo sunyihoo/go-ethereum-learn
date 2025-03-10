@@ -197,6 +197,9 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 			"protocols": strings.Join(protos, ","),
 		})
 	}
+
+	fmt.Println(backend)
+	
 	return stack
 }
 

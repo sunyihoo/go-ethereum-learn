@@ -16,7 +16,15 @@
 
 package bloombits
 
-import "context"
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+)
+
+// bloomIndexes represents the bit indexes inside the bloom filter that belong
+// to some key.
+type bloomIndexes [3]uint
 
 // Retrieval represents a request for retrieval task assignments for a given
 // bit with the given number of fetch elements, or a response for such a request.
@@ -31,4 +39,36 @@ type Retrieval struct {
 
 	Context context.Context
 	Error   error
+}
+
+// Matcher is a pipelined system of schedulers and logic matchers which perform
+// binary AND/OR operations on the bit-streams, creating a stream of potential
+// blocks to inspect for data content.
+type Matcher struct {
+	sectionSize uint64 // Size of the data batches to filter on
+
+	filters    [][]bloomIndexes    // Filter the system is matching for
+	schedulers map[uint]*scheduler // Retrieval schedulers for loading bloom bits
+
+	retrievers chan chan uint       // Retriever processes waiting for bit allocations
+	counters   chan chan uint       // Retriever processes waiting for task count reports
+	retrievals chan chan *Retrieval // Retriever processes waiting for task allocations
+	deliveries chan *Retrieval      // Retriever processes waiting for task response deliveries
+
+	running atomic.Bool // Atomic flag whether a session is live or not
+}
+
+// MatcherSession is returned by a started matcher to be used as a terminator
+// for the actively running matching operation.
+type MatcherSession struct {
+	matcher *Matcher
+
+	closer sync.Once     // Sync object to ensure we only ever close once
+	quit   chan struct{} // Quit channel to request pipeline termination
+
+	ctx     context.Context // Context used by the light client to abort filtering
+	err     error           // Global error to track retrieval failures deep in the chain
+	errLock sync.Mutex
+
+	pend sync.WaitGroup
 }

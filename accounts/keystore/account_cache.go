@@ -115,6 +115,19 @@ func (ac *accountCache) add(newAccount accounts.Account) {
 	ac.byAddr[newAccount.Address] = append(ac.byAddr[newAccount.Address], newAccount)
 }
 
+// note: removed needs to be unique here (i.e. both File and Address must be set).
+func (ac *accountCache) delete(removed accounts.Account) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	ac.all = removeAccount(ac.all, removed)
+	if ba := removeAccount(ac.byAddr[removed.Address], removed); len(ba) == 0 {
+		delete(ac.byAddr, removed.Address)
+	} else {
+		ac.byAddr[removed.Address] = ba
+	}
+}
+
 // deleteByFile removes an account referenced by the given path.
 func (ac *accountCache) deleteByFile(path string) {
 	ac.mu.Lock()
@@ -130,6 +143,14 @@ func (ac *accountCache) deleteByFile(path string) {
 			ac.byAddr[removed.Address] = ba
 		}
 	}
+}
+
+// watcherStarted returns true if the watcher loop started running (even if it
+// has since also ended).
+func (ac *accountCache) watcherStarted() bool {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	return ac.watcher.running || ac.watcher.runEnded
 }
 
 func removeAccount(slice []accounts.Account, elem accounts.Account) []accounts.Account {
