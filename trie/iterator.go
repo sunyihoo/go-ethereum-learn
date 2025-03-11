@@ -593,3 +593,124 @@ func nextChildIndex(index int) int {
 		return index + 1
 	}
 }
+
+func compareNodes(a, b NodeIterator) int {
+	if cmp := bytes.Compare(a.Path(), b.Path()); cmp != 0 {
+		return cmp
+	}
+	if a.Leaf() && !b.Leaf() {
+		return -1
+	} else if b.Leaf() && !a.Leaf() {
+		return 1
+	}
+	if cmp := bytes.Compare(a.Hash().Bytes(), b.Hash().Bytes()); cmp != 0 {
+		return cmp
+	}
+	if a.Leaf() && b.Leaf() {
+		return bytes.Compare(a.LeafBlob(), b.LeafBlob())
+	}
+	return 0
+}
+
+type differenceIterator struct {
+	a, b  NodeIterator // Nodes returned are those in b - a.
+	eof   bool         // Indicates a has run out of elements
+	count int          // Number of nodes scanned on either trie
+}
+
+// NewDifferenceIterator constructs a NodeIterator that iterates over elements in b that
+// are not in a. Returns the iterator, and a pointer to an integer recording the number
+// of nodes seen.
+func NewDifferenceIterator(a, b NodeIterator) (NodeIterator, *int) {
+	a.Next(true)
+	it := &differenceIterator{
+		a: a,
+		b: b,
+	}
+	return it, &it.count
+}
+
+func (it *differenceIterator) Hash() common.Hash {
+	return it.b.Hash()
+}
+
+func (it *differenceIterator) Parent() common.Hash {
+	return it.b.Parent()
+}
+
+func (it *differenceIterator) Leaf() bool {
+	return it.b.Leaf()
+}
+
+func (it *differenceIterator) LeafKey() []byte {
+	return it.b.LeafKey()
+}
+
+func (it *differenceIterator) LeafBlob() []byte {
+	return it.b.LeafBlob()
+}
+
+func (it *differenceIterator) LeafProof() [][]byte {
+	return it.b.LeafProof()
+}
+
+func (it *differenceIterator) Path() []byte {
+	return it.b.Path()
+}
+
+func (it *differenceIterator) NodeBlob() []byte {
+	return it.b.NodeBlob()
+}
+
+func (it *differenceIterator) AddResolver(resolver NodeResolver) {
+	panic("not implemented")
+}
+
+func (it *differenceIterator) Next(bool) bool {
+	// Invariants:
+	// - We always advance at least one element in b.
+	// - At the start of this function, a's path is lexically greater than b's.
+	if !it.b.Next(true) {
+		return false
+	}
+	it.count++
+
+	if it.eof {
+		// a has reached eof, so we just return all elements from b
+		return true
+	}
+
+	for {
+		switch compareNodes(it.a, it.b) {
+		case -1:
+			// b jumped past a; advance a
+			if !it.a.Next(true) {
+				it.eof = true
+				return true
+			}
+			it.count++
+		case 1:
+			// b is before a
+			return true
+		case 0:
+			// a and b are identical; skip this whole subtree if the nodes have hashes
+			hasHash := it.a.Hash() == common.Hash{}
+			if !it.b.Next(hasHash) {
+				return false
+			}
+			it.count++
+			if !it.a.Next(hasHash) {
+				it.eof = true
+				return true
+			}
+			it.count++
+		}
+	}
+}
+
+func (it *differenceIterator) Error() error {
+	if err := it.a.Error(); err != nil {
+		return err
+	}
+	return it.b.Error()
+}
