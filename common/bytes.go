@@ -17,7 +17,12 @@
 // Package common contains various helper functions.
 package common
 
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"errors"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
+)
 
 // FromHex returns the bytes represented by the hexadecimal string s.
 // s may be prefixed with "0x".
@@ -65,10 +70,24 @@ func isHex(str string) bool {
 	return true
 }
 
+// Bytes2Hex returns the hexadecimal encoding of d.
+func Bytes2Hex(d []byte) string {
+	return hex.EncodeToString(d)
+}
+
 // Hex2Bytes returns the bytes represented by the hexadecimal string str.
 func Hex2Bytes(str string) []byte {
 	h, _ := hex.DecodeString(str)
 	return h
+}
+
+// ParseHexOrString tries to hexdecode b, but if the prefix is missing, it instead just returns the raw bytes
+func ParseHexOrString(str string) ([]byte, error) {
+	b, err := hexutil.Decode(str)
+	if errors.Is(err, hexutil.ErrMissingPrefix) {
+		return []byte(str), nil
+	}
+	return b, err
 }
 
 // RightPadBytes zero-pads slice to the right up to length l.

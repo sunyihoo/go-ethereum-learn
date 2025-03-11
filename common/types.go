@@ -125,6 +125,11 @@ func (a Address) Hex() string {
 	return string(a.checksumHex())
 }
 
+// String implements fmt.Stringer.
+func (a Address) String() string {
+	return a.Hex()
+}
+
 func (a *Address) checksumHex() []byte {
 	buf := a.hex()
 

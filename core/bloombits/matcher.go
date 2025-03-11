@@ -20,6 +20,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // bloomIndexes represents the bit indexes inside the bloom filter that belong
@@ -71,4 +72,135 @@ type MatcherSession struct {
 	errLock sync.Mutex
 
 	pend sync.WaitGroup
+}
+
+// Close stops the matching process and waits for all subprocesses to terminate
+// before returning. The timeout may be used for graceful shutdown, allowing the
+// currently running retrievals to complete before this time.
+func (s *MatcherSession) Close() {
+	s.closer.Do(func() {
+		// Signal termination and wait for all goroutines to tear down
+		close(s.quit)
+		s.pend.Wait()
+	})
+}
+
+// Error returns any failure encountered during the matching session.
+func (s *MatcherSession) Error() error {
+	s.errLock.Lock()
+	defer s.errLock.Unlock()
+
+	return s.err
+}
+
+// allocateRetrieval assigns a bloom bit index to a client process that can either
+// immediately request and fetch the section contents assigned to this bit or wait
+// a little while for more sections to be requested.
+func (s *MatcherSession) allocateRetrieval() (uint, bool) {
+	fetcher := make(chan uint)
+
+	select {
+	case <-s.quit:
+		return 0, false
+	case s.matcher.retrievers <- fetcher:
+		bit, ok := <-fetcher
+		return bit, ok
+	}
+}
+
+// pendingSections returns the number of pending section retrievals belonging to
+// the given bloom bit index.
+func (s *MatcherSession) pendingSections(bit uint) int {
+	fetcher := make(chan uint)
+
+	select {
+	case <-s.quit:
+		return 0
+	case s.matcher.counters <- fetcher:
+		fetcher <- bit
+		return int(<-fetcher)
+	}
+}
+
+// allocateSections assigns all or part of an already allocated bit-task queue
+// to the requesting process.
+func (s *MatcherSession) allocateSections(bit uint, count int) []uint64 {
+	fetcher := make(chan *Retrieval)
+
+	select {
+	case <-s.quit:
+		return nil
+	case s.matcher.retrievals <- fetcher:
+		task := &Retrieval{
+			Bit:      bit,
+			Sections: make([]uint64, count),
+		}
+		fetcher <- task
+		return (<-fetcher).Sections
+	}
+}
+
+// deliverSections delivers a batch of section bit-vectors for a specific bloom
+// bit index to be injected into the processing pipeline.
+func (s *MatcherSession) deliverSections(bit uint, sections []uint64, bitsets [][]byte) {
+	s.matcher.deliveries <- &Retrieval{Bit: bit, Sections: sections, Bitsets: bitsets}
+}
+
+// Multiplex polls the matcher session for retrieval tasks and multiplexes it into
+// the requested retrieval queue to be serviced together with other sessions.
+//
+// This method will block for the lifetime of the session. Even after termination
+// of the session, any request in-flight need to be responded to! Empty responses
+// are fine though in that case.
+func (s *MatcherSession) Multiplex(batch int, wait time.Duration, mux chan chan *Retrieval) {
+	waitTimer := time.NewTimer(wait)
+	defer waitTimer.Stop()
+
+	for {
+		// Allocate a new bloom bit index to retrieve data for, stopping when done
+		bit, ok := s.allocateRetrieval()
+		if !ok {
+			return
+		}
+		// Bit allocated, throttle a bit if we're below our batch limit
+		if s.pendingSections(bit) < batch {
+			waitTimer.Reset(wait)
+			select {
+			case <-s.quit:
+				// Session terminating, we can't meaningfully service, abort
+				s.allocateSections(bit, 0)
+				s.deliverSections(bit, []uint64{}, [][]byte{})
+				return
+
+			case <-waitTimer.C:
+				// Throttling up, fetch whatever is available
+			}
+		}
+		// Allocate as much as we can handle and request servicing
+		sections := s.allocateSections(bit, batch)
+		request := make(chan *Retrieval)
+
+		select {
+		case <-s.quit:
+			// Session terminating, we can't meaningfully service, abort
+			s.deliverSections(bit, sections, make([][]byte, len(sections)))
+			return
+
+		case mux <- request:
+			// Retrieval accepted, something must arrive before we're aborting
+			request <- &Retrieval{Bit: bit, Sections: sections, Context: s.ctx}
+
+			result := <-request
+
+			// Deliver a result before s.Close() to avoid a deadlock
+			s.deliverSections(result.Bit, result.Sections, result.Bitsets)
+
+			if result.Error != nil {
+				s.errLock.Lock()
+				s.err = result.Error
+				s.errLock.Unlock()
+				s.Close()
+			}
+		}
+	}
 }

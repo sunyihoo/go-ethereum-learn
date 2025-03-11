@@ -21,6 +21,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/event"
 )
 
@@ -45,7 +46,7 @@ type newBackendEvent struct {
 type Manager struct {
 	backends    map[reflect.Type][]Backend // Index of backends currently registered
 	updaters    []event.Subscription       // Wallet update subscriptions for all backends
-	updates     chan WalletEvent           // Subscriptions for backend wallet changes
+	updates     chan WalletEvent           // Subscription sink for backend wallet changes
 	newBackends chan newBackendEvent       // Incoming backends to be tracked by the manager
 	wallets     []Wallet                   // Cache of all wallets from all registered backends
 
@@ -164,6 +165,73 @@ func (am *Manager) Backends(kind reflect.Type) []Backend {
 	defer am.lock.RUnlock()
 
 	return am.backends[kind]
+}
+
+// Wallets returns all signer accounts registered under this account manager.
+func (am *Manager) Wallets() []Wallet {
+	am.lock.RLock()
+	defer am.lock.RUnlock()
+
+	return am.walletsNoLock()
+}
+
+// walletsNoLock returns all registered wallets. Callers must hold am.lock.
+func (am *Manager) walletsNoLock() []Wallet {
+	cpy := make([]Wallet, len(am.wallets))
+	copy(cpy, am.wallets)
+	return cpy
+}
+
+// Wallet retrieves the wallet associated with a particular URL.
+func (am *Manager) Wallet(url string) (Wallet, error) {
+	am.lock.RLock()
+	defer am.lock.RUnlock()
+
+	parsed, err := parseURL(url)
+	if err != nil {
+		return nil, err
+	}
+	for _, wallet := range am.walletsNoLock() {
+		if wallet.URL() == parsed {
+			return wallet, nil
+		}
+	}
+	return nil, ErrUnknownWallet
+}
+
+// Accounts returns all account addresses of all wallets within the account manager
+func (am *Manager) Accounts() []common.Address {
+	am.lock.RLock()
+	defer am.lock.RUnlock()
+
+	addresses := make([]common.Address, 0) // return [] instead of nil if empty
+	for _, wallet := range am.wallets {
+		for _, account := range wallet.Accounts() {
+			addresses = append(addresses, account.Address)
+		}
+	}
+	return addresses
+}
+
+// Find attempts to locate the wallet corresponding to a specific account. Since
+// accounts can be dynamically added to and removed from wallets, this method has
+// a linear runtime in the number of wallets.
+func (am *Manager) Find(account Account) (Wallet, error) {
+	am.lock.RLock()
+	defer am.lock.RUnlock()
+
+	for _, wallet := range am.wallets {
+		if wallet.Contains(account) {
+			return wallet, nil
+		}
+	}
+	return nil, ErrUnknownAccount
+}
+
+// Subscribe creates an async subscription to receive notifications when the
+// manager detects the arrival or departure of a wallet from any of its backends.
+func (am *Manager) Subscribe(sink chan<- WalletEvent) event.Subscription {
+	return am.feed.Subscribe(sink)
 }
 
 // merge is a sorted analogue of append for wallets, where the ordering of the
