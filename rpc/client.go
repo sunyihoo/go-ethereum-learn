@@ -62,6 +62,19 @@ const (
 	maxClientSubscriptionBuffer = 20000
 )
 
+// BatchElem is an element in a batch request.
+type BatchElem struct {
+	Method string
+	Args   []interface{}
+	// The result is unmarshaled into this field. Result must be set to a
+	// non-nil pointer value of the desired type, otherwise the response will be
+	// discarded.
+	Result interface{}
+	// Error is set if the server returns an error for this request, or if
+	// unmarshalling into Result fails. It is not set for I/O errors.
+	Error error
+}
+
 // Client represents a connection to an RPC server.
 type Client struct {
 	idgen    func() ID // for subscriptions
@@ -163,6 +176,14 @@ func Dial(rawurl string) (*Client, error) {
 	return DialOptions(context.Background(), rawurl)
 }
 
+// DialContext creates a new RPC client, just like Dial.
+//
+// The context is used to cancel or time out the initial connection establishment. It does
+// not affect subsequent interactions with the client.
+func DialContext(ctx context.Context, rawurl string) (*Client, error) {
+	return DialOptions(ctx, rawurl)
+}
+
 // DialOptions creates a new RPC client for the given URL. You can supply any of the
 // pre-defined client options to configure the underlying transport.
 //
@@ -200,6 +221,13 @@ func DialOptions(ctx context.Context, rawurl string, options ...ClientOption) (*
 	}
 
 	return newClient(ctx, cfg, reconnect)
+}
+
+// ClientFromContext retrieves the client from the context, if any. This can be used to perform
+// 'reverse calls' in a handler method.
+func ClientFromContext(ctx context.Context) (*Client, bool) {
+	client, ok := ctx.Value(clientContextKey{}).(*Client)
+	return client, ok
 }
 
 func newClient(initctx context.Context, cfg *clientConfig, connect reconnectFunc) (*Client, error) {
@@ -244,6 +272,29 @@ func initClient(conn ServerCodec, services *serviceRegistry, cfg *clientConfig) 
 	return c
 }
 
+// RegisterName creates a service for the given receiver type under the given name. When no
+// methods on the given receiver match the criteria to be either a RPC method or a
+// subscription an error is returned. Otherwise a new service is created and added to the
+// service collection this client provides to the server.
+func (c *Client) RegisterName(name string, receiver interface{}) error {
+	return c.services.registerName(name, receiver)
+}
+
+func (c *Client) nextID() json.RawMessage {
+	id := c.idCounter.Add(1)
+	return strconv.AppendUint(nil, uint64(id), 10)
+}
+
+// SupportedModules calls the rpc_modules method, retrieving the list of
+// APIs that are available on the server.
+func (c *Client) SupportedModules() (map[string]string, error) {
+	var result map[string]string
+	ctx, cancel := context.WithTimeout(context.Background(), subscribeTimeout)
+	defer cancel()
+	err := c.CallContext(ctx, &result, "rpc_modules")
+	return result, err
+}
+
 // Close closes the client, aborting any in-flight requests.
 func (c *Client) Close() {
 	if c.isHTTP {
@@ -254,6 +305,19 @@ func (c *Client) Close() {
 		<-c.didClose
 	case <-c.didClose:
 	}
+}
+
+// SetHeader adds a custom HTTP header to the client's requests.
+// This method only works for clients using HTTP, it doesn't have
+// any effect for clients using another transport.
+func (c *Client) SetHeader(key, value string) {
+	if !c.isHTTP {
+		return
+	}
+	conn := c.writeConn.(*httpConn)
+	conn.mu.Lock()
+	conn.headers.Set(key, value)
+	conn.mu.Unlock()
 }
 
 // Call performs a JSON-RPC call with the given arguments and unmarshals into
@@ -312,9 +376,174 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	}
 }
 
-func (c *Client) nextID() json.RawMessage {
-	id := c.idCounter.Add(1)
-	return strconv.AppendUint(nil, uint64(id), 10)
+// BatchCall sends all given requests as a single batch and waits for the server
+// to return a response for all of them.
+//
+// In contrast to Call, BatchCall only returns I/O errors. Any error specific to
+// a request is reported through the Error field of the corresponding BatchElem.
+//
+// Note that batch calls may not be executed atomically on the server side.
+func (c *Client) BatchCall(b []BatchElem) error {
+	ctx := context.Background()
+	return c.BatchCallContext(ctx, b)
+}
+
+// BatchCallContext sends all given requests as a single batch and waits for the server
+// to return a response for all of them. The wait duration is bounded by the
+// context's deadline.
+//
+// In contrast to CallContext, BatchCallContext only returns errors that have occurred
+// while sending the request. Any error specific to a request is reported through the
+// Error field of the corresponding BatchElem.
+//
+// Note that batch calls may not be executed atomically on the server side.
+func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
+	var (
+		msgs = make([]*jsonrpcMessage, len(b))
+		byID = make(map[string]int, len(b))
+	)
+	op := &requestOp{
+		ids:  make([]json.RawMessage, len(b)),
+		resp: make(chan []*jsonrpcMessage, 1),
+	}
+	for i, elem := range b {
+		msg, err := c.newMessage(elem.Method, elem.Args...)
+		if err != nil {
+			return err
+		}
+		msgs[i] = msg
+		op.ids[i] = msg.ID
+		byID[string(msg.ID)] = i
+	}
+
+	var err error
+	if c.isHTTP {
+		err = c.sendBatchHTTP(ctx, op, msgs)
+	} else {
+		err = c.send(ctx, op, msgs)
+	}
+	if err != nil {
+		return err
+	}
+
+	batchresp, err := op.wait(ctx, c)
+	if err != nil {
+		return err
+	}
+
+	// Wait for all responses to come back.
+	for n := 0; n < len(batchresp); n++ {
+		resp := batchresp[n]
+		if resp == nil {
+			// Ignore null responses. These can happen for batches sent via HTTP.
+			continue
+		}
+
+		// Find the element corresponding to this response.
+		index, ok := byID[string(resp.ID)]
+		if !ok {
+			continue
+		}
+		delete(byID, string(resp.ID))
+
+		// Assign result and error.
+		elem := &b[index]
+		switch {
+		case resp.Error != nil:
+			elem.Error = resp.Error
+		case resp.Result == nil:
+			elem.Error = ErrNoResult
+		default:
+			elem.Error = json.Unmarshal(resp.Result, elem.Result)
+		}
+	}
+
+	// Check that all expected responses have been received.
+	for _, index := range byID {
+		elem := &b[index]
+		elem.Error = ErrMissingBatchResponse
+	}
+
+	return err
+}
+
+// Notify sends a notification, i.e. a method call that doesn't expect a response.
+func (c *Client) Notify(ctx context.Context, method string, args ...interface{}) error {
+	op := new(requestOp)
+	msg, err := c.newMessage(method, args...)
+	if err != nil {
+		return err
+	}
+	msg.ID = nil
+
+	if c.isHTTP {
+		return c.sendHTTP(ctx, op, msg)
+	}
+	return c.send(ctx, op, msg)
+}
+
+// EthSubscribe registers a subscription under the "eth" namespace.
+func (c *Client) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*ClientSubscription, error) {
+	return c.Subscribe(ctx, "eth", channel, args...)
+}
+
+// ShhSubscribe registers a subscription under the "shh" namespace.
+// Deprecated: use Subscribe(ctx, "shh", ...).
+func (c *Client) ShhSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*ClientSubscription, error) {
+	return c.Subscribe(ctx, "shh", channel, args...)
+}
+
+// Subscribe calls the "<namespace>_subscribe" method with the given arguments,
+// registering a subscription. Server notifications for the subscription are
+// sent to the given channel. The element type of the channel must match the
+// expected type of content returned by the subscription.
+//
+// The context argument cancels the RPC request that sets up the subscription but has no
+// effect on the subscription after Subscribe has returned.
+//
+// Slow subscribers will be dropped eventually. Client buffers up to 20000 notifications
+// before considering the subscriber dead. The subscription Err channel will receive
+// ErrSubscriptionQueueOverflow. Use a sufficiently large buffer on the channel or ensure
+// that the channel usually has at least one reader to prevent this issue.
+func (c *Client) Subscribe(ctx context.Context, namespace string, channel interface{}, args ...interface{}) (*ClientSubscription, error) {
+	// Check type of channel first.
+	chanVal := reflect.ValueOf(channel)
+	if chanVal.Kind() != reflect.Chan || chanVal.Type().ChanDir()&reflect.SendDir == 0 {
+		panic(fmt.Sprintf("channel argument of Subscribe has type %T, need writable channel", channel))
+	}
+	if chanVal.IsNil() {
+		panic("channel given to Subscribe must not be nil")
+	}
+	if c.isHTTP {
+		return nil, ErrNotificationsUnsupported
+	}
+
+	msg, err := c.newMessage(namespace+subscribeMethodSuffix, args...)
+	if err != nil {
+		return nil, err
+	}
+	op := &requestOp{
+		ids:  []json.RawMessage{msg.ID},
+		resp: make(chan []*jsonrpcMessage, 1),
+		sub:  newClientSubscription(c, namespace, chanVal),
+	}
+
+	// Send the subscription request.
+	// The arrival and validity of the response is signaled on sub.quit.
+	if err := c.send(ctx, op, msg); err != nil {
+		return nil, err
+	}
+	if _, err := op.wait(ctx, c); err != nil {
+		return nil, err
+	}
+	return op.sub, nil
+}
+
+// SupportsSubscriptions reports whether subscriptions are supported by the client
+// transport. When this returns false, Subscribe and related methods will return
+// ErrNotificationsUnsupported.
+func (c *Client) SupportsSubscriptions() bool {
+	return !c.isHTTP
 }
 
 func (c *Client) newMessage(method string, paramsIn ...interface{}) (*jsonrpcMessage, error) {

@@ -67,6 +67,12 @@ func (h Hash) Big() *big.Int { return new(big.Int).SetBytes(h[:]) }
 // Hex converts a hash to a hex string.
 func (h Hash) Hex() string { return hexutil.Encode(h[:]) }
 
+// TerminalString implements log.TerminalStringer, formatting a string for console
+// output during logging.
+func (h Hash) TerminalString() string {
+	return fmt.Sprintf("%x..%x", h[:3], h[29:])
+}
+
 // String implements the stringer interface and is used also by the logger when
 // doing full logging into a file.
 func (h Hash) String() string {
