@@ -45,11 +45,16 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/remotedb"
+	"github.com/ethereum/go-ethereum/ethstats"
+	"github.com/ethereum/go-ethereum/graphql"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -144,6 +149,11 @@ var (
 		Usage:    "Ephemeral proof-of-authority network with a pre-funded developer account, mining enabled",
 		Category: flags.DevCategory,
 	}
+	DeveloperPeriodFlag = &cli.Uint64Flag{
+		Name:     "dev.period",
+		Usage:    "Block period to use in developer mode (0 = mine only if transaction pending)",
+		Category: flags.DevCategory,
+	}
 	DeveloperGasLimitFlag = &cli.Uint64Flag{
 		Name:     "dev.gaslimit",
 		Usage:    "Initial block gas limit",
@@ -217,7 +227,11 @@ var (
 	}
 
 	// Beacon client light sync settings
-
+	BeaconApiFlag = &cli.StringSliceFlag{
+		Name:     "beacon.api",
+		Usage:    "Beacon node (CL) light client API URL. This flag can be given multiple times.",
+		Category: flags.BeaconCategory,
+	}
 	// Transaction pool settings
 	TxPoolLocalsFlag = &cli.StringFlag{
 		Name:     "txpool.locals",
@@ -533,6 +547,11 @@ var (
 		Name:     "http.rpcprefix",
 		Usage:    "HTTP path prefix on which JSON-RPC is served. Use '/' to serve on all paths.",
 		Value:    "",
+		Category: flags.APICategory,
+	}
+	GraphQLEnabledFlag = &cli.BoolFlag{
+		Name:     "graphql",
+		Usage:    "Enable GraphQL on the HTTP-RPC server. Note that GraphQL can only be started if an HTTP server is started as well.",
 		Category: flags.APICategory,
 	}
 	GraphQLCORSDomainFlag = &cli.StringFlag{
@@ -1691,6 +1710,39 @@ func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (*eth.EthAPIBac
 	}
 	stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
 	return backend.APIBackend, backend
+}
+
+// RegisterEthStatsService configures the Ethereum Stats daemon and adds it to the node.
+func RegisterEthStatsService(stack *node.Node, backend *eth.EthAPIBackend, url string) {
+	if err := ethstats.New(stack, backend, backend.Engine(), url); err != nil {
+		Fatalf("Failed to register the Ethereum Stats service: %v", err)
+	}
+}
+
+// RegisterGraphQLService adds the GraphQL API to the node.
+func RegisterGraphQLService(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterSystem, cfg *node.Config) {
+	err := graphql.New(stack, backend, filterSystem, cfg.GraphQLCors, cfg.GraphQLVirtualHosts)
+	if err != nil {
+		Fatalf("Failed to register the GraphQL service: %v", err)
+	}
+}
+
+// RegisterFilterAPI adds the eth log filtering RPC API to the node.
+func RegisterFilterAPI(stack *node.Node, backend ethapi.Backend, ethcfg *ethconfig.Config) *filters.FilterSystem {
+	filterSystem := filters.NewFilterSystem(backend, filters.Config{
+		LogCacheSize: ethcfg.FilterLogCacheSize,
+	})
+	stack.RegisterAPIs([]rpc.API{{
+		Namespace: "eth",
+		Service:   filters.NewFilterAPI(filterSystem),
+	}})
+	return filterSystem
+}
+
+// RegisterFullSyncTester adds the full-sync tester service into node.
+func RegisterFullSyncTester(stack *node.Node, eth *eth.Ethereum, target common.Hash) {
+	catalyst.RegisterFullSyncTester(stack, eth, target)
+	log.Info("Registered full-sync tester", "hash", target)
 }
 
 // SetupMetrics configures the metrics system.

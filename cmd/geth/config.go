@@ -32,12 +32,16 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/scwallet"
 	"github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/naoina/toml"
 	"github.com/urfave/cli/v2"
 )
@@ -198,8 +202,48 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		})
 	}
 
-	fmt.Println(backend)
-	
+	// Configure log filter RPC API.
+	filterSystem := utils.RegisterFilterAPI(stack, backend, &cfg.Eth)
+
+	// Configure GraphQL if requested.
+	if ctx.IsSet(utils.GraphQLEnabledFlag.Name) {
+		utils.RegisterGraphQLService(stack, backend, filterSystem, &cfg.Node)
+	}
+	// Add the Ethereum Stats daemon if requested.
+	if cfg.Ethstats.URL != "" {
+		utils.RegisterEthStatsService(stack, backend, cfg.Ethstats.URL)
+	}
+	// Configure full-sync tester service if requested
+	if ctx.IsSet(utils.SyncTargetFlag.Name) {
+		hex := hexutil.MustDecode(ctx.String(utils.SyncTargetFlag.Name))
+		if len(hex) != common.HashLength {
+			utils.Fatalf("invalid sync target length: have %d, want %d", len(hex), common.HashLength)
+		}
+		utils.RegisterFullSyncTester(stack, eth, common.BytesToHash(hex))
+	}
+
+	if ctx.IsSet(utils.DeveloperFlag.Name) {
+		// Start dev mode.
+		simBeacon, err := catalyst.NewSimulatedBeacon(ctx.Uint64(utils.DeveloperPeriodFlag.Name), eth)
+		if err != nil {
+			utils.Fatalf("failed to register dev mode catalyst service: %v", err)
+		}
+		catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+		stack.RegisterLifecycle(simBeacon)
+	} else if ctx.IsSet(utils.BeaconApiFlag.Name) {
+		// Start blsync mode.
+		srv := rpc.NewServer()
+		srv.RegisterName("engine", catalyst.NewConsensusAPI(eth))
+		blsyncer := blsync.NewClient(utils.MakeBeaconLightConfig(ctx))
+		blsyncer.SetEngineRPC(rpc.DialInProc(srv))
+		stack.RegisterLifecycle(blsyncer)
+	} else {
+		// Launch the engine API for interacting with external consensus client.
+		err := catalyst.Register(stack, eth)
+		if err != nil {
+			utils.Fatalf("failed to register catalyst service: %v", err)
+		}
+	}
 	return stack
 }
 
