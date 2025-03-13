@@ -75,13 +75,49 @@ func (i *HexOrDecimal256) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprintf("%#x", (*big.Int)(i))), nil
 }
 
+// Decimal256 unmarshals big.Int as a decimal string. When unmarshalling,
+// it however accepts either "0x"-prefixed (hex encoded) or non-prefixed (decimal)
+type Decimal256 big.Int
+
+// NewDecimal256 creates a new Decimal256
+func NewDecimal256(x int64) *Decimal256 {
+	b := big.NewInt(x)
+	d := Decimal256(*b)
+	return &d
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (i *Decimal256) UnmarshalText(input []byte) error {
+	bigint, ok := ParseBig256(string(input))
+	if !ok {
+		return fmt.Errorf("invalid hex or decimal integer %q", input)
+	}
+	*i = Decimal256(*bigint)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (i *Decimal256) MarshalText() ([]byte, error) {
+	return []byte(i.String()), nil
+}
+
+// String implements Stringer.
+func (i *Decimal256) String() string {
+	if i == nil {
+		return "0"
+	}
+	return fmt.Sprintf("%#d", (*big.Int)(i))
+}
+
+// ParseBig256 parses s as a 256 bit integer in decimal or hexadecimal syntax.
+// Leading zeros are accepted. The empty string parses as zero.
 func ParseBig256(s string) (*big.Int, bool) {
 	if s == "" {
 		return new(big.Int), true
 	}
 	var bigint *big.Int
 	var ok bool
-	if len(s) >= 2 && s[:2] == "0x" || s[:2] == "0X" {
+	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
 		bigint, ok = new(big.Int).SetString(s[2:], 16)
 	} else {
 		bigint, ok = new(big.Int).SetString(s, 10)
@@ -129,4 +165,15 @@ func ReadBits(bigint *big.Int, buf []byte) {
 			d >>= 8
 		}
 	}
+}
+
+// U256 encodes x as a 256 bit two's complement number. This operation is destructive.
+func U256(x *big.Int) *big.Int {
+	return x.And(x, tt256m1)
+}
+
+// U256Bytes converts a big Int into a 256bit EVM number.
+// This operation is destructive.
+func U256Bytes(n *big.Int) []byte {
+	return PaddedBigBytes(U256(n), 32)
 }
