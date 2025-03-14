@@ -146,6 +146,9 @@ var Defaults = &Config{
 	WriteBufferSize: defaultBufferSize,
 }
 
+// ReadOnly is the config in order to open database in read only mode.
+var ReadOnly = &Config{ReadOnly: true}
+
 // nodeHasher is the function to compute the hash of supplied node blob.
 type nodeHasher func([]byte) (common.Hash, error)
 

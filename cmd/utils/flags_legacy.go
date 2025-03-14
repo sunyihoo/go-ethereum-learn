@@ -35,6 +35,22 @@ var (
 		Usage:    "Comma separated block number-to-hash mappings to enforce (<number>=<hash>) (deprecated in favor of --eth.requiredblocks)",
 		Category: flags.DeprecatedCategory,
 	}
+	// Deprecated July 2023
+	CacheTrieJournalFlag = &cli.StringFlag{
+		Name:     "cache.trie.journal",
+		Usage:    "Disk journal directory for trie cache to survive node restarts",
+		Category: flags.DeprecatedCategory,
+	}
+	CacheTrieRejournalFlag = &cli.DurationFlag{
+		Name:     "cache.trie.rejournal",
+		Usage:    "Time interval to regenerate the trie cache journal",
+		Category: flags.DeprecatedCategory,
+	}
+	LegacyDiscoveryV5Flag = &cli.BoolFlag{
+		Name:     "v5disc",
+		Usage:    "Enables the experimental RLPx V5 (Topic Discovery) mechanism (deprecated, use --discv5 instead)",
+		Category: flags.DeprecatedCategory,
+	}
 	// Deprecated August 2023
 	TxLookupLimitFlag = &cli.Uint64Flag{
 		Name:     "txlookuplimit",
@@ -113,6 +129,12 @@ var (
 	EnablePersonal = &cli.BoolFlag{
 		Name:     "rpc.enabledeprecatedpersonal",
 		Usage:    "This used to enable the 'personal' namespace.",
+		Category: flags.DeprecatedCategory,
+	}
+	UnlockedAccountFlag = &cli.StringFlag{
+		Name:     "unlock",
+		Usage:    "Comma separated list of accounts to unlock (deprecated)",
+		Value:    "",
 		Category: flags.DeprecatedCategory,
 	}
 	InsecureUnlockAllowedFlag = &cli.BoolFlag{

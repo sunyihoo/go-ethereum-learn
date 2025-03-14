@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -44,6 +45,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/eth"
@@ -70,6 +72,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	pcsclite "github.com/gballet/go-libpcsclite"
 	gopsutil "github.com/shirou/gopsutil/mem"
 	"github.com/urfave/cli/v2"
@@ -107,12 +112,16 @@ var (
 		Usage:    "Root directory for ancient data (default = inside chaindata)",
 		Category: flags.EthCategory,
 	}
+	MinFreeDiskSpaceFlag = &flags.DirectoryFlag{
+		Name:     "datadir.minfreedisk",
+		Usage:    "Minimum free disk space in MB, once reached triggers auto shut down (default = --cache.gc converted to MB, 0 = disabled)",
+		Category: flags.EthCategory,
+	}
 	KeyStoreDirFlag = &flags.DirectoryFlag{
 		Name:     "keystore",
 		Usage:    "Directory for the keystore (default = inside the datadir)",
 		Category: flags.AccountCategory,
 	}
-
 	USBFlag = &cli.BoolFlag{
 		Name:     "usb",
 		Usage:    "Enable monitoring and management of USB hardware wallets",
@@ -168,8 +177,40 @@ var (
 		Usage:    "Custom node name",
 		Category: flags.NetworkingCategory,
 	}
+	ExitWhenSyncedFlag = &cli.BoolFlag{
+		Name:     "exitwhensynced",
+		Usage:    "Exits after block synchronisation completes",
+		Category: flags.EthCategory,
+	}
 
 	// Dump command options.
+	IterativeOutputFlag = &cli.BoolFlag{
+		Name:  "iterative",
+		Usage: "Print streaming JSON iteratively, delimited by newlines",
+		Value: true,
+	}
+	ExcludeStorageFlag = &cli.BoolFlag{
+		Name:  "nostorage",
+		Usage: "Exclude storage entries (save db lookups)",
+	}
+	IncludeIncompletesFlag = &cli.BoolFlag{
+		Name:  "incompletes",
+		Usage: "Include accounts for which we don't have the address (missing preimage)",
+	}
+	ExcludeCodeFlag = &cli.BoolFlag{
+		Name:  "nocode",
+		Usage: "Exclude contract code (save db lookups)",
+	}
+	StartKeyFlag = &cli.StringFlag{
+		Name:  "start",
+		Usage: "Start position. Either a hash or address",
+		Value: "0x0000000000000000000000000000000000000000000000000000000000000000",
+	}
+	DumpLimitFlag = &cli.Uint64Flag{
+		Name:  "limit",
+		Usage: "Max number of elements (0 = no limit)",
+		Value: 0,
+	}
 
 	SnapshotFlag = &cli.BoolFlag{
 		Name:     "snapshot",
@@ -185,6 +226,12 @@ var (
 	EthRequiredBlocksFlag = &cli.StringFlag{
 		Name:     "eth.requiredblocks",
 		Usage:    "Comma separated block number-to-hash mappings to require for peering (<number>=<hash>)",
+		Category: flags.EthCategory,
+	}
+	BloomFilterSizeFlag = &cli.Uint64Flag{
+		Name:     "bloomfilter.size",
+		Usage:    "Megabytes of memory allocated to bloom-filter for pruning",
+		Value:    2048,
 		Category: flags.EthCategory,
 	}
 	OverrideCancun = &cli.Uint64Flag{
@@ -528,6 +575,12 @@ var (
 		Usage:    "Reporting URL of a ethstats service (nodename:secret@host:port)",
 		Category: flags.MetricsCategory,
 	}
+	NoCompactionFlag = &cli.BoolFlag{
+		Name:     "nocompaction",
+		Usage:    "Disables db compaction after import",
+		Category: flags.LoggingCategory,
+	}
+
 	// MISC settings
 	SyncTargetFlag = &cli.StringFlag{
 		Name:      "synctarget",
@@ -856,6 +909,26 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Usage:    "InfluxDB organization name (v2 only)",
 		Value:    metrics.DefaultConfig.InfluxDBOrganization,
 		Category: flags.MetricsCategory,
+	}
+)
+
+var (
+	// TestnetFlags is the flag group of all built-in supported testnets.
+	TestnetFlags = []cli.Flag{
+		SepoliaFlag,
+		HoleskyFlag,
+	}
+	// NetworkFlags is the flag group of all built-in supported networks.
+	NetworkFlags = append([]cli.Flag{MainnetFlag}, TestnetFlags...)
+
+	// DatabaseFlags is the flag group of all database flags.
+	DatabaseFlags = []cli.Flag{
+		DataDirFlag,
+		AncientFlag,
+		RemoteDBFlag,
+		DBEngineFlag,
+		StateSchemeFlag,
+		HttpHeaderFlag,
 	}
 )
 
@@ -1963,6 +2036,16 @@ func tryMakeReadOnlyDatabase(ctx *cli.Context, stack *node.Node) ethdb.Database 
 	return MakeChainDatabase(ctx, stack, readonly)
 }
 
+func IsNetworkPreset(ctx *cli.Context) bool {
+	for _, flag := range NetworkFlags {
+		bFlag, _ := flag.(*cli.BoolFlag)
+		if ctx.IsSet(bFlag.Name) {
+			return true
+		}
+	}
+	return false
+}
+
 func DialRPCWithHeaders(endpoint string, headers []string) (*rpc.Client, error) {
 	if endpoint == "" {
 		return nil, errors.New("endpoint must be specified")
@@ -1985,4 +2068,116 @@ func DialRPCWithHeaders(endpoint string, headers []string) (*rpc.Client, error) 
 		opts = append(opts, rpc.WithHeaders(customHeaders))
 	}
 	return rpc.DialOptions(context.Background(), endpoint, opts...)
+}
+
+func MakeGenesis(ctx *cli.Context) *core.Genesis {
+	var genesis *core.Genesis
+	switch {
+	case ctx.Bool(MainnetFlag.Name):
+		genesis = core.DefaultGenesisBlock()
+	case ctx.Bool(HoleskyFlag.Name):
+		genesis = core.DefaultHoleskyGenesisBlock()
+	case ctx.Bool(SepoliaFlag.Name):
+		genesis = core.DefaultSepoliaGenesisBlock()
+	case ctx.Bool(DeveloperFlag.Name):
+		Fatalf("Developer chains are ephemeral")
+	}
+	return genesis
+}
+
+// MakeChain creates a chain manager from set command line flags.
+func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockChain, ethdb.Database) {
+	var (
+		gspec   = MakeGenesis(ctx)
+		chainDb = MakeChainDatabase(ctx, stack, readonly)
+	)
+	config, err := core.LoadChainConfig(chainDb, gspec)
+	if err != nil {
+		Fatalf("%v", err)
+	}
+	engine, err := ethconfig.CreateConsensusEngine(config, chainDb)
+	if err != nil {
+		Fatalf("%v", err)
+	}
+	if gcmode := ctx.String(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
+		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
+	}
+	scheme, err := rawdb.ParseStateScheme(ctx.String(StateSchemeFlag.Name), chainDb)
+	if err != nil {
+		Fatalf("%v", err)
+	}
+	cache := &core.CacheConfig{
+		TrieCleanLimit:      ethconfig.Defaults.TrieCleanCache,
+		TrieCleanNoPrefetch: ctx.Bool(CacheNoPrefetchFlag.Name),
+		TrieDirtyLimit:      ethconfig.Defaults.TrieDirtyCache,
+		TrieDirtyDisabled:   ctx.String(GCModeFlag.Name) == "archive",
+		TrieTimeLimit:       ethconfig.Defaults.TrieTimeout,
+		SnapshotLimit:       ethconfig.Defaults.SnapshotCache,
+		Preimages:           ctx.Bool(CachePreimagesFlag.Name),
+		StateScheme:         scheme,
+		StateHistory:        ctx.Uint64(StateHistoryFlag.Name),
+	}
+	if cache.TrieDirtyDisabled && !cache.Preimages {
+		cache.Preimages = true
+		log.Info("Enabling recording of key preimages since archive mode is used")
+	}
+	if !ctx.Bool(SnapshotFlag.Name) {
+		cache.SnapshotLimit = 0 // Disabled
+	}
+	// If we're in readonly, do not bother generating snapshot data.
+	if readonly {
+		cache.SnapshotNoBuild = true
+	}
+
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheTrieFlag.Name) {
+		cache.TrieCleanLimit = ctx.Int(CacheFlag.Name) * ctx.Int(CacheTrieFlag.Name) / 100
+	}
+	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheGCFlag.Name) {
+		cache.TrieDirtyLimit = ctx.Int(CacheFlag.Name) * ctx.Int(CacheGCFlag.Name) / 100
+	}
+	vmcfg := vm.Config{
+		EnablePreimageRecording: ctx.Bool(VMEnableDebugFlag.Name),
+	}
+	if ctx.IsSet(VMTraceFlag.Name) {
+		if name := ctx.String(VMTraceFlag.Name); name != "" {
+			config := json.RawMessage(ctx.String(VMTraceJsonConfigFlag.Name))
+			t, err := tracers.LiveDirectory.New(name, config)
+			if err != nil {
+				Fatalf("Failed to create tracer %q: %v", name, err)
+			}
+			vmcfg.Tracer = t
+		}
+	}
+	// Disable transaction indexing/unindexing by default.
+	chain, err := core.NewBlockChain(chainDb, cache, gspec, nil, engine, vmcfg, nil)
+	if err != nil {
+		Fatalf("Can't create BlockChain: %v", err)
+	}
+
+	return chain, chainDb
+}
+
+// MakeTrieDatabase constructs a trie database based on the configured scheme.
+func MakeTrieDatabase(ctx *cli.Context, disk ethdb.Database, preimage bool, readOnly bool, isVerkle bool) *triedb.Database {
+	config := &triedb.Config{
+		Preimages: preimage,
+		IsVerkle:  isVerkle,
+	}
+	scheme, err := rawdb.ParseStateScheme(ctx.String(StateSchemeFlag.Name), disk)
+	if err != nil {
+		Fatalf("%v", err)
+	}
+	if scheme == rawdb.HashScheme {
+		// Read-only mode is not implemented in hash mode,
+		// ignore the parameter silently. TODO(rjl493456442)
+		// please config it if read mode is implemented.
+		config.HashDB = hashdb.Defaults
+		return triedb.NewDatabase(disk, config)
+	}
+	if readOnly {
+		config.PathDB = pathdb.ReadOnly
+	} else {
+		config.PathDB = pathdb.Defaults
+	}
+	return triedb.NewDatabase(disk, config)
 }
