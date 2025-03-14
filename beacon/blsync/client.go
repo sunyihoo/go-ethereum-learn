@@ -17,8 +17,14 @@
 package blsync
 
 import (
+	"github.com/ethereum/go-ethereum/beacon/light"
+	"github.com/ethereum/go-ethereum/beacon/light/api"
 	"github.com/ethereum/go-ethereum/beacon/light/request"
+	"github.com/ethereum/go-ethereum/beacon/light/sync"
 	"github.com/ethereum/go-ethereum/beacon/params"
+	"github.com/ethereum/go-ethereum/beacon/types"
+	"github.com/ethereum/go-ethereum/common/mclock"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -33,4 +39,58 @@ type Client struct {
 
 	chainHeadSub event.Subscription
 	engineClient *engineClient
+}
+
+func NewClient(config params.ClientConfig) *Client {
+	// create data structures
+	var (
+		db             = memorydb.New()
+		committeeChain = light.NewCommitteeChain(db, &config.ChainConfig, config.Threshold, !config.NoFilter)
+		headTracker    = light.NewHeadTracker(committeeChain, config.Threshold)
+	)
+	headSync := sync.NewHeadSync(headTracker, committeeChain)
+
+	// set up scheduler and sync modules
+	scheduler := request.NewScheduler()
+	checkpointInit := sync.NewCheckpointInit(committeeChain, config.Checkpoint)
+	forwardSync := sync.NewForwardUpdateSync(committeeChain)
+	beaconBlockSync := newBeaconBlockSync(headTracker)
+	scheduler.RegisterTarget(headTracker)
+	scheduler.RegisterTarget(committeeChain)
+	scheduler.RegisterModule(checkpointInit, "checkpointInit")
+	scheduler.RegisterModule(forwardSync, "forwardSync")
+	scheduler.RegisterModule(headSync, "headSync")
+	scheduler.RegisterModule(beaconBlockSync, "beaconBlockSync")
+
+	return &Client{
+		scheduler:    scheduler,
+		urls:         config.Apis,
+		customHeader: config.CustomHeader,
+		config:       &config,
+		blockSync:    beaconBlockSync,
+	}
+}
+
+func (c *Client) SetEngineRPC(engine *rpc.Client) {
+	c.engineRPC = engine
+}
+
+func (c *Client) Start() error {
+	headCh := make(chan types.ChainHeadEvent, 16)
+	c.chainHeadSub = c.blockSync.SubscribeChainHead(headCh)
+	c.engineClient = startEngineClient(c.config, c.engineRPC, headCh)
+
+	c.scheduler.Start()
+	for _, url := range c.urls {
+		beaconApi := api.NewBeaconLightApi(url, c.customHeader)
+		c.scheduler.RegisterServer(request.NewServer(api.NewApiServer(beaconApi), &mclock.System{}))
+	}
+	return nil
+}
+
+func (c *Client) Stop() error {
+	c.engineClient.stop()
+	c.chainHeadSub.Unsubscribe()
+	c.scheduler.Stop()
+	return nil
 }
