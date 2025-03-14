@@ -171,7 +171,6 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	return stack, gethConfig{}
 }
 
-// todo not implement
 // makeFullNode loads geth configuration and creates the Ethereum backend.
 func makeFullNode(ctx *cli.Context) *node.Node {
 	stack, cfg := makeConfigNode(ctx)
