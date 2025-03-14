@@ -45,6 +45,8 @@ func (t AbsTime) Sub(t2 AbsTime) time.Duration {
 	return time.Duration(t - t2)
 }
 
+// The Clock interface makes it possible to replace the monotonic system clock with
+// a simulated clock.
 type Clock interface {
 	Now() AbsTime
 	Sleep(time.Duration)
