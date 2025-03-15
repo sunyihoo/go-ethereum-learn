@@ -1,8 +1,6 @@
 module github.com/ethereum/go-ethereum
 
-go 1.22.0
-
-toolchain go1.23.4
+go 1.23.4
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -75,6 +73,7 @@ require (
 	github.com/graph-gophers/graphql-go v1.6.0 // indirect
 	github.com/hashicorp/go-bexpr v0.1.14 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
+	github.com/jedisct1/go-minisign v0.0.0-20241212093149-d2f9f49435c7 // indirect
 	github.com/kilic/bls12-381 v0.1.0 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
@@ -108,6 +107,7 @@ require (
 	github.com/tklauser/numcpus v0.8.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.uber.org/automaxprocs v1.6.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
