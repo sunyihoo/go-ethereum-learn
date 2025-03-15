@@ -71,6 +71,18 @@ func WithHeaders(headers http.Header) ClientOption {
 	})
 }
 
+// WithHTTPAuth configures HTTP request authentication. The given provider will be called
+// whenever a request is made. Note that only one authentication provider can be active at
+// any time.
+func WithHTTPAuth(a HTTPAuth) ClientOption {
+	if a == nil {
+		panic("nil auth")
+	}
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.httpAuth = a
+	})
+}
+
 // A HTTPAuth function is called by the client whenever a HTTP request is sent.
 // The function must be safe for concurrent use.
 //

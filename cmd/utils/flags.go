@@ -317,6 +317,16 @@ var (
 		Usage:    "Beacon chain weak subjectivity checkpoint block hash",
 		Category: flags.BeaconCategory,
 	}
+	BlsyncApiFlag = &cli.StringFlag{
+		Name:     "blsync.engine.api",
+		Usage:    "Target EL engine API URL",
+		Category: flags.BeaconCategory,
+	}
+	BlsyncJWTSecretFlag = &flags.DirectoryFlag{
+		Name:     "blsync.jwtsecret",
+		Usage:    "Path to a JWT secret to use for target engine API endpoint",
+		Category: flags.BeaconCategory,
+	}
 
 	// Transaction pool settings
 	TxPoolLocalsFlag = &cli.StringFlag{
