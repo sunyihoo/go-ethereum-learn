@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -47,6 +48,9 @@ var (
 
 	// lastPivotKey tracks the last pivot block used by fast sync (to reenable on sethead).
 	lastPivotKey = []byte("LastPivot")
+
+	// fastTrieProgressKey tracks the number of trie entries imported during fast sync.
+	fastTrieProgressKey = []byte("TrieSync")
 
 	// snapshotDisabledKey flags that the snapshot should not be maintained due to initial sync.
 	snapshotDisabledKey = []byte("SnapshotDisabled")
@@ -74,6 +78,11 @@ var (
 
 	// txIndexTailKey tracks the oldest block whose transactions have been indexed.
 	txIndexTailKey = []byte("TransactionIndexTail")
+
+	// fastTxLookupLimitKey tracks the transaction lookup limit during fast sync.
+	// This flag is deprecated, it's kept to avoid reporting errors when inspect
+	// database.
+	fastTxLookupLimitKey = []byte("FastTransactionLookupLimit")
 
 	// badBlockKey tracks the list of bad blocks seen by local
 	badBlockKey = []byte("InvalidBlock")
@@ -121,6 +130,14 @@ var (
 
 	// BloomBitsIndexPrefix is the data table of a chain indexer to track its progress
 	BloomBitsIndexPrefix = []byte("iB")
+
+	ChtPrefix           = []byte("chtRootV2-") // ChtPrefix + chtNum (uint64 big endian) -> trie root hash
+	ChtTablePrefix      = []byte("cht-")
+	ChtIndexTablePrefix = []byte("chtIndexV2-")
+
+	BloomTriePrefix      = []byte("bltRoot-") // BloomTriePrefix + bloomTrieNum (uint64 big endian) -> trie root hash
+	BloomTrieTablePrefix = []byte("blt-")
+	BloomTrieIndexPrefix = []byte("bltIndex-")
 
 	CliqueSnapshotPrefix = []byte("clique-")
 
@@ -262,4 +279,65 @@ func storageTrieNodeKey(accountHash common.Hash, path []byte) []byte {
 	n += copy(buf[n:], accountHash.Bytes())
 	copy(buf[n:], path)
 	return buf
+}
+
+// IsLegacyTrieNode reports whether a provided database entry is a legacy trie
+// node. The characteristics of legacy trie node are:
+// - the key length is 32 bytes
+// - the key is the hash of val
+func IsLegacyTrieNode(key []byte, val []byte) bool {
+	if len(key) != common.HashLength {
+		return false
+	}
+	return bytes.Equal(key, crypto.Keccak256(val))
+}
+
+// ResolveAccountTrieNodeKey reports whether a provided database entry is an
+// account trie node in path-based state scheme, and returns the resolved
+// node path if so.
+func ResolveAccountTrieNodeKey(key []byte) (bool, []byte) {
+	if !bytes.HasPrefix(key, TrieNodeAccountPrefix) {
+		return false, nil
+	}
+	// The remaining key should only consist a hex node path
+	// whose length is in the range 0 to 64 (64 is excluded
+	// since leaves are always wrapped with shortNode).
+	if len(key) >= len(TrieNodeAccountPrefix)+common.HashLength*2 {
+		return false, nil
+	}
+	return true, key[len(TrieNodeAccountPrefix):]
+}
+
+// IsAccountTrieNode reports whether a provided database entry is an account
+// trie node in path-based state scheme.
+func IsAccountTrieNode(key []byte) bool {
+	ok, _ := ResolveAccountTrieNodeKey(key)
+	return ok
+}
+
+// ResolveStorageTrieNode reports whether a provided database entry is a storage
+// trie node in path-based state scheme, and returns the resolved account hash
+// and node path if so.
+func ResolveStorageTrieNode(key []byte) (bool, common.Hash, []byte) {
+	if !bytes.HasPrefix(key, TrieNodeStoragePrefix) {
+		return false, common.Hash{}, nil
+	}
+	// The remaining key consists of 2 parts:
+	// - 32 bytes account hash
+	// - hex node path whose length is in the range 0 to 64
+	if len(key) < len(TrieNodeStoragePrefix)+common.HashLength {
+		return false, common.Hash{}, nil
+	}
+	if len(key) >= len(TrieNodeStoragePrefix)+common.HashLength+common.HashLength*2 {
+		return false, common.Hash{}, nil
+	}
+	accountHash := common.BytesToHash(key[len(TrieNodeStoragePrefix) : len(TrieNodeStoragePrefix)+common.HashLength])
+	return true, accountHash, key[len(TrieNodeStoragePrefix)+common.HashLength:]
+}
+
+// IsStorageTrieNode reports whether a provided database entry is a storage
+// trie node in path-based state scheme.
+func IsStorageTrieNode(key []byte) bool {
+	ok, _, _ := ResolveStorageTrieNode(key)
+	return ok
 }

@@ -176,6 +176,16 @@ func (a *Address) SetBytes(b []byte) {
 	copy(a[AddressLength-len(b):], b)
 }
 
+// MarshalText returns the hex representation of a.
+func (a Address) MarshalText() ([]byte, error) {
+	return hexutil.Bytes(a[:]).MarshalText()
+}
+
+// UnmarshalText parses a hash in hex syntax.
+func (a *Address) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedText("Address", input, a[:])
+}
+
 // UnprefixedAddress allows marshaling an Address without 0x prefix.
 type UnprefixedAddress Address
 

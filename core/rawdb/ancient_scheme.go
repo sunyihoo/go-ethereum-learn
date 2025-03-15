@@ -77,6 +77,9 @@ var (
 	VerkleStateFreezerName = "state_verkle" // the folder name of state history ancient store.
 )
 
+// freezers the collections of all builtin freezers.
+var freezers = []string{ChainFreezerName, MerkleStateFreezerName, VerkleStateFreezerName}
+
 // NewStateFreezer initializes the ancient store for state history.
 //
 //   - if the empty directory is given, initializes the pure in-memory
