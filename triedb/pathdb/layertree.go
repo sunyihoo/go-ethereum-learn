@@ -75,6 +75,14 @@ func (tree *layerTree) forEach(onLayer func(layer)) {
 	}
 }
 
+// len returns the number of layers cached.
+func (tree *layerTree) len() int {
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+
+	return len(tree.layers)
+}
+
 // add inserts a new layer into the tree if it can be linked to an existing old parent.
 func (tree *layerTree) add(root common.Hash, parentRoot common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *StateSetWithOrigin) error {
 	// Reject noop updates to avoid self-loops. This is a special case that can

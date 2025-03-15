@@ -59,3 +59,10 @@ type StateReader interface {
 	// - no error will be returned if the requested slot is not found in database
 	Storage(accountHash, storageHash common.Hash) ([]byte, error)
 }
+
+// StateDatabase wraps the methods of a backing state store.
+type StateDatabase interface {
+	// StateReader returns a state reader associated with the specific state.
+	// An error will be returned if the specified state is not available.
+	StateReader(stateRoot common.Hash) (StateReader, error)
+}
