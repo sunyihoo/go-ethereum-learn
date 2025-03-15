@@ -15,6 +15,7 @@ import (
 
 type discardHandler struct{}
 
+// DiscardHandler returns a no-op handler
 func DiscardHandler() slog.Handler {
 	return &discardHandler{}
 }
@@ -75,7 +76,6 @@ func NewTerminalHandlerWithLevel(wr io.Writer, lvl slog.Level, useColor bool) *T
 func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
 	buf := h.format(h.buf, r, h.useColor)
 	h.wr.Write(buf)
 	h.buf = buf[:0]

@@ -39,11 +39,11 @@ func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byt
 			color = "\x1b[35m"
 		case slog.LevelError:
 			color = "\x1b[31m"
-		case LevelWarn:
+		case slog.LevelWarn:
 			color = "\x1b[33m"
-		case LevelInfo:
+		case slog.LevelInfo:
 			color = "\x1b[32m"
-		case LevelDebug:
+		case slog.LevelDebug:
 			color = "\x1b[36m"
 		case LevelTrace:
 			color = "\x1b[34m"
@@ -54,7 +54,7 @@ func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byt
 	}
 	b := bytes.NewBuffer(buf)
 
-	if color != "" {
+	if color != "" { // Start color
 		b.WriteString(color)
 		b.WriteString(LevelAlignedString(r.Level))
 		b.WriteString("\x1b[0m")
@@ -63,13 +63,13 @@ func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byt
 	}
 	b.WriteString("[")
 	writeTimeTermFormat(b, r.Time)
-	b.WriteString("]")
+	b.WriteString("] ")
 	b.WriteString(msg)
 
 	// try to justify the log output for short messages
 	//length := utf8.RuneCountInString(msg)
 	length := len(msg)
-	for (r.NumAttrs()+len(h.attrs)) > 0 && length < termMsgJust {
+	if (r.NumAttrs()+len(h.attrs)) > 0 && length < termMsgJust {
 		b.Write(spaces[:termMsgJust-length])
 	}
 	// print the attributes
@@ -85,10 +85,10 @@ func (h *TerminalHandler) formatAttributes(buf *bytes.Buffer, r slog.Record, col
 		if color != "" {
 			buf.WriteString(color)
 			buf.Write(appendEscapeString(buf.AvailableBuffer(), attr.Key))
-			buf.WriteString("\x1b[0m")
+			buf.WriteString("\x1b[0m=")
 		} else {
 			buf.Write(appendEscapeString(buf.AvailableBuffer(), attr.Key))
-			buf.WriteString("=")
+			buf.WriteByte('=')
 		}
 		val := FormatSlogValue(attr.Value, buf.AvailableBuffer())
 
@@ -268,12 +268,12 @@ func appendU256(dst []byte, n *uint256.Int) []byte {
 // appendEscapeString writes the string s to the given writer, with
 // escaping/quoting if needed.
 func appendEscapeString(dst []byte, s string) []byte {
-	needQuoting := false
+	needsQuoting := false
 	needsEscaping := false
 	for _, r := range s {
 		// If it contains spaces or equal-sign, we need to quote it.
 		if r == ' ' || r == '=' {
-			needQuoting = true
+			needsQuoting = true
 			continue
 		}
 		// We need to escape it, if it contains
@@ -289,10 +289,10 @@ func appendEscapeString(dst []byte, s string) []byte {
 	}
 	// No escaping needed, but we might have to place within quote-marks, in case
 	// it contained a space
-	if needQuoting {
+	if needsQuoting {
 		dst = append(dst, '"')
 		dst = append(dst, []byte(s)...)
-		dst = append(dst, '"')
+		return append(dst, '"')
 	}
 	return append(dst, []byte(s)...)
 }

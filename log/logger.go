@@ -54,6 +54,7 @@ func FromLegacyLevel(lvl int) slog.Level {
 	default:
 		break
 	}
+
 	// TODO: should we allow use of custom levels or force them to match existing max/min if they fall outside the range as I am doing here?
 	if lvl > legacyLevelTrace {
 		return LevelTrace
@@ -167,7 +168,6 @@ func (l *logger) Write(level slog.Level, msg string, attrs ...any) {
 	if len(attrs)%2 != 0 {
 		attrs = append(attrs, nil, errorKey, "Normalized odd number of arguments by adding nil")
 	}
-
 	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
 	r.Add(attrs...)
 	l.inner.Handler().Handle(context.Background(), r)
