@@ -21,22 +21,32 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/console/prompt"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"go.uber.org/automaxprocs/maxprocs"
+
+	// Force-load the tracer engines to trigger registration
+	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+
 	"github.com/urfave/cli/v2"
 )
 
 const (
-	clientIdentifier = "geth" //  Client identifier to advertise over the network
+	clientIdentifier = "geth" // Client identifier to advertise over the network
 )
 
 var (
@@ -196,14 +206,71 @@ var (
 	}
 )
 
-var app = flags.NewApp("the go ethereum command line interface")
+var app = flags.NewApp("the go-ethereum command line interface")
 
 func init() {
 	// Initialize the CLI app and start Geth
 	app.Action = geth
 	app.Commands = []*cli.Command{
-		//	see chaincmd.go:
+		// See chaincmd.go:
 		initCommand,
+		importCommand,
+		exportCommand,
+		importHistoryCommand,
+		exportHistoryCommand,
+		importPreimagesCommand,
+		removedbCommand,
+		dumpCommand,
+		dumpGenesisCommand,
+		// See accountcmd.go:
+		accountCommand,
+		walletCommand,
+		// See consolecmd.go:
+		consoleCommand,
+		attachCommand,
+		javascriptCommand,
+		// See misccmd.go:
+		versionCommand,
+		versionCheckCommand,
+		licenseCommand,
+		// See config.go
+		dumpConfigCommand,
+		// see dbcmd.go
+		dbCommand,
+		// See cmd/utils/flags_legacy.go
+		utils.ShowDeprecated,
+		// See snapshot.go
+		snapshotCommand,
+		// See verkle.go
+		verkleCommand,
+	}
+	if logTestCommand != nil {
+		app.Commands = append(app.Commands, logTestCommand)
+	}
+	sort.Sort(cli.CommandsByName(app.Commands))
+
+	app.Flags = slices.Concat(
+		nodeFlags,
+		rpcFlags,
+		consoleFlags,
+		debug.Flags,
+		metricsFlags,
+	)
+	flags.AutoEnvVars(app.Flags, "GETH")
+
+	app.Before = func(ctx *cli.Context) error {
+		maxprocs.Set() // Automatically set GOMAXPROCS to match Linux container CPU quota.
+		flags.MigrateGlobalFlags(ctx)
+		if err := debug.Setup(ctx); err != nil {
+			return err
+		}
+		flags.CheckEnvVars(ctx, app.Flags, "GETH")
+		return nil
+	}
+	app.After = func(ctx *cli.Context) error {
+		debug.Exit()
+		prompt.Stdin.Close() // Resets terminal mode.
+		return nil
 	}
 }
 
@@ -217,10 +284,10 @@ func main() {
 // prepare manipulates memory cache allowance and setups metric system.
 // This function should be called before launching devp2p stack.
 func prepare(ctx *cli.Context) {
-	// If we're running a known preset, log it  for convenience
+	// If we're running a known preset, log it for convenience.
 	switch {
 	case ctx.IsSet(utils.SepoliaFlag.Name):
-		log.Info("Starting Geth on Sepola testnet...")
+		log.Info("Starting Geth on Sepolia testnet...")
 
 	case ctx.IsSet(utils.HoleskyFlag.Name):
 		log.Info("Starting Geth on Holesky testnet...")
@@ -229,19 +296,20 @@ func prepare(ctx *cli.Context) {
 		log.Info("Starting Geth in ephemeral dev mode...")
 		log.Warn(`You are running Geth in --dev mode. Please note the following:
 
-	1. This mode is only intended for fast, iterative development without assumptions on
+  1. This mode is only intended for fast, iterative development without assumptions on
      security or persistence.
-	2. The database is created in memory unless specified otherwise. Therefore, shutting down
+  2. The database is created in memory unless specified otherwise. Therefore, shutting down
      your computer or losing power will wipe your entire block data and chain state for
      your dev environment.
-	3. A random, pre-allocated developer account will be available and unlocked as
+  3. A random, pre-allocated developer account will be available and unlocked as
      eth.coinbase, which can be used for testing. The random dev account is temporary,
      stored on a ramdisk, and will be lost if your machine is restarted.
-	4.  Mining is enabled by default. However, the client will only seal blocks if transactions
+  4. Mining is enabled by default. However, the client will only seal blocks if transactions
      are pending in the mempool. The miner's minimum accepted gas price is 1.
-	5. Networking is disabled; there is no listen-address, the maximum number of peers is set
+  5. Networking is disabled; there is no listen-address, the maximum number of peers is set
      to 0, and discovery is disabled.
 `)
+
 	case !ctx.IsSet(utils.NetworkIdFlag.Name):
 		log.Info("Starting Geth on Ethereum mainnet...")
 	}
@@ -263,7 +331,7 @@ func prepare(ctx *cli.Context) {
 // blocking mode, waiting for it to be shut down.
 func geth(ctx *cli.Context) error {
 	if args := ctx.Args().Slice(); len(args) > 0 {
-		return fmt.Errorf("invalid command: %s", args[0])
+		return fmt.Errorf("invalid command: %q", args[0])
 	}
 
 	prepare(ctx)

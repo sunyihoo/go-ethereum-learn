@@ -17,10 +17,40 @@
 package utils
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/urfave/cli/v2"
 )
+
+var ShowDeprecated = &cli.Command{
+	Action:      showDeprecated,
+	Name:        "show-deprecated-flags",
+	Usage:       "Show flags that have been deprecated",
+	ArgsUsage:   " ",
+	Description: "Show flags that have been deprecated and will soon be removed",
+}
+
+var DeprecatedFlags = []cli.Flag{
+	NoUSBFlag,
+	LegacyWhitelistFlag,
+	CacheTrieJournalFlag,
+	CacheTrieRejournalFlag,
+	LegacyDiscoveryV5Flag,
+	TxLookupLimitFlag,
+	LightServeFlag,
+	LightIngressFlag,
+	LightEgressFlag,
+	LightMaxPeersFlag,
+	LightNoPruneFlag,
+	LightNoSyncServeFlag,
+	LogBacktraceAtFlag,
+	LogDebugFlag,
+	MinerNewPayloadTimeoutFlag,
+	MinerEtherbaseFlag,
+	MiningEnabledFlag,
+}
 
 var (
 	// Deprecated May 2020, shown in aliased flags section
@@ -101,17 +131,16 @@ var (
 		Usage:    "Prepends log messages with call-site location (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
-
-	MinerEtherbaseFlag = &cli.StringFlag{
-		Name:     "miner.etherbase",
-		Usage:    "0x prefixed public address for block mining rewards (deprecated)",
-		Category: flags.DeprecatedCategory,
-	}
 	// Deprecated February 2024
 	MinerNewPayloadTimeoutFlag = &cli.DurationFlag{
 		Name:     "miner.newpayload-timeout",
 		Usage:    "Specify the maximum time allowance for creating a new payload (deprecated)",
 		Value:    ethconfig.Defaults.Miner.Recommit,
+		Category: flags.DeprecatedCategory,
+	}
+	MinerEtherbaseFlag = &cli.StringFlag{
+		Name:     "miner.etherbase",
+		Usage:    "0x prefixed public address for block mining rewards (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
 	MiningEnabledFlag = &cli.BoolFlag{
@@ -124,7 +153,6 @@ var (
 		Usage:    "Enable expensive metrics collection and reporting (deprecated)",
 		Category: flags.DeprecatedCategory,
 	}
-
 	// Deprecated Oct 2024
 	EnablePersonal = &cli.BoolFlag{
 		Name:     "rpc.enabledeprecatedpersonal",
@@ -143,3 +171,16 @@ var (
 		Category: flags.DeprecatedCategory,
 	}
 )
+
+// showDeprecated displays deprecated flags that will be soon removed from the codebase.
+func showDeprecated(*cli.Context) error {
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println("The following flags are deprecated and will be removed in the future!")
+	fmt.Println("--------------------------------------------------------------------")
+	fmt.Println()
+	for _, flag := range DeprecatedFlags {
+		fmt.Println(flag.String())
+	}
+	fmt.Println()
+	return nil
+}

@@ -23,6 +23,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -48,6 +49,15 @@ import (
 )
 
 var (
+	dumpConfigCommand = &cli.Command{
+		Action:      dumpConfig,
+		Name:        "dumpconfig",
+		Usage:       "Export configuration values in a TOML format",
+		ArgsUsage:   "<dumpfile (optional)>",
+		Flags:       slices.Concat(nodeFlags, rpcFlags),
+		Description: `Export configuration values in TOML format (to stdout by default).`,
+	}
+
 	configFileFlag = &cli.StringFlag{
 		Name:     "config",
 		Usage:    "TOML configuration file",
@@ -66,7 +76,7 @@ var tomlSettings = toml.Config{
 	MissingField: func(rt reflect.Type, field string) error {
 		id := fmt.Sprintf("%s.%s", rt.String(), field)
 		if deprecatedConfigFields[id] {
-			log.Warn(fmt.Sprintf("Config filed '%s' is deprecated and won't have any effect.", id))
+			log.Warn(fmt.Sprintf("Config field '%s' is deprecated and won't have any effect.", id))
 			return nil
 		}
 		var link string
@@ -79,7 +89,7 @@ var tomlSettings = toml.Config{
 
 var deprecatedConfigFields = map[string]bool{
 	"ethconfig.Config.EVMInterpreter":          true,
-	"ethconfig.Config.EWASInterpreter":         true,
+	"ethconfig.Config.EWASMInterpreter":        true,
 	"ethconfig.Config.TrieCleanCacheJournal":   true,
 	"ethconfig.Config.TrieCleanCacheRejournal": true,
 	"ethconfig.Config.LightServ":               true,
@@ -122,7 +132,7 @@ func defaultNodeConfig() node.Config {
 	cfg.Name = clientIdentifier
 	cfg.Version = version.WithCommit(git.Commit, git.Date)
 	cfg.HTTPModules = append(cfg.HTTPModules, "eth")
-	cfg.WSModules = append(cfg.WSModules, "engine")
+	cfg.WSModules = append(cfg.WSModules, "eth")
 	cfg.IPCPath = clientIdentifier + ".ipc"
 	return cfg
 }
@@ -130,7 +140,7 @@ func defaultNodeConfig() node.Config {
 // loadBaseConfig loads the gethConfig based on the given command line
 // parameters and config file.
 func loadBaseConfig(ctx *cli.Context) gethConfig {
-	// Load defaults
+	// Load defaults.
 	cfg := gethConfig{
 		Eth:     ethconfig.Defaults,
 		Node:    defaultNodeConfig(),
@@ -149,6 +159,7 @@ func loadBaseConfig(ctx *cli.Context) gethConfig {
 	return cfg
 }
 
+// makeConfigNode loads geth configuration and creates a blank node instance.
 func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	cfg := loadBaseConfig(ctx)
 	log.Info("base config", "CONFIG", cfg)
@@ -165,10 +176,9 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	if ctx.IsSet(utils.EthStatsURLFlag.Name) {
 		cfg.Ethstats.URL = ctx.String(utils.EthStatsURLFlag.Name)
 	}
-
 	applyMetricConfig(ctx, &cfg)
 
-	return stack, gethConfig{}
+	return stack, cfg
 }
 
 // makeFullNode loads geth configuration and creates the Ethereum backend.
@@ -245,6 +255,35 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		}
 	}
 	return stack
+}
+
+// dumpConfig is the dumpconfig command.
+func dumpConfig(ctx *cli.Context) error {
+	_, cfg := makeConfigNode(ctx)
+	comment := ""
+
+	if cfg.Eth.Genesis != nil {
+		cfg.Eth.Genesis = nil
+		comment += "# Note: this config doesn't contain the genesis block.\n\n"
+	}
+
+	out, err := tomlSettings.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	dump := os.Stdout
+	if ctx.NArg() > 0 {
+		dump, err = os.OpenFile(ctx.Args().Get(0), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer dump.Close()
+	}
+	dump.WriteString(comment)
+	dump.Write(out)
+
+	return nil
 }
 
 func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {

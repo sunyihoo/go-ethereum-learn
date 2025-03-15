@@ -693,6 +693,16 @@ var (
 		Value:    "",
 		Category: flags.APICategory,
 	}
+	ExecFlag = &cli.StringFlag{
+		Name:     "exec",
+		Usage:    "Execute JavaScript statement",
+		Category: flags.APICategory,
+	}
+	PreloadJSFlag = &cli.StringFlag{
+		Name:     "preload",
+		Usage:    "Comma separated list of JavaScript files to preload into the console",
+		Category: flags.APICategory,
+	}
 	AllowUnprotectedTxs = &cli.BoolFlag{
 		Name:     "rpc.allow-unprotected-txs",
 		Usage:    "Allow for unprotected (non EIP155 signed) transactions to be submitted via RPC",
@@ -789,6 +799,12 @@ var (
 	}
 
 	// Console
+	JSpathFlag = &flags.DirectoryFlag{
+		Name:     "jspath",
+		Usage:    "JavaScript root path for `loadScript`",
+		Value:    flags.DirectoryString("."),
+		Category: flags.APICategory,
+	}
 	HttpHeaderFlag = &cli.StringSliceFlag{
 		Name:     "header",
 		Aliases:  []string{"H"},
@@ -931,6 +947,23 @@ var (
 		HttpHeaderFlag,
 	}
 )
+
+// MakeDataDir retrieves the currently requested data directory, terminating
+// if none (or the empty string) is specified. If the node is starting a testnet,
+// then a subdirectory of the specified datadir will be used.
+func MakeDataDir(ctx *cli.Context) string {
+	if path := ctx.String(DataDirFlag.Name); path != "" {
+		if ctx.Bool(SepoliaFlag.Name) {
+			return filepath.Join(path, "sepolia")
+		}
+		if ctx.Bool(HoleskyFlag.Name) {
+			return filepath.Join(path, "holesky")
+		}
+		return path
+	}
+	Fatalf("Cannot determine default data directory, please set manually (--datadir)")
+	return ""
+}
 
 // setNodeKey creates a node key from set command line flags, either loading it
 // from a file or as a specified hex value. If neither flags were provided, this
@@ -2155,6 +2188,22 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	}
 
 	return chain, chainDb
+}
+
+// MakeConsolePreloads retrieves the absolute paths for the console JavaScript
+// scripts to preload before starting.
+func MakeConsolePreloads(ctx *cli.Context) []string {
+	// Skip preloading if there's nothing to preload
+	if ctx.String(PreloadJSFlag.Name) == "" {
+		return nil
+	}
+	// Otherwise resolve absolute paths and return them
+	var preloads []string
+
+	for _, file := range strings.Split(ctx.String(PreloadJSFlag.Name), ",") {
+		preloads = append(preloads, strings.TrimSpace(file))
+	}
+	return preloads
 }
 
 // MakeTrieDatabase constructs a trie database based on the configured scheme.
