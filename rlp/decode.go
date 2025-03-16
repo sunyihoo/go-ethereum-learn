@@ -797,6 +797,13 @@ func (s *Stream) ListEnd() error {
 	return nil
 }
 
+// MoreDataInList reports whether the current list context contains
+// more data to be read.
+func (s *Stream) MoreDataInList() bool {
+	_, listLimit := s.listLimit()
+	return listLimit > 0
+}
+
 func (s *Stream) decodeBigInt(dst *big.Int) error {
 	var buffer []byte
 	kind, size, err := s.Kind()

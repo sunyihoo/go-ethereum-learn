@@ -93,6 +93,19 @@ func (h *Hash) SetBytes(b []byte) {
 	copy(h[HashLength-len(b):], b)
 }
 
+// UnprefixedHash allows marshaling a Hash without 0x prefix.
+type UnprefixedHash Hash
+
+// UnmarshalText decodes the hash from hex. The 0x prefix is optional.
+func (h *UnprefixedHash) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedUnprefixedText("UnprefixedHash", input, h[:])
+}
+
+// MarshalText encodes the hash as hex.
+func (h UnprefixedHash) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(h[:])), nil
+}
+
 /////////// Address
 
 // Address represents the 20 byte address of an Ethereum account.
