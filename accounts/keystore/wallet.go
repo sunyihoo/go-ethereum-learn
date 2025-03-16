@@ -50,7 +50,7 @@ func (w *keystoreWallet) Status() (string, error) {
 }
 
 // Open implements accounts.Wallet, but is a noop for plain wallets since there
-// // is no connection or decryption step necessary to access the list of accounts.
+// is no connection or decryption step necessary to access the list of accounts.
 func (w *keystoreWallet) Open(passphrase string) error { return nil }
 
 // Close implements accounts.Wallet, but is a noop for plain wallets since there

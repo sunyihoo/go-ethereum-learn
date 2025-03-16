@@ -260,7 +260,6 @@ func (api *ExternalSigner) SignTextWithPassphrase(account accounts.Account, pass
 func (api *ExternalSigner) SignTxWithPassphrase(account accounts.Account, passphrase string, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
 	return nil, errors.New("password-operations not supported on external signers")
 }
-
 func (api *ExternalSigner) SignDataWithPassphrase(account accounts.Account, passphrase, mimeType string, data []byte) ([]byte, error) {
 	return nil, errors.New("password-operations not supported on external signers")
 }

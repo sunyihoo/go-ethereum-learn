@@ -152,12 +152,10 @@ func EncryptDataV3(data, auth []byte, scryptN, scryptP int) (CryptoJSON, error) 
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		panic("reading from crypto/rand failed: " + err.Error())
 	}
-
 	cipherText, err := aesCTRXOR(encryptKey, data, iv)
 	if err != nil {
 		return CryptoJSON{}, err
 	}
-
 	mac := crypto.Keccak256(derivedKey[16:32], cipherText)
 
 	scryptParamsJSON := make(map[string]interface{}, 5)

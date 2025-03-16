@@ -17,12 +17,15 @@
 package keystore
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -53,6 +56,13 @@ type keyStore interface {
 	JoinPath(filename string) string
 }
 
+type plainKeyJSON struct {
+	Address    string `json:"address"`
+	PrivateKey string `json:"privatekey"`
+	Id         string `json:"id"`
+	Version    int    `json:"version"`
+}
+
 type encryptedKeyJSONV3 struct {
 	Address string     `json:"address"`
 	Crypto  CryptoJSON `json:"crypto"`
@@ -71,13 +81,52 @@ type CryptoJSON struct {
 	Cipher       string                 `json:"cipher"`
 	CipherText   string                 `json:"ciphertext"`
 	CipherParams cipherparamsJSON       `json:"cipherparams"`
-	KDF          string                 `json:"kdf"` // TODO What is the kdf?
+	KDF          string                 `json:"kdf"`
 	KDFParams    map[string]interface{} `json:"kdfparams"`
 	MAC          string                 `json:"mac"`
 }
 
 type cipherparamsJSON struct {
 	IV string `json:"iv"`
+}
+
+func (k *Key) MarshalJSON() (j []byte, err error) {
+	jStruct := plainKeyJSON{
+		hex.EncodeToString(k.Address[:]),
+		hex.EncodeToString(crypto.FromECDSA(k.PrivateKey)),
+		k.Id.String(),
+		version,
+	}
+	j, err = json.Marshal(jStruct)
+	return j, err
+}
+
+func (k *Key) UnmarshalJSON(j []byte) (err error) {
+	keyJSON := new(plainKeyJSON)
+	err = json.Unmarshal(j, &keyJSON)
+	if err != nil {
+		return err
+	}
+
+	u := new(uuid.UUID)
+	*u, err = uuid.Parse(keyJSON.Id)
+	if err != nil {
+		return err
+	}
+	k.Id = *u
+	addr, err := hex.DecodeString(keyJSON.Address)
+	if err != nil {
+		return err
+	}
+	privkey, err := crypto.HexToECDSA(keyJSON.PrivateKey)
+	if err != nil {
+		return err
+	}
+
+	k.Address = common.BytesToAddress(addr)
+	k.PrivateKey = privkey
+
+	return nil
 }
 
 func newKeyFromECDSA(privateKeyECDSA *ecdsa.PrivateKey) *Key {
@@ -89,6 +138,27 @@ func newKeyFromECDSA(privateKeyECDSA *ecdsa.PrivateKey) *Key {
 		Id:         id,
 		Address:    crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
 		PrivateKey: privateKeyECDSA,
+	}
+	return key
+}
+
+// NewKeyForDirectICAP generates a key whose address fits into < 155 bits so it can fit
+// into the Direct ICAP spec. for simplicity and easier compatibility with other libs, we
+// retry until the first byte is 0.
+func NewKeyForDirectICAP(rand io.Reader) *Key {
+	randBytes := make([]byte, 64)
+	_, err := rand.Read(randBytes)
+	if err != nil {
+		panic("key generation: could not read from random source: " + err.Error())
+	}
+	reader := bytes.NewReader(randBytes)
+	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), reader)
+	if err != nil {
+		panic("key generation: ecdsa.GenerateKey failed: " + err.Error())
+	}
+	key := newKeyFromECDSA(privateKeyECDSA)
+	if !strings.HasPrefix(key.Address.Hex(), "0x00") {
+		return NewKeyForDirectICAP(rand)
 	}
 	return key
 }
@@ -137,6 +207,14 @@ func writeTemporaryKeyFile(file string, content []byte) (string, error) {
 	}
 	f.Close()
 	return f.Name(), nil
+}
+
+func writeKeyFile(file string, content []byte) error {
+	name, err := writeTemporaryKeyFile(file, content)
+	if err != nil {
+		return err
+	}
+	return os.Rename(name, file)
 }
 
 // keyFileName implements the naming convention for keyfiles:

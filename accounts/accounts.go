@@ -116,7 +116,7 @@ type Wallet interface {
 	// NOTE: there's a chance that an erroneous call might mistake the two strings, and
 	// supply password in the mimetype field, or vice versa. Thus, an implementation
 	// should never echo the mimetype or return the mimetype in the error-response
-	SignDataWithPassphrase(account Account, passphrase string, mineType string, data []byte) ([]byte, error)
+	SignDataWithPassphrase(account Account, passphrase, mimeType string, data []byte) ([]byte, error)
 
 	// SignText requests the wallet to sign the hash of a given piece of data, prefixed
 	// by the Ethereum prefix scheme
@@ -148,6 +148,7 @@ type Wallet interface {
 	// the needed details via SignTxWithPassphrase, or by other means (e.g. unlock
 	// the account in a keystore).
 	SignTx(account Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error)
+
 	// SignTxWithPassphrase is identical to SignTx, but also takes a password
 	SignTxWithPassphrase(account Account, passphrase string, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error)
 }
@@ -155,6 +156,16 @@ type Wallet interface {
 // Backend is a "wallet provider" that may contain a batch of accounts they can
 // sign transactions with and upon request, do so.
 type Backend interface {
+	// Wallets retrieves the list of wallets the backend is currently aware of.
+	//
+	// The returned wallets are not opened by default. For software HD wallets this
+	// means that no base seeds are decrypted, and for hardware wallets that no actual
+	// connection is established.
+	//
+	// The resulting wallet list will be sorted alphabetically based on its internal
+	// URL assigned by the backend. Since wallets (especially hardware) may come and
+	// go, the same wallet might appear at a different positions in the list during
+	// subsequent retrievals.
 	Wallets() []Wallet
 
 	// Subscribe creates an async subscription to receive notifications when the
@@ -209,6 +220,8 @@ const (
 	WalletDropped
 )
 
+// WalletEvent is an event fired by an account backend when a wallet arrival or
+// departure is detected.
 type WalletEvent struct {
 	Wallet Wallet          // Wallet instance arrived or departed
 	Kind   WalletEventType // Event type that happened in the system
