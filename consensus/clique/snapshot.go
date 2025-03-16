@@ -282,7 +282,6 @@ func (s *Snapshot) apply(headers []*types.Header) (*Snapshot, error) {
 			logged = time.Now()
 		}
 	}
-
 	if time.Since(start) > 8*time.Second {
 		log.Info("Reconstructed voting history", "processed", len(headers), "elapsed", common.PrettyDuration(time.Since(start)))
 	}

@@ -51,6 +51,7 @@ func CalcDifficultyFrontierU256(time uint64, parent *types.Header) *big.Int {
 		- time = block.timestamp
 		- num = block.number
 	*/
+
 	pDiff, _ := uint256.FromBig(parent.Difficulty) // pDiff: pdiff
 	adjust := pDiff.Clone()
 	adjust.Rsh(adjust, difficultyBoundDivisor) // adjust: pDiff / 2048

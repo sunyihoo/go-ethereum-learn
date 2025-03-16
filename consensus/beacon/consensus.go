@@ -186,7 +186,7 @@ func (beacon *Beacon) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 			select {
 			case err := <-oldResult:
 				if !done[old] { // skip TTD-verified failures
-					errors[old], done[out] = err, true
+					errors[old], done[old] = err, true
 				}
 				old++
 			case err := <-newResult:
