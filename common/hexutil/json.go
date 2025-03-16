@@ -47,7 +47,7 @@ func (b Bytes) MarshalText() ([]byte, error) {
 	return result, nil
 }
 
-// UnmarshalJSON implements json.Unmarshaler
+// UnmarshalJSON implements json.Unmarshaler.
 func (b *Bytes) UnmarshalJSON(input []byte) error {
 	if !isString(input) {
 		return errNonString(bytesT)
@@ -55,7 +55,7 @@ func (b *Bytes) UnmarshalJSON(input []byte) error {
 	return wrapTypeError(b.UnmarshalText(input[1:len(input)-1]), bytesT)
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler
+// UnmarshalText implements encoding.TextUnmarshaler.
 func (b *Bytes) UnmarshalText(input []byte) error {
 	raw, err := checkText(input, true)
 	if err != nil {
@@ -70,9 +70,28 @@ func (b *Bytes) UnmarshalText(input []byte) error {
 	return err
 }
 
-// String returns the hex encoding of b
+// String returns the hex encoding of b.
 func (b Bytes) String() string {
 	return Encode(b)
+}
+
+// ImplementsGraphQLType returns true if Bytes implements the specified GraphQL type.
+func (b Bytes) ImplementsGraphQLType(name string) bool { return name == "Bytes" }
+
+// UnmarshalGraphQL unmarshals the provided GraphQL query data.
+func (b *Bytes) UnmarshalGraphQL(input interface{}) error {
+	var err error
+	switch input := input.(type) {
+	case string:
+		data, err := Decode(input)
+		if err != nil {
+			return err
+		}
+		*b = data
+	default:
+		err = fmt.Errorf("unexpected type %T for Bytes", input)
+	}
+	return err
 }
 
 // UnmarshalFixedJSON decodes the input as a string with 0x prefix. The length of out
@@ -117,7 +136,7 @@ func UnmarshalFixedUnprefixedText(typname string, input, out []byte) error {
 	if len(raw)/2 != len(out) {
 		return fmt.Errorf("hex string has length %d, want %d for %s", len(raw), len(out)*2, typname)
 	}
-	// Pre-verify syntax before modifying out
+	// Pre-verify syntax before modifying out.
 	for _, b := range raw {
 		if decodeNibble(b) == badNibble {
 			return ErrSyntax

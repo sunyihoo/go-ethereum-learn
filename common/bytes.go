@@ -81,6 +81,20 @@ func Hex2Bytes(str string) []byte {
 	return h
 }
 
+// Hex2BytesFixed returns bytes of a specified fixed length flen.
+func Hex2BytesFixed(str string, flen int) []byte {
+	h, _ := hex.DecodeString(str)
+	if len(h) == flen {
+		return h
+	}
+	if len(h) > flen {
+		return h[len(h)-flen:]
+	}
+	hh := make([]byte, flen)
+	copy(hh[flen-len(h):flen], h)
+	return hh
+}
+
 // ParseHexOrString tries to hexdecode b, but if the prefix is missing, it instead just returns the raw bytes
 func ParseHexOrString(str string) ([]byte, error) {
 	b, err := hexutil.Decode(str)
@@ -98,6 +112,7 @@ func RightPadBytes(slice []byte, l int) []byte {
 
 	padded := make([]byte, l)
 	copy(padded, slice)
+
 	return padded
 }
 

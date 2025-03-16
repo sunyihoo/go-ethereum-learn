@@ -22,8 +22,8 @@ import (
 )
 
 // FileExist checks if a file exists at filePath.
-func FileExist(filepath string) bool {
-	_, err := os.Stat(filepath)
+func FileExist(filePath string) bool {
+	_, err := os.Stat(filePath)
 	if err != nil && os.IsNotExist(err) {
 		return false
 	}

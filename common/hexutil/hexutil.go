@@ -80,7 +80,7 @@ func MustDecode(input string) []byte {
 	return dec
 }
 
-// Encode encodes b as a hex string with 0x prefix
+// Encode encodes b as a hex string with 0x prefix.
 func Encode(b []byte) string {
 	enc := make([]byte, len(b)*2+2)
 	copy(enc, "0x")
@@ -99,6 +99,16 @@ func DecodeUint64(input string) (uint64, error) {
 		err = mapError(err)
 	}
 	return dec, err
+}
+
+// MustDecodeUint64 decodes a hex string with 0x prefix as a quantity.
+// It panics for invalid input.
+func MustDecodeUint64(input string) uint64 {
+	dec, err := DecodeUint64(input)
+	if err != nil {
+		panic(err)
+	}
+	return dec
 }
 
 // EncodeUint64 encodes i as a hex string with 0x prefix.
@@ -122,6 +132,47 @@ func init() {
 	default:
 		panic("weird big.Word size")
 	}
+}
+
+// DecodeBig decodes a hex string with 0x prefix as a quantity.
+// Numbers larger than 256 bits are not accepted.
+func DecodeBig(input string) (*big.Int, error) {
+	raw, err := checkNumber(input)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 64 {
+		return nil, ErrBig256Range
+	}
+	words := make([]big.Word, len(raw)/bigWordNibbles+1)
+	end := len(raw)
+	for i := range words {
+		start := end - bigWordNibbles
+		if start < 0 {
+			start = 0
+		}
+		for ri := start; ri < end; ri++ {
+			nib := decodeNibble(raw[ri])
+			if nib == badNibble {
+				return nil, ErrSyntax
+			}
+			words[i] *= 16
+			words[i] += big.Word(nib)
+		}
+		end = start
+	}
+	dec := new(big.Int).SetBits(words)
+	return dec, nil
+}
+
+// MustDecodeBig decodes a hex string with 0x prefix as a quantity.
+// It panics for invalid input.
+func MustDecodeBig(input string) *big.Int {
+	dec, err := DecodeBig(input)
+	if err != nil {
+		panic(err)
+	}
+	return dec
 }
 
 // EncodeBig encodes bigint as a hex string with 0x prefix.
