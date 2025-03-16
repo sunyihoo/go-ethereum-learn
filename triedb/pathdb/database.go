@@ -193,8 +193,7 @@ type Database struct {
 	isVerkle bool       // Flag if database is used for verkle tree
 	hasher   nodeHasher // Trie node hasher
 
-	config *Config // Configuration for database
-
+	config  *Config                      // Configuration for database
 	diskdb  ethdb.Database               // Persistent storage for matured trie nodes
 	tree    *layerTree                   // The group for all known layers
 	freezer ethdb.ResettableAncientStore // Freezer for storing trie histories, nil possible in tests

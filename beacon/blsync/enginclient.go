@@ -1,4 +1,4 @@
-// Copyright 2024 The go-ethereum Authors
+// Copyright 2023 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -17,135 +17,147 @@
 package blsync
 
 import (
-	"context"
-	"strings"
-	"sync"
-	"time"
+	"testing"
 
-	"github.com/ethereum/go-ethereum/beacon/engine"
-	"github.com/ethereum/go-ethereum/beacon/params"
+	"github.com/ethereum/go-ethereum/beacon/light/request"
+	"github.com/ethereum/go-ethereum/beacon/light/sync"
 	"github.com/ethereum/go-ethereum/beacon/types"
 	"github.com/ethereum/go-ethereum/common"
-	ctypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
+	zrntcommon "github.com/protolambda/zrnt/eth2/beacon/common"
+	"github.com/protolambda/zrnt/eth2/beacon/deneb"
 )
 
-type engineClient struct {
-	config     *params.ClientConfig
-	rpc        *rpc.Client
-	rootCtx    context.Context
-	cancelRoot context.CancelFunc
-	wg         sync.WaitGroup
+var (
+	testServer1 = testServer("testServer1")
+	testServer2 = testServer("testServer2")
+
+	testBlock1 = types.NewBeaconBlock(&deneb.BeaconBlock{
+		Slot: 123,
+		Body: deneb.BeaconBlockBody{
+			ExecutionPayload: deneb.ExecutionPayload{
+				BlockNumber: 456,
+				BlockHash:   zrntcommon.Hash32(common.HexToHash("905ac721c4058d9ed40b27b6b9c1bdd10d4333e4f3d9769100bf9dfb80e5d1f6")),
+			},
+		},
+	})
+	testBlock2 = types.NewBeaconBlock(&deneb.BeaconBlock{
+		Slot: 124,
+		Body: deneb.BeaconBlockBody{
+			ExecutionPayload: deneb.ExecutionPayload{
+				BlockNumber: 457,
+				BlockHash:   zrntcommon.Hash32(common.HexToHash("011703f39c664efc1c6cf5f49ca09b595581eec572d4dfddd3d6179a9e63e655")),
+			},
+		},
+	})
+)
+
+type testServer string
+
+func (t testServer) Name() string {
+	return string(t)
 }
 
-func startEngineClient(config *params.ClientConfig, rpc *rpc.Client, headCh <-chan types.ChainHeadEvent) *engineClient {
-	ctx, cancel := context.WithCancel(context.Background())
-	ec := &engineClient{
-		config:     config,
-		rpc:        rpc,
-		rootCtx:    ctx,
-		cancelRoot: cancel,
-	}
-	ec.wg.Add(1)
-	go ec.updateLoop(headCh)
-	return ec
-}
+func TestBlockSync(t *testing.T) {
+	ht := &testHeadTracker{}
+	blockSync := newBeaconBlockSync(ht)
+	headCh := make(chan types.ChainHeadEvent, 16)
+	blockSync.SubscribeChainHead(headCh)
+	ts := sync.NewTestScheduler(t, blockSync)
+	ts.AddServer(testServer1, 1)
+	ts.AddServer(testServer2, 1)
 
-func (ec *engineClient) stop() {
-	ec.cancelRoot()
-	ec.wg.Wait()
-}
-
-func (ec *engineClient) updateLoop(headCh <-chan types.ChainHeadEvent) {
-	defer ec.wg.Done()
-
-	for {
+	expHeadBlock := func(expHead *types.BeaconBlock) {
+		t.Helper()
+		var expNumber, headNumber uint64
+		if expHead != nil {
+			p, err := expHead.ExecutionPayload()
+			if err != nil {
+				t.Fatalf("expHead.ExecutionPayload() failed: %v", err)
+			}
+			expNumber = p.NumberU64()
+		}
 		select {
-		case <-ec.rootCtx.Done():
-			log.Debug("Stopping engine API update loop")
-			return
-
 		case event := <-headCh:
-			if ec.rpc == nil { // dry run, no engine API specified
-				log.Info("New execution block retrieved", "number", event.Block.NumberU64(), "hash", event.Block.Hash(), "finalized", event.Finalized)
-				continue
-			}
-
-			fork := ec.config.ForkAtEpoch(event.BeaconHead.Epoch())
-			forkName := strings.ToLower(fork.Name)
-
-			log.Debug("Calling NewPayload", "number", event.Block.NumberU64(), "hash", event.Block.Hash())
-			if status, err := ec.callNewPayload(forkName, event); err == nil {
-				log.Info("Successful NewPayload", "number", event.Block.NumberU64(), "hash", event.Block.Hash(), "status", status)
-			} else {
-				log.Error("Failed NewPayload", "number", event.Block.NumberU64(), "hash", event.Block.Hash(), "error", err)
-			}
-
-			log.Debug("Calling ForkchoiceUpdated", "head", event.Block.Hash())
-			if status, err := ec.callForkchoiceUpdated(forkName, event); err == nil {
-				log.Info("Successful ForkchoiceUpdated", "head", event.Block.Hash(), "status", status)
-			} else {
-				log.Error("Failed ForkchoiceUpdated", "head", event.Block.Hash(), "error", err)
-			}
+			headNumber = event.Block.NumberU64()
+		default:
+		}
+		if headNumber != expNumber {
+			t.Errorf("Wrong head block, expected block number %d, got %d)", expNumber, headNumber)
 		}
 	}
+
+	// no block requests expected until head tracker knows about a head
+	ts.Run(1)
+	expHeadBlock(nil)
+
+	// set block 1 as prefetch head, announced by server 2
+	head1 := blockHeadInfo(testBlock1)
+	ht.prefetch = head1
+	ts.ServerEvent(sync.EvNewHead, testServer2, head1)
+
+	// expect request to server 2 which has announced the head
+	ts.Run(2, testServer2, sync.ReqBeaconBlock(head1.BlockRoot))
+
+	// valid response
+	ts.RequestEvent(request.EvResponse, ts.Request(2, 1), testBlock1)
+	ts.AddAllowance(testServer2, 1)
+	ts.Run(3)
+	// head block still not expected as the fetched block is not the validated head yet
+	expHeadBlock(nil)
+
+	// set as validated head, expect no further requests but block 1 set as head block
+	ht.validated.Header = testBlock1.Header()
+	ts.Run(4)
+	expHeadBlock(testBlock1)
+
+	// set block 2 as prefetch head, announced by server 1
+	head2 := blockHeadInfo(testBlock2)
+	ht.prefetch = head2
+	ts.ServerEvent(sync.EvNewHead, testServer1, head2)
+	// expect request to server 1
+	ts.Run(5, testServer1, sync.ReqBeaconBlock(head2.BlockRoot))
+
+	// req2 fails, no further requests expected because server 2 has not announced it
+	ts.RequestEvent(request.EvFail, ts.Request(5, 1), nil)
+	ts.Run(6)
+
+	// set as validated head before retrieving block; now it's assumed to be available from server 2 too
+	ht.validated.Header = testBlock2.Header()
+	// expect req2 retry to server 2
+	ts.Run(7, testServer2, sync.ReqBeaconBlock(head2.BlockRoot))
+	// now head block should be unavailable again
+	expHeadBlock(nil)
+
+	// valid response, now head block should be block 2 immediately as it is already validated
+	ts.RequestEvent(request.EvResponse, ts.Request(7, 1), testBlock2)
+	ts.Run(8)
+	expHeadBlock(testBlock2)
 }
 
-func (ec *engineClient) callNewPayload(fork string, event types.ChainHeadEvent) (string, error) {
-	execData := engine.BlockToExecutableData(event.Block, nil, nil, nil).ExecutionPayload
-
-	var (
-		method string
-		params = []any{execData}
-	)
-	switch fork {
-	case "deneb":
-		method = "engine_newPayloadV3"
-		parentBeaconRoot := event.BeaconHead.ParentRoot
-		blobHashes := collectBlobHashes(event.Block)
-		params = append(params, blobHashes, parentBeaconRoot)
-	case "capella":
-		method = "engine_newPayloadV2"
-	default:
-		method = "engine_newPayloadV1"
-	}
-
-	ctx, cancel := context.WithTimeout(ec.rootCtx, time.Second*5)
-	defer cancel()
-	var resp engine.PayloadStatusV1
-	err := ec.rpc.CallContext(ctx, &resp, method, params...)
-	return resp.Status, err
+type testHeadTracker struct {
+	prefetch  types.HeadInfo
+	validated types.SignedHeader
 }
 
-func collectBlobHashes(b *ctypes.Block) []common.Hash {
-	list := make([]common.Hash, 0)
-	for _, tx := range b.Transactions() {
-		list = append(list, tx.BlobHashes()...)
-	}
-	return list
+func (h *testHeadTracker) PrefetchHead() types.HeadInfo {
+	return h.prefetch
 }
 
-func (ec *engineClient) callForkchoiceUpdated(fork string, event types.ChainHeadEvent) (string, error) {
-	update := engine.ForkchoiceStateV1{
-		HeadBlockHash:      event.Block.Hash(),
-		SafeBlockHash:      event.Finalized,
-		FinalizedBlockHash: event.Finalized,
-	}
+func (h *testHeadTracker) ValidatedOptimistic() (types.OptimisticUpdate, bool) {
+	return types.OptimisticUpdate{
+		Attested:      types.HeaderWithExecProof{Header: h.validated.Header},
+		Signature:     h.validated.Signature,
+		SignatureSlot: h.validated.SignatureSlot,
+	}, h.validated.Header != (types.Header{})
+}
 
-	var method string
-	switch fork {
-	case "deneb":
-		method = "engine_forkchoiceUpdatedV3"
-	case "capella":
-		method = "engine_forkchoiceUpdatedV2"
-	default:
-		method = "engine_forkchoiceUpdatedV1"
-	}
-
-	ctx, cancel := context.WithTimeout(ec.rootCtx, time.Second*5)
-	defer cancel()
-	var resp engine.ForkChoiceResponse
-	err := ec.rpc.CallContext(ctx, &resp, method, update, nil)
-	return resp.PayloadStatus.Status, err
+// TODO add test case for finality
+func (h *testHeadTracker) ValidatedFinality() (types.FinalityUpdate, bool) {
+	finalized := types.NewExecutionHeader(new(deneb.ExecutionPayloadHeader))
+	return types.FinalityUpdate{
+		Attested:      types.HeaderWithExecProof{Header: h.validated.Header},
+		Finalized:     types.HeaderWithExecProof{PayloadHeader: finalized},
+		Signature:     h.validated.Signature,
+		SignatureSlot: h.validated.SignatureSlot,
+	}, h.validated.Header != (types.Header{})
 }

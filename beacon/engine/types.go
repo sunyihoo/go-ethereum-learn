@@ -129,17 +129,17 @@ type executionPayloadEnvelopeMarshaling struct {
 	Requests   []hexutil.Bytes
 }
 
-type TransitionConfigurationV1 struct {
-	TerminalTotalDifficulty *hexutil.Big   `json:"terminalTotalDifficulty"`
-	TerminalBlockHash       common.Hash    `json:"terminalBlockHash"`
-	TerminalBlockNumber     hexutil.Uint64 `json:"terminalBlockNumber"`
-}
-
 type PayloadStatusV1 struct {
 	Status          string         `json:"status"`
 	Witness         *hexutil.Bytes `json:"witness"`
 	LatestValidHash *common.Hash   `json:"latestValidHash"`
 	ValidationError *string        `json:"validationError"`
+}
+
+type TransitionConfigurationV1 struct {
+	TerminalTotalDifficulty *hexutil.Big   `json:"terminalTotalDifficulty"`
+	TerminalBlockHash       common.Hash    `json:"terminalBlockHash"`
+	TerminalBlockNumber     hexutil.Uint64 `json:"terminalBlockNumber"`
 }
 
 // PayloadID is an identifier of the payload build process

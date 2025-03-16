@@ -117,6 +117,7 @@ func (dl *diskLayer) node(owner common.Hash, path []byte, depth int) ([]byte, co
 	// Try to retrieve the trie node from the clean memory cache
 	h := newHasher()
 	defer h.release()
+
 	key := nodeCacheKey(owner, path)
 	if dl.nodes != nil {
 		if blob := dl.nodes.Get(nil, key); len(blob) > 0 {
