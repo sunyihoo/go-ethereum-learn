@@ -52,6 +52,7 @@ type wsConfig struct {
 	prefix  string // path prefix on which to mount ws handler
 	rpcEndpointConfig
 }
+
 type rpcEndpointConfig struct {
 	jwtSecret              []byte // optional JWT secret
 	batchItemLimit         int
@@ -156,7 +157,6 @@ func (h *httpServer) start() error {
 		h.disableWS()
 		return err
 	}
-
 	h.listener = listener
 	go h.server.Serve(listener)
 
@@ -309,7 +309,6 @@ func (h *httpServer) enableRPC(apis []rpc.API, config httpConfig) error {
 	if config.httpBodyLimit > 0 {
 		srv.SetHTTPBodyLimit(config.httpBodyLimit)
 	}
-
 	if err := RegisterApis(apis, config.Modules, srv); err != nil {
 		return err
 	}

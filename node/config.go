@@ -228,6 +228,7 @@ func (c *Config) IPCEndpoint() string {
 		}
 		return `\\.\pipe\` + c.IPCPath
 	}
+	// Resolve names into the data directory full paths otherwise
 	if filepath.Base(c.IPCPath) == c.IPCPath {
 		if c.DataDir == "" {
 			return filepath.Join(os.TempDir(), c.IPCPath)
@@ -339,7 +340,6 @@ func (c *Config) ResolvePath(path string) string {
 	if c.DataDir == "" {
 		return ""
 	}
-
 	// Backwards-compatibility: ensure that data directory files created
 	// by geth 1.4 are used if they exist.
 	if warn, isOld := isOldGethResource[path]; isOld {
@@ -350,7 +350,7 @@ func (c *Config) ResolvePath(path string) string {
 		if oldpath != "" && common.FileExist(oldpath) {
 			if warn && !c.oldGethResourceWarning {
 				c.oldGethResourceWarning = true
-				log.Warn("Using deprecated resource file, please move this file to the 'geth'  subdirectory of datadir.", "file", oldpath)
+				log.Warn("Using deprecated resource file, please move this file to the 'geth' subdirectory of datadir.", "file", oldpath)
 			}
 			return oldpath
 		}
@@ -391,10 +391,10 @@ func (c *Config) NodeKey() *ecdsa.PrivateKey {
 	if err != nil {
 		log.Crit(fmt.Sprintf("Failed to generate node key: %v", err))
 	}
-
 	instanceDir := filepath.Join(c.DataDir, c.name())
 	if err := os.MkdirAll(instanceDir, 0700); err != nil {
 		log.Error(fmt.Sprintf("Failed to persist node key: %v", err))
+		return key
 	}
 	keyfile = filepath.Join(instanceDir, datadirPrivateKey)
 	if err := crypto.SaveECDSA(keyfile, key); err != nil {
