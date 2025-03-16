@@ -105,8 +105,8 @@ type handler struct {
 	database ethdb.Database
 	txpool   txPool
 	chain    *core.BlockChain
+	maxPeers int
 
-	maxPeers   int
 	downloader *downloader.Downloader
 	txFetcher  *fetcher.TxFetcher
 	peers      *peerSet

@@ -374,7 +374,6 @@ func (s *skeleton) sync(head *types.Header) (*types.Header, error) {
 	if linked {
 		s.filler.resume()
 	}
-
 	defer func() {
 		// The filler needs to be suspended, but since it can block for a while
 		// when there are many blocks queued up for full-sync importing, run it

@@ -105,6 +105,7 @@ func (p *Peer) announceTransactions() {
 		failed bool                  // Flag whether a send failed, discard everything onward
 	)
 	for {
+		// If there's no in-flight announce running, check if a new one is needed
 		if done == nil && len(queue) > 0 {
 			// Pile transaction hashes until we reach our allowed network limit
 			var (

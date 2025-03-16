@@ -19,7 +19,7 @@ package ethconfig
 import "fmt"
 
 // SyncMode represents the synchronisation mode of the downloader.
-// It is an uint32 as it is used with atomic operations.
+// It is a uint32 as it is used with atomic operations.
 type SyncMode uint32
 
 const (
@@ -61,7 +61,7 @@ func (mode *SyncMode) UnmarshalText(text []byte) error {
 	case "snap":
 		*mode = SnapSync
 	default:
-		return fmt.Errorf(`unknown sync mode %s, want "full" or "snap"`, string(text))
+		return fmt.Errorf(`unknown sync mode %q, want "full" or "snap"`, text)
 	}
 	return nil
 }

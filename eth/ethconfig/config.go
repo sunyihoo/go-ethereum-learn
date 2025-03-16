@@ -82,15 +82,15 @@ type Config struct {
 	SyncMode  SyncMode
 
 	// This can be set to list of enrtree:// URLs which will be queried for
-	//	nodes to connect to.
+	// nodes to connect to.
 	EthDiscoveryURLs  []string
 	SnapDiscoveryURLs []string
 
-	// State options
+	// State options.
 	NoPruning  bool // Whether to disable pruning and flush everything to disk
 	NoPrefetch bool // Whether to disable prefetching and only load state on demand
 
-	// Deprecated: use 'TransactionHistory' instead
+	// Deprecated: use 'TransactionHistory' instead.
 	TxLookupLimit uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
 
 	TransactionHistory uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
@@ -131,7 +131,7 @@ type Config struct {
 	// Gas Price Oracle options
 	GPO gasprice.Config
 
-	// Enable tracking if SHA3 preimage in the VM
+	// Enables tracking of SHA3 preimages in the VM
 	EnablePreimageRecording bool
 
 	// Enables VM tracing
@@ -145,7 +145,7 @@ type Config struct {
 	RPCEVMTimeout time.Duration
 
 	// RPCTxFeeCap is the global transaction fee(price * gaslimit) cap for
-	// send-transaction variants. The uint is ether.
+	// send-transaction variants. The unit is ether.
 	RPCTxFeeCap float64
 
 	// OverrideCancun (TODO: remove after the fork)
@@ -163,7 +163,7 @@ func CreateConsensusEngine(config *params.ChainConfig, db ethdb.Database) (conse
 		log.Error("Geth only supports PoS networks. Please transition legacy networks using Geth v1.13.x.")
 		return nil, fmt.Errorf("'terminalTotalDifficulty' is not set in genesis block")
 	}
-	//Wrap previously supported consensus engines into their post-merge counterpart
+	// Wrap previously supported consensus engines into their post-merge counterpart
 	if config.Clique != nil {
 		return beacon.New(clique.New(config.Clique, db)), nil
 	}
