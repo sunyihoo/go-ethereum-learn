@@ -18,6 +18,7 @@ package trie
 
 import (
 	"bytes"
+	"container/heap"
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -62,6 +63,12 @@ func (it *Iterator) Next() bool {
 	it.Value = nil
 	it.Err = it.nodeIt.Error()
 	return false
+}
+
+// Prove generates the Merkle proof for the leaf node the iterator is currently
+// positioned on.
+func (it *Iterator) Prove() [][]byte {
+	return it.nodeIt.LeafProof()
 }
 
 // NodeIterator is an iterator to traverse the trie pre-order.
@@ -713,4 +720,119 @@ func (it *differenceIterator) Error() error {
 		return err
 	}
 	return it.b.Error()
+}
+
+type nodeIteratorHeap []NodeIterator
+
+func (h nodeIteratorHeap) Len() int            { return len(h) }
+func (h nodeIteratorHeap) Less(i, j int) bool  { return compareNodes(h[i], h[j]) < 0 }
+func (h nodeIteratorHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *nodeIteratorHeap) Push(x interface{}) { *h = append(*h, x.(NodeIterator)) }
+func (h *nodeIteratorHeap) Pop() interface{} {
+	n := len(*h)
+	x := (*h)[n-1]
+	*h = (*h)[0 : n-1]
+	return x
+}
+
+type unionIterator struct {
+	items *nodeIteratorHeap // Nodes returned are the union of the ones in these iterators
+	count int               // Number of nodes scanned across all tries
+}
+
+// NewUnionIterator constructs a NodeIterator that iterates over elements in the union
+// of the provided NodeIterators. Returns the iterator, and a pointer to an integer
+// recording the number of nodes visited.
+func NewUnionIterator(iters []NodeIterator) (NodeIterator, *int) {
+	h := make(nodeIteratorHeap, len(iters))
+	copy(h, iters)
+	heap.Init(&h)
+
+	ui := &unionIterator{items: &h}
+	return ui, &ui.count
+}
+
+func (it *unionIterator) Hash() common.Hash {
+	return (*it.items)[0].Hash()
+}
+
+func (it *unionIterator) Parent() common.Hash {
+	return (*it.items)[0].Parent()
+}
+
+func (it *unionIterator) Leaf() bool {
+	return (*it.items)[0].Leaf()
+}
+
+func (it *unionIterator) LeafKey() []byte {
+	return (*it.items)[0].LeafKey()
+}
+
+func (it *unionIterator) LeafBlob() []byte {
+	return (*it.items)[0].LeafBlob()
+}
+
+func (it *unionIterator) LeafProof() [][]byte {
+	return (*it.items)[0].LeafProof()
+}
+
+func (it *unionIterator) Path() []byte {
+	return (*it.items)[0].Path()
+}
+
+func (it *unionIterator) NodeBlob() []byte {
+	return (*it.items)[0].NodeBlob()
+}
+
+func (it *unionIterator) AddResolver(resolver NodeResolver) {
+	panic("not implemented")
+}
+
+// Next returns the next node in the union of tries being iterated over.
+//
+// It does this by maintaining a heap of iterators, sorted by the iteration
+// order of their next elements, with one entry for each source trie. Each
+// time Next() is called, it takes the least element from the heap to return,
+// advancing any other iterators that also point to that same element. These
+// iterators are called with descend=false, since we know that any nodes under
+// these nodes will also be duplicates, found in the currently selected iterator.
+// Whenever an iterator is advanced, it is pushed back into the heap if it still
+// has elements remaining.
+//
+// In the case that descend=false - eg, we're asked to ignore all subnodes of the
+// current node - we also advance any iterators in the heap that have the current
+// path as a prefix.
+func (it *unionIterator) Next(descend bool) bool {
+	if len(*it.items) == 0 {
+		return false
+	}
+
+	// Get the next key from the union
+	least := heap.Pop(it.items).(NodeIterator)
+
+	// Skip over other nodes as long as they're identical, or, if we're not descending, as
+	// long as they have the same prefix as the current node.
+	for len(*it.items) > 0 && ((!descend && bytes.HasPrefix((*it.items)[0].Path(), least.Path())) || compareNodes(least, (*it.items)[0]) == 0) {
+		skipped := heap.Pop(it.items).(NodeIterator)
+		// Skip the whole subtree if the nodes have hashes; otherwise just skip this node
+		if skipped.Next(skipped.Hash() == common.Hash{}) {
+			it.count++
+			// If there are more elements, push the iterator back on the heap
+			heap.Push(it.items, skipped)
+		}
+	}
+	if least.Next(descend) {
+		it.count++
+		heap.Push(it.items, least)
+	}
+	return len(*it.items) > 0
+}
+
+func (it *unionIterator) Error() error {
+	for i := 0; i < len(*it.items); i++ {
+		if err := (*it.items)[i].Error(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

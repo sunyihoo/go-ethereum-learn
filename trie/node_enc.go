@@ -16,7 +16,9 @@
 
 package trie
 
-import "github.com/ethereum/go-ethereum/rlp"
+import (
+	"github.com/ethereum/go-ethereum/rlp"
+)
 
 func nodeToBytes(n node) []byte {
 	w := rlp.NewEncoderBuffer(nil)

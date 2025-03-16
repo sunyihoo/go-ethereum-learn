@@ -85,6 +85,13 @@ func (t *tracer) onDelete(path []byte) {
 	t.deletes[string(path)] = struct{}{}
 }
 
+// reset clears the content tracked by tracer.
+func (t *tracer) reset() {
+	t.inserts = make(map[string]struct{})
+	t.deletes = make(map[string]struct{})
+	t.accessList = make(map[string][]byte)
+}
+
 // copy returns a deep copied tracer instance.
 func (t *tracer) copy() *tracer {
 	accessList := make(map[string][]byte, len(t.accessList))

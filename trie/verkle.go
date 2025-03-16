@@ -68,6 +68,7 @@ func NewVerkleTrie(root common.Hash, db database.NodeDatabase, cache *utils.Poin
 		reader: reader,
 	}, nil
 }
+
 func (t *VerkleTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
 	return t.reader.node(path, common.Hash{})
 }

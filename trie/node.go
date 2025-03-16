@@ -51,6 +51,13 @@ type (
 // unset children need to serialize correctly.
 var nilValueNode = valueNode(nil)
 
+// EncodeRLP encodes a full node into the consensus RLP format.
+func (n *fullNode) EncodeRLP(w io.Writer) error {
+	eb := rlp.NewEncoderBuffer(w)
+	n.encode(eb)
+	return eb.Flush()
+}
+
 func (n *fullNode) copy() *fullNode   { copy := *n; return &copy }
 func (n *shortNode) copy() *shortNode { copy := *n; return &copy }
 

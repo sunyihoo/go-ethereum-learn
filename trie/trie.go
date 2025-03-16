@@ -192,6 +192,16 @@ func (t *Trie) get(origNode node, key []byte, pos int) (value []byte, newnode no
 	}
 }
 
+// MustGetNode is a wrapper of GetNode and will omit any encountered error but
+// just print out an error message.
+func (t *Trie) MustGetNode(path []byte) ([]byte, int) {
+	item, resolved, err := t.GetNode(path)
+	if err != nil {
+		log.Error("Unhandled trie error in Trie.GetNode", "err", err)
+	}
+	return item, resolved
+}
+
 // GetNode retrieves a trie node by compact-encoded path. It is not possible
 // to use keybyte-encoding as the path might contain odd nibbles.
 //
@@ -666,4 +676,14 @@ func (t *Trie) Witness() map[string]struct{} {
 		witness[string(node)] = struct{}{}
 	}
 	return witness
+}
+
+// Reset drops the referenced root node and cleans all internal state.
+func (t *Trie) Reset() {
+	t.root = nil
+	t.owner = common.Hash{}
+	t.unhashed = 0
+	t.uncommitted = 0
+	t.tracer.reset()
+	t.committed = false
 }
