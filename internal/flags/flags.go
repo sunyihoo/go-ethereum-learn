@@ -45,6 +45,14 @@ func (s *DirectoryString) Set(value string) error {
 	return nil
 }
 
+var (
+	_ cli.Flag              = (*DirectoryFlag)(nil)
+	_ cli.RequiredFlag      = (*DirectoryFlag)(nil)
+	_ cli.VisibleFlag       = (*DirectoryFlag)(nil)
+	_ cli.DocGenerationFlag = (*DirectoryFlag)(nil)
+	_ cli.CategorizableFlag = (*DirectoryFlag)(nil)
+)
+
 // DirectoryFlag is custom cli.Flag type which expand the received string to an absolute path.
 // e.g. ~/.ethereum -> /home/username/.ethereum
 type DirectoryFlag struct {
@@ -114,11 +122,11 @@ func (f *DirectoryFlag) GetDefaultText() string {
 }
 
 var (
-	_ cli.Flag = (*BigFlag)(nil)
-	//_ cli.RequiredFlag      = (*BigFlag)(nil)
-	//_ cli.VisibleFlag       = (*BigFlag)(nil)
-	//_ cli.DocGenerationFlag = (*BigFlag)(nil)
-	//_ cli.CategorizableFlag = (*BigFlag)(nil)
+	_ cli.Flag              = (*BigFlag)(nil)
+	_ cli.RequiredFlag      = (*BigFlag)(nil)
+	_ cli.VisibleFlag       = (*BigFlag)(nil)
+	_ cli.DocGenerationFlag = (*BigFlag)(nil)
+	_ cli.CategorizableFlag = (*BigFlag)(nil)
 )
 
 // BigFlag is a command line flag that accepts 256 bit big integers in decimal or

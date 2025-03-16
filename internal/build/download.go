@@ -38,7 +38,7 @@ type ChecksumDB struct {
 func MustLoadChecksums(file string) *ChecksumDB {
 	content, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatal("can't load checksum file: ", file)
+		log.Fatal("can't load checksum file: " + err.Error())
 	}
 	return &ChecksumDB{strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")}
 }
@@ -75,7 +75,7 @@ func (db *ChecksumDB) findHash(basename, hash string) bool {
 // DownloadFile downloads a file and verifies its checksum.
 func (db *ChecksumDB) DownloadFile(url, dstPath string) error {
 	if err := db.Verify(dstPath); err == nil {
-		fmt.Sprintf("%s is up-to-date\n", dstPath)
+		fmt.Printf("%s is up-to-date\n", dstPath)
 		return nil
 	}
 	fmt.Printf("%s is stale\n", dstPath)
@@ -88,7 +88,7 @@ func (db *ChecksumDB) DownloadFile(url, dstPath string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download err: status %d", resp.StatusCode)
+		return fmt.Errorf("download error: status %d", resp.StatusCode)
 	}
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 		return err
@@ -140,7 +140,7 @@ func (w *downloadWriter) Write(buf []byte) (int, error) {
 
 func (w *downloadWriter) Close() error {
 	if w.lastpct > 0 {
-		fmt.Println() // // Finish the progress line.
+		fmt.Println() // Finish the progress line.
 	}
 	flushErr := w.dstBuf.Flush()
 	closeErr := w.file.Close()

@@ -120,5 +120,4 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Service:   NewEthereumAccountAPI(apiBackend.AccountManager()),
 		},
 	}
-	return nil
 }

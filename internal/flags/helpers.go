@@ -66,7 +66,7 @@ var migrationApplied = map[*cli.Command]struct{}{}
 //
 // This function may become unnecessary when https://github.com/urfave/cli/pull/1245 is merged.
 func MigrateGlobalFlags(ctx *cli.Context) {
-	var iterate func(cs []*cli.Command, fn func(command *cli.Command))
+	var iterate func(cs []*cli.Command, fn func(*cli.Command))
 	iterate = func(cs []*cli.Command, fn func(*cli.Command)) {
 		for _, cmd := range cs {
 			if _, ok := migrationApplied[cmd]; ok {

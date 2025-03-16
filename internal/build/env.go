@@ -28,13 +28,13 @@ import (
 
 var (
 	// These flags override values in build env.
-	GitCommitFlag     = flag.String("git-commit", "", "Overrides git commit hash embedded into executables")
-	GitBranchFlag     = flag.String("git-branch", "", "Overrides git branch being built")
-	GitTagFlag        = flag.String("git-tag", "", "Overrides git tag being built")
-	BuildnumFlag      = flag.String("buildnum", "", "Overrides CI build number ")
-	PullRequestFlag   = flag.Bool("pull-request", false, "Overrides pull request status of the build")
-	CronJobFlag       = flag.Bool("cron-job", false, "Overrides cron job status of the build")
-	UbuntuVersionFlag = flag.String("ubuntu", "", "Sets the ubuntu version being built for")
+	GitCommitFlag     = flag.String("git-commit", "", `Overrides git commit hash embedded into executables`)
+	GitBranchFlag     = flag.String("git-branch", "", `Overrides git branch being built`)
+	GitTagFlag        = flag.String("git-tag", "", `Overrides git tag being built`)
+	BuildnumFlag      = flag.String("buildnum", "", `Overrides CI build number`)
+	PullRequestFlag   = flag.Bool("pull-request", false, `Overrides pull request status of the build`)
+	CronJobFlag       = flag.Bool("cron-job", false, `Overrides cron job status of the build`)
+	UbuntuVersionFlag = flag.String("ubuntu", "", `Sets the ubuntu version being built for`)
 )
 
 // Environment contains metadata provided by the build environment.
@@ -50,7 +50,7 @@ type Environment struct {
 }
 
 func (env Environment) String() string {
-	return fmt.Sprintf("%s env (commit:%s date:%s branch:%s tag:%s buildnum:%s pr:%t",
+	return fmt.Sprintf("%s env (commit:%s date:%s branch:%s tag:%s buildnum:%s pr:%t)",
 		env.Name, env.Commit, env.Date, env.Branch, env.Tag, env.Buildnum, env.IsPullRequest)
 }
 
@@ -75,7 +75,7 @@ func Env() Environment {
 			IsPullRequest: os.Getenv("TRAVIS_PULL_REQUEST") != "false",
 			IsCronJob:     os.Getenv("TRAVIS_EVENT_TYPE") == "cron",
 		}
-	case os.Getenv("CI") == "True" && os.Getenv("APPVEROR") == "True":
+	case os.Getenv("CI") == "True" && os.Getenv("APPVEYOR") == "True":
 		commit := os.Getenv("APPVEYOR_PULL_REQUEST_HEAD_COMMIT")
 		if commit == "" {
 			commit = os.Getenv("APPVEYOR_REPO_COMMIT")
@@ -88,7 +88,7 @@ func Env() Environment {
 			Date:          getDate(commit),
 			Branch:        os.Getenv("APPVEYOR_REPO_BRANCH"),
 			Tag:           os.Getenv("APPVEYOR_REPO_TAG_NAME"),
-			Buildnum:      os.Getenv("APPVEYOR_BUILD_NUM"),
+			Buildnum:      os.Getenv("APPVEYOR_BUILD_NUMBER"),
 			IsPullRequest: os.Getenv("APPVEYOR_PULL_REQUEST_NUMBER") != "",
 			IsCronJob:     os.Getenv("APPVEYOR_SCHEDULED_BUILD") == "True",
 		}
@@ -108,10 +108,10 @@ func LocalEnv() Environment {
 		// In this case we are in "detached head" state
 		// see: https://git-scm.com/docs/git-checkout#_detached_head
 		// Additional check required to verify, that file contains commit hash
-		commitRe, _ := regexp.Compile("^([0-9a-f]{40})")
+		commitRe, _ := regexp.Compile("^([0-9a-f]{40})$")
 		if commit := commitRe.FindString(head); commit != "" && env.Commit == "" {
 			env.Commit = commit
-			env.Date = getDate(commit)
+			env.Date = getDate(env.Commit)
 		}
 		return env
 	}
@@ -151,7 +151,7 @@ func getDate(commit string) string {
 
 func applyEnvFlags(env Environment) Environment {
 	if !flag.Parsed() {
-		panic("you need to call flag.Parse before Env ir LocalEnv")
+		panic("you need to call flag.Parse before Env or LocalEnv")
 	}
 	if *GitCommitFlag != "" {
 		env.Commit = *GitCommitFlag

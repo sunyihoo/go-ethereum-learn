@@ -44,7 +44,7 @@ func (g *GoToolchain) Go(command string, args ...string) *exec.Cmd {
 		tool.Env = append(tool.Env, "CGO_ENABLED=1")
 		tool.Env = append(tool.Env, "GOARCH="+g.GOARCH)
 	}
-	if g.GOOS != "" && runtime.GOOS != g.GOOS {
+	if g.GOOS != "" && g.GOOS != runtime.GOOS {
 		tool.Env = append(tool.Env, "GOOS="+g.GOOS)
 	}
 	// Configure C compiler.
@@ -55,7 +55,7 @@ func (g *GoToolchain) Go(command string, args ...string) *exec.Cmd {
 	}
 	// CKZG by default is not portable, append the necessary build flags to make
 	// it not rely on modern CPU instructions and enable linking against.
-	tool.Env = append(tool.Env, "CGO_CFLAGS=-02 -g -D__BLST_PORTABLE__")
+	tool.Env = append(tool.Env, "CGO_CFLAGS=-O2 -g -D__BLST_PORTABLE__")
 
 	return tool
 }
@@ -64,7 +64,7 @@ func (g *GoToolchain) goTool(command string, args ...string) *exec.Cmd {
 	if g.Root == "" {
 		g.Root = runtime.GOROOT()
 	}
-	tool := exec.Command(filepath.Join(g.Root, "bin", "go"), command)
+	tool := exec.Command(filepath.Join(g.Root, "bin", "go"), command) // nolint: gosec
 	tool.Args = append(tool.Args, args...)
 	tool.Env = append(tool.Env, "GOROOT="+g.Root)
 
@@ -176,6 +176,5 @@ func DownloadAndVerifyChecksums(csdb *ChecksumDB) {
 		if err := csdb.DownloadFile(url, dst); err != nil {
 			log.Print(err)
 		}
-		log.Println(url)
 	}
 }
