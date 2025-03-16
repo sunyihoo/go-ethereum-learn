@@ -112,6 +112,12 @@ func DeleteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash com
 	}
 }
 
+// IterateStorageSnapshots returns an iterator for walking the entire storage
+// space of a specific account.
+func IterateStorageSnapshots(db ethdb.Iteratee, accountHash common.Hash) ethdb.Iterator {
+	return NewKeyLengthIterator(db.NewIterator(storageSnapshotsKey(accountHash), nil), len(SnapshotStoragePrefix)+2*common.HashLength)
+}
+
 // ReadSnapshotJournal retrieves the serialized in-memory diff layers saved at
 // the last shutdown. The blob is expected to be max a few 10s of megabytes.
 func ReadSnapshotJournal(db ethdb.KeyValueReader) []byte {
@@ -182,18 +188,18 @@ func WriteSnapshotRecoveryNumber(db ethdb.KeyValueWriter, number uint64) {
 	}
 }
 
-// ReadSnapshotSyncStatus retrieves the serialized sync status saved at shutdown.
-func ReadSnapshotSyncStatus(db ethdb.KeyValueReader) []byte {
-	data, _ := db.Get(snapshotSyncStatusKey)
-	return data
-}
-
 // DeleteSnapshotRecoveryNumber deletes the block number of the last persisted
 // snapshot layer.
 func DeleteSnapshotRecoveryNumber(db ethdb.KeyValueWriter) {
 	if err := db.Delete(snapshotRecoveryKey); err != nil {
 		log.Crit("Failed to remove snapshot recovery number", "err", err)
 	}
+}
+
+// ReadSnapshotSyncStatus retrieves the serialized sync status saved at shutdown.
+func ReadSnapshotSyncStatus(db ethdb.KeyValueReader) []byte {
+	data, _ := db.Get(snapshotSyncStatusKey)
+	return data
 }
 
 // WriteSnapshotSyncStatus stores the serialized sync status to save at shutdown.

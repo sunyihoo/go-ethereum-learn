@@ -88,9 +88,6 @@ func (meta *functionMetadata) stackDelta() int {
 
 // checkInputs checks the current minimum stack (stackMin) against the required inputs
 // of the metadata, and returns an error if the stack is too shallow.
-
-// checkInputs checks the current minimum stack (stackMin) against the required inputs
-// of the metadata, and returns an error if the stack is too shallow.
 func (meta *functionMetadata) checkInputs(stackMin int) error {
 	if int(meta.inputs) > stackMin {
 		return ErrStackUnderflow{stackLen: stackMin, required: int(meta.inputs)}

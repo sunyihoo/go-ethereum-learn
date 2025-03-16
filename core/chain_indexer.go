@@ -183,8 +183,10 @@ func (c *ChainIndexer) Close() error {
 	switch {
 	case len(errs) == 0:
 		return nil
+
 	case len(errs) == 1:
 		return errs[0]
+
 	default:
 		return fmt.Errorf("%v", errs)
 	}
@@ -477,7 +479,6 @@ func (c *ChainIndexer) loadValidSections() {
 func (c *ChainIndexer) setValidSections(sections uint64) {
 	// Set the current number of valid sections in the database
 	var data [8]byte
-
 	binary.BigEndian.PutUint64(data[:], sections)
 	c.indexDb.Put([]byte("count"), data[:])
 

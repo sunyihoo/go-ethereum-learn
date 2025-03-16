@@ -76,6 +76,17 @@ func newChainFreezer(datadir string, namespace string, readonly bool) (*chainFre
 	}, nil
 }
 
+// Close closes the chain freezer instance and terminates the background thread.
+func (f *chainFreezer) Close() error {
+	select {
+	case <-f.quit:
+	default:
+		close(f.quit)
+	}
+	f.wg.Wait()
+	return f.AncientStore.Close()
+}
+
 // readHeadNumber returns the number of chain head block. 0 is returned if the
 // block is unknown or not available yet.
 func (f *chainFreezer) readHeadNumber(db ethdb.KeyValueReader) uint64 {

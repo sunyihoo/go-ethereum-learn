@@ -16,7 +16,9 @@
 
 package vm
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // OpCode is an EVM opcode
 type OpCode byte

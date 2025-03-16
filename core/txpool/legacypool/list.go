@@ -339,6 +339,9 @@ func (l *list) Add(tx *types.Transaction, priceBump uint64) (bool, *types.Transa
 	if l.costcap.Cmp(cost) < 0 {
 		l.costcap = cost
 	}
+	if gas := tx.Gas(); l.gascap < gas {
+		l.gascap = gas
+	}
 	return true, old
 }
 

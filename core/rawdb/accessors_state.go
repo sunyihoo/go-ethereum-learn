@@ -88,6 +88,13 @@ func WriteCode(db ethdb.KeyValueWriter, hash common.Hash, code []byte) {
 	}
 }
 
+// DeleteCode deletes the specified contract code from the database.
+func DeleteCode(db ethdb.KeyValueWriter, hash common.Hash) {
+	if err := db.Delete(codeKey(hash)); err != nil {
+		log.Crit("Failed to delete contract code", "err", err)
+	}
+}
+
 // ReadStateID retrieves the state id with the provided state root.
 func ReadStateID(db ethdb.KeyValueReader, root common.Hash) *uint64 {
 	data, err := db.Get(stateIDKey(root))
@@ -215,6 +222,33 @@ func ReadStateStorageHistory(db ethdb.AncientReaderOp, id uint64) []byte {
 		return nil
 	}
 	return blob
+}
+
+// ReadStateHistory retrieves the state history from database with provided id.
+// Compute the position of state history in freezer by minus one since the id
+// of first state history starts from one(zero for initial state).
+func ReadStateHistory(db ethdb.AncientReaderOp, id uint64) ([]byte, []byte, []byte, []byte, []byte, error) {
+	meta, err := db.Ancient(stateHistoryMeta, id-1)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	accountIndex, err := db.Ancient(stateHistoryAccountIndex, id-1)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	storageIndex, err := db.Ancient(stateHistoryStorageIndex, id-1)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	accountData, err := db.Ancient(stateHistoryAccountData, id-1)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	storageData, err := db.Ancient(stateHistoryStorageData, id-1)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return meta, accountIndex, storageIndex, accountData, storageData, nil
 }
 
 // WriteStateHistory writes the provided state history to database. Compute the

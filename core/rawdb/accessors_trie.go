@@ -147,6 +147,13 @@ func WriteLegacyTrieNode(db ethdb.KeyValueWriter, hash common.Hash, node []byte)
 	}
 }
 
+// DeleteLegacyTrieNode deletes the specified legacy trie node from database.
+func DeleteLegacyTrieNode(db ethdb.KeyValueWriter, hash common.Hash) {
+	if err := db.Delete(hash.Bytes()); err != nil {
+		log.Crit("Failed to delete legacy trie node", "err", err)
+	}
+}
+
 // HasTrieNode checks the trie node presence with the provided node info and
 // the associated node hash.
 func HasTrieNode(db ethdb.KeyValueReader, owner common.Hash, path []byte, hash common.Hash, scheme string) bool {
@@ -211,6 +218,25 @@ func WriteTrieNode(db ethdb.KeyValueWriter, owner common.Hash, path []byte, hash
 			WriteAccountTrieNode(db, path, node)
 		} else {
 			WriteStorageTrieNode(db, owner, path, node)
+		}
+	default:
+		panic(fmt.Sprintf("Unknown scheme %v", scheme))
+	}
+}
+
+// DeleteTrieNode deletes the trie node from database with the provided node info.
+//
+// hash-scheme requires the node hash as the identifier.
+// path-scheme requires the node owner and path as the identifier.
+func DeleteTrieNode(db ethdb.KeyValueWriter, owner common.Hash, path []byte, hash common.Hash, scheme string) {
+	switch scheme {
+	case HashScheme:
+		DeleteLegacyTrieNode(db, hash)
+	case PathScheme:
+		if owner == (common.Hash{}) {
+			DeleteAccountTrieNode(db, path)
+		} else {
+			DeleteStorageTrieNode(db, owner, path)
 		}
 	default:
 		panic(fmt.Sprintf("Unknown scheme %v", scheme))

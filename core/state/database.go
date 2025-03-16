@@ -43,6 +43,7 @@ const (
 	pointCacheSize = 4096
 )
 
+// Database wraps access to tries and contract code.
 type Database interface {
 	// Reader returns a state reader associated with the specified state root.
 	Reader(root common.Hash) (Reader, error)
@@ -177,9 +178,6 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 	// Set up the state snapshot reader if available. This feature
 	// is optional and may be partially useful if it's not fully
 	// generated.
-	// Set up the state snapshot reader if available. This feature
-	// is optional and may be partially useful if it's not fully
-	// generated.
 	if db.snap != nil {
 		// If standalone state snapshot is available (hash scheme),
 		// then construct the legacy snap reader.
@@ -202,6 +200,7 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 		return nil, err
 	}
 	readers = append(readers, tr)
+
 	combined, err := newMultiStateReader(readers...)
 	if err != nil {
 		return nil, err

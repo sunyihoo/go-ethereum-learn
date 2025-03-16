@@ -177,6 +177,13 @@ func ReadHeadHeaderHash(db ethdb.KeyValueReader) common.Hash {
 	return common.BytesToHash(data)
 }
 
+// WriteHeadHeaderHash stores the hash of the current canonical head header.
+func WriteHeadHeaderHash(db ethdb.KeyValueWriter, hash common.Hash) {
+	if err := db.Put(headHeaderKey, hash.Bytes()); err != nil {
+		log.Crit("Failed to store last header's hash", "err", err)
+	}
+}
+
 // ReadHeadBlockHash retrieves the hash of the current canonical head block.
 func ReadHeadBlockHash(db ethdb.KeyValueReader) common.Hash {
 	data, _ := db.Get(headBlockKey)
@@ -190,13 +197,6 @@ func ReadHeadBlockHash(db ethdb.KeyValueReader) common.Hash {
 func WriteHeadBlockHash(db ethdb.KeyValueWriter, hash common.Hash) {
 	if err := db.Put(headBlockKey, hash.Bytes()); err != nil {
 		log.Crit("Failed to store last block's hash", "err", err)
-	}
-}
-
-// WriteHeadHeaderHash stores the hash of the current canonical head header.
-func WriteHeadHeaderHash(db ethdb.KeyValueWriter, hash common.Hash) {
-	if err := db.Put(headHeaderKey, hash.Bytes()); err != nil {
-		log.Crit("Failed to store last header's hash", "err", err)
 	}
 }
 
@@ -889,6 +889,13 @@ func WriteBadBlock(db ethdb.KeyValueStore, block *types.Block) {
 	}
 	if err := db.Put(badBlockKey, data); err != nil {
 		log.Crit("Failed to write bad blocks", "err", err)
+	}
+}
+
+// DeleteBadBlocks deletes all the bad blocks from the database
+func DeleteBadBlocks(db ethdb.KeyValueWriter) {
+	if err := db.Delete(badBlockKey); err != nil {
+		log.Crit("Failed to delete bad blocks", "err", err)
 	}
 }
 

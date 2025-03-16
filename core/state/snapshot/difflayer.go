@@ -84,6 +84,12 @@ func init() {
 	bloomStorageHasherOffset = rand.Intn(25)
 }
 
+// diffLayer represents a collection of modifications made to a state snapshot
+// after running a block on top. It contains one sorted list for the account trie
+// and one-one list for each storage tries.
+//
+// The goal of a diff layer is to act as a journal, tracking recent modifications
+// made to the state, that have not yet graduated into a semi-immutable state.
 type diffLayer struct {
 	origin *diskLayer // Base disk layer to directly use on bloom misses
 	parent snapshot   // Parent snapshot modified by this one, never nil

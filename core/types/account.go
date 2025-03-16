@@ -39,7 +39,7 @@ type Account struct {
 	Balance *big.Int                    `json:"balance" gencodec:"required"`
 	Nonce   uint64                      `json:"nonce,omitempty"`
 
-	//	used in tests
+	// used in tests
 	PrivateKey []byte `json:"secretKey,omitempty"`
 }
 
@@ -58,12 +58,11 @@ type storageJSON common.Hash
 func (h *storageJSON) UnmarshalText(text []byte) error {
 	text = bytes.TrimPrefix(text, []byte("0x"))
 	if len(text) > 64 {
-		return fmt.Errorf("too many hex characters in stroage key/value %q", text)
+		return fmt.Errorf("too many hex characters in storage key/value %q", text)
 	}
-	// todo learn-test there
-	offset := len(h) - len(text)/2
+	offset := len(h) - len(text)/2 // pad on the left
 	if _, err := hex.Decode(h[offset:], text); err != nil {
-		return fmt.Errorf("invalid stroage key/value %q", text)
+		return fmt.Errorf("invalid hex storage key/value %q", text)
 	}
 	return nil
 }
@@ -72,7 +71,7 @@ func (h storageJSON) MarshalText() ([]byte, error) {
 	return hexutil.Bytes(h[:]).MarshalText()
 }
 
-// GenesisAlloc specifies the initial state of a genesis block
+// GenesisAlloc specifies the initial state of a genesis block.
 type GenesisAlloc map[common.Address]Account
 
 func (ga *GenesisAlloc) UnmarshalJSON(data []byte) error {

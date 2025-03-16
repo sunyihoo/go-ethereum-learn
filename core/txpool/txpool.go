@@ -231,6 +231,7 @@ func (p *TxPool) loop(head *types.Header, chain BlockChain) {
 				// being fulfilled and drop the request marker. If it was not,
 				// this is a noop.
 				resetForced = false
+
 			default:
 				// Reset already running, wait until it finishes.
 				//

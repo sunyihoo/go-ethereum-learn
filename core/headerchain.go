@@ -69,8 +69,7 @@ type HeaderChain struct {
 	numberCache *lru.Cache[common.Hash, uint64]   // most recent block numbers
 
 	procInterrupt func() bool
-
-	engine consensus.Engine
+	engine        consensus.Engine
 }
 
 // NewHeaderChain creates a new HeaderChain structure. ProcInterrupt points
@@ -241,7 +240,6 @@ func (hc *HeaderChain) WriteHeaders(headers []*types.Header) (int, error) {
 		log.Debug("Premature abort during headers import")
 		return 0, errors.New("aborted")
 	}
-
 	// Commit to disk!
 	if err := batch.Write(); err != nil {
 		log.Crit("Failed to write headers", "error", err)
