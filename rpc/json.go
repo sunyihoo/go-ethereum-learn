@@ -101,6 +101,11 @@ func (msg *jsonrpcMessage) namespace() string {
 	return before
 }
 
+func (msg *jsonrpcMessage) String() string {
+	b, _ := json.Marshal(msg)
+	return string(b)
+}
+
 func (msg *jsonrpcMessage) errorResponse(err error) *jsonrpcMessage {
 	resp := errorMessage(err)
 	resp.ID = msg.ID

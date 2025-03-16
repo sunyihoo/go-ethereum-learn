@@ -60,6 +60,30 @@ func (fn optionFunc) applyOption(opt *clientConfig) {
 	fn(opt)
 }
 
+// WithWebsocketDialer configures the websocket.Dialer used by the RPC client.
+func WithWebsocketDialer(dialer websocket.Dialer) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.wsDialer = &dialer
+	})
+}
+
+// WithWebsocketMessageSizeLimit configures the websocket message size limit used by the RPC
+// client. Passing a limit of 0 means no limit.
+func WithWebsocketMessageSizeLimit(messageSizeLimit int64) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.wsMessageSizeLimit = &messageSizeLimit
+	})
+}
+
+// WithHeader configures HTTP headers set by the RPC client. Headers set using this option
+// will be used for both HTTP and WebSocket connections.
+func WithHeader(key, value string) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.initHeaders()
+		cfg.httpHeaders.Set(key, value)
+	})
+}
+
 // WithHeaders configures HTTP headers set by the RPC client. Headers set using this
 // option will be used for both HTTP and WebSocket connections.
 func WithHeaders(headers http.Header) ClientOption {
@@ -68,6 +92,13 @@ func WithHeaders(headers http.Header) ClientOption {
 		for k, vs := range headers {
 			cfg.httpHeaders[k] = vs
 		}
+	})
+}
+
+// WithHTTPClient configures the http.Client used by the RPC client.
+func WithHTTPClient(c *http.Client) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.httpClient = c
 	})
 }
 
@@ -89,3 +120,25 @@ func WithHTTPAuth(a HTTPAuth) ClientOption {
 // Usually, HTTPAuth functions will call h.Set("authorization", "...") to add
 // auth information to the request.
 type HTTPAuth func(h http.Header) error
+
+// WithBatchItemLimit changes the maximum number of items allowed in batch requests.
+//
+// Note: this option applies when processing incoming batch requests. It does not affect
+// batch requests sent by the client.
+func WithBatchItemLimit(limit int) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.batchItemLimit = limit
+	})
+}
+
+// WithBatchResponseSizeLimit changes the maximum number of response bytes that can be
+// generated for batch requests. When this limit is reached, further calls in the batch
+// will not be processed.
+//
+// Note: this option applies when processing incoming batch requests. It does not affect
+// batch requests sent by the client.
+func WithBatchResponseSizeLimit(sizeLimit int) ClientOption {
+	return optionFunc(func(cfg *clientConfig) {
+		cfg.batchResponseLimit = sizeLimit
+	})
+}

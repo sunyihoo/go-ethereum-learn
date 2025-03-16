@@ -64,7 +64,6 @@ func NewServer() *Server {
 		httpBodyLimit: defaultBodyLimit,
 	}
 	server.run.Store(true)
-
 	// Register the default service providing meta information about the RPC service such
 	// as the services and methods it offers.
 	rpcService := &RPCService{server}

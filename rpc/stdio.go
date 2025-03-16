@@ -21,8 +21,20 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"time"
 )
+
+// DialStdIO creates a client on stdin/stdout.
+func DialStdIO(ctx context.Context) (*Client, error) {
+	return DialIO(ctx, os.Stdin, os.Stdout)
+}
+
+// DialIO creates a client which uses the given IO channels
+func DialIO(ctx context.Context, in io.Reader, out io.Writer) (*Client, error) {
+	cfg := new(clientConfig)
+	return newClient(ctx, cfg, newClientTransportIO(in, out))
+}
 
 func newClientTransportIO(in io.Reader, out io.Writer) reconnectFunc {
 	return func(context.Context) (ServerCodec, error) {
