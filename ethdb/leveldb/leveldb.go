@@ -41,6 +41,7 @@ const (
 	// degradationWarnInterval specifies how often warning should be printed if the
 	// leveldb database cannot keep up with requested writes.
 	degradationWarnInterval = time.Minute
+
 	// minCache is the minimum amount of memory in megabytes to allocate to leveldb
 	// read and write caching, split half and half.
 	minCache = 16
