@@ -41,6 +41,12 @@ type typekey struct {
 	rlpstruct.Tags
 }
 
+type decoder func(*Stream, reflect.Value) error
+
+type writer func(reflect.Value, *encBuffer) error
+
+var theTC = newTypeCache()
+
 type typeCache struct {
 	cur atomic.Value
 
@@ -54,12 +60,6 @@ func newTypeCache() *typeCache {
 	c.cur.Store(make(map[typekey]*typeinfo))
 	return c
 }
-
-type decoder func(*Stream, reflect.Value) error
-
-type writer func(reflect.Value, *encBuffer) error
-
-var theTC = newTypeCache()
 
 func cachedDecoder(typ reflect.Type) (decoder, error) {
 	info := theTC.info(typ)

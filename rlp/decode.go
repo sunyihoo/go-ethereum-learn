@@ -39,9 +39,8 @@ import (
 var EOL = errors.New("rlp: end of list")
 
 var (
-	ErrExpectedString = errors.New("rlp: expected String or Byte")
-	ErrExpectedList   = errors.New("rlp: expected List")
-
+	ErrExpectedString   = errors.New("rlp: expected String or Byte")
+	ErrExpectedList     = errors.New("rlp: expected List")
 	ErrCanonInt         = errors.New("rlp: non-canonical integer format")
 	ErrCanonSize        = errors.New("rlp: non-canonical size information")
 	ErrElemTooLarge     = errors.New("rlp: element is larger than containing list")
@@ -49,10 +48,9 @@ var (
 	ErrMoreThanOneValue = errors.New("rlp: input contains more than one value")
 
 	// internal errors
-	errNotInList    = errors.New("rlp: call of ListEnd outside of any list")
-	errNotAtEOL     = errors.New("rlp: call of ListEnd not positioned at EOL")
-	errUintOverflow = errors.New("rlp: uint overflow")
-
+	errNotInList     = errors.New("rlp: call of ListEnd outside of any list")
+	errNotAtEOL      = errors.New("rlp: call of ListEnd not positioned at EOL")
+	errUintOverflow  = errors.New("rlp: uint overflow")
 	errNoPointer     = errors.New("rlp: interface given to Decode must be a pointer")
 	errDecodeIntoNil = errors.New("rlp: pointer given to Decode must not be nil")
 	errUint256Large  = errors.New("rlp: value too large for uint256")
@@ -471,36 +469,6 @@ func makeSimplePtrDecoder(etype reflect.Type, etypeinfo *typeinfo) decoder {
 	}
 }
 
-var ifsliceType = reflect.TypeOf([]interface{}{})
-
-func decodeInterface(s *Stream, val reflect.Value) error {
-	if val.Type().NumMethod() != 0 {
-		return fmt.Errorf("rlp: type %v is not RLP-serializable", val.Type())
-	}
-	kind, _, err := s.Kind()
-	if err != nil {
-		return err
-	}
-	if kind == List {
-		slice := reflect.New(ifsliceType).Elem()
-		if err := decodeListSlice(s, slice, decodeInterface); err != nil {
-			return err
-		}
-		val.Set(slice)
-	} else {
-		b, err := s.Bytes()
-		if err != nil {
-			return err
-		}
-		val.Set(reflect.ValueOf(b))
-	}
-	return nil
-}
-
-func decodeDecoder(s *Stream, val reflect.Value) error {
-	return val.Addr().Interface().(Decoder).DecodeRLP(s)
-}
-
 // makeNilPtrDecoder creates a decoder that decodes empty values as nil. Non-empty
 // values are decoded into a value of the element type, just like makePtrDecoder does.
 //
@@ -542,6 +510,36 @@ func makeNilPtrDecoder(etype reflect.Type, etypeinfo *typeinfo, ts rlpstruct.Tag
 		}
 		return err
 	}
+}
+
+var ifsliceType = reflect.TypeOf([]interface{}{})
+
+func decodeInterface(s *Stream, val reflect.Value) error {
+	if val.Type().NumMethod() != 0 {
+		return fmt.Errorf("rlp: type %v is not RLP-serializable", val.Type())
+	}
+	kind, _, err := s.Kind()
+	if err != nil {
+		return err
+	}
+	if kind == List {
+		slice := reflect.New(ifsliceType).Elem()
+		if err := decodeListSlice(s, slice, decodeInterface); err != nil {
+			return err
+		}
+		val.Set(slice)
+	} else {
+		b, err := s.Bytes()
+		if err != nil {
+			return err
+		}
+		val.Set(reflect.ValueOf(b))
+	}
+	return nil
+}
+
+func decodeDecoder(s *Stream, val reflect.Value) error {
+	return val.Addr().Interface().(Decoder).DecodeRLP(s)
 }
 
 // Kind represents the kind of value contained in an RLP stream.
@@ -618,6 +616,16 @@ type Stream struct {
 func NewStream(r io.Reader, inputLimit uint64) *Stream {
 	s := new(Stream)
 	s.Reset(r, inputLimit)
+	return s
+}
+
+// NewListStream creates a new stream that pretends to be positioned
+// at an encoded list of the given length.
+func NewListStream(r io.Reader, len uint64) *Stream {
+	s := new(Stream)
+	s.Reset(r, len)
+	s.kind = List
+	s.size = len
 	return s
 }
 
@@ -703,6 +711,34 @@ func (s *Stream) Raw() ([]byte, error) {
 	return buf, nil
 }
 
+// Uint reads an RLP string of up to 8 bytes and returns its contents
+// as an unsigned integer. If the input does not contain an RLP string, the
+// returned error will be ErrExpectedString.
+//
+// Deprecated: use s.Uint64 instead.
+func (s *Stream) Uint() (uint64, error) {
+	return s.uint(64)
+}
+
+func (s *Stream) Uint64() (uint64, error) {
+	return s.uint(64)
+}
+
+func (s *Stream) Uint32() (uint32, error) {
+	i, err := s.uint(32)
+	return uint32(i), err
+}
+
+func (s *Stream) Uint16() (uint16, error) {
+	i, err := s.uint(16)
+	return uint16(i), err
+}
+
+func (s *Stream) Uint8() (uint8, error) {
+	i, err := s.uint(8)
+	return uint8(i), err
+}
+
 func (s *Stream) uint(maxbits int) (uint64, error) {
 	kind, size, err := s.Kind()
 	if err != nil {
@@ -734,10 +770,6 @@ func (s *Stream) uint(maxbits int) (uint64, error) {
 	default:
 		return 0, ErrExpectedString
 	}
-}
-
-func (s *Stream) Uint64() (uint64, error) {
-	return s.uint(64)
 }
 
 // Bool reads an RLP string of up to 1 byte and returns its contents
@@ -802,6 +834,15 @@ func (s *Stream) ListEnd() error {
 func (s *Stream) MoreDataInList() bool {
 	_, listLimit := s.listLimit()
 	return listLimit > 0
+}
+
+// BigInt decodes an arbitrary-size integer value.
+func (s *Stream) BigInt() (*big.Int, error) {
+	i := new(big.Int)
+	if err := s.decodeBigInt(i); err != nil {
+		return nil, err
+	}
+	return i, nil
 }
 
 func (s *Stream) decodeBigInt(dst *big.Int) error {
