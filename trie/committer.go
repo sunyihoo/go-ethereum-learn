@@ -128,7 +128,6 @@ func (c *committer) commitChildren(path []byte, n *fullNode, parallel bool) [17]
 				wg.Done()
 			}(i)
 		}
-
 	}
 	if parallel {
 		wg.Wait()

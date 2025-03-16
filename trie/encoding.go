@@ -78,6 +78,7 @@ func hexToCompactInPlace(hex []byte) []byte {
 	hex[0] = firstByte
 	return hex[:binLen]
 }
+
 func compactToHex(compact []byte) []byte {
 	if len(compact) == 0 {
 		return compact
