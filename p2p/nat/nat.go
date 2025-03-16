@@ -29,6 +29,8 @@ import (
 	natpmp "github.com/jackpal/go-nat-pmp"
 )
 
+// Interface An implementation of nat.Interface can map local ports to ports
+// accessible from the Internet.
 type Interface interface {
 	// These methods manage a mapping between a port on the local
 	// machine to a port that can be connected to from the internet.
@@ -146,7 +148,7 @@ func (ExtIP) DeleteMapping(string, int, int) error { return nil }
 func Any() Interface {
 	// TODO: attempt to discover whether the local machine has an
 	// Internet-class address. Return ExtIP in this case.
-	return startautodisc("UPnp or NAT-PMP", func() Interface {
+	return startautodisc("UPnP or NAT-PMP", func() Interface {
 		found := make(chan Interface, 2)
 		go func() { found <- discoverUPnP() }()
 		go func() { found <- discoverPMP() }()

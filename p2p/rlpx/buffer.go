@@ -16,7 +16,9 @@
 
 package rlpx
 
-import "io"
+import (
+	"io"
+)
 
 // readBuffer implements buffering for network reads. This type is similar to bufio.Reader,
 // with two crucial differences: the buffer slice is exposed, and the buffer keeps all

@@ -38,13 +38,13 @@ import (
 // separate Msg with a bytes.Reader as Payload for each send.
 type Msg struct {
 	Code       uint64
-	Size       uint32
+	Size       uint32 // Size of the raw payload
 	Payload    io.Reader
 	ReceivedAt time.Time
 
-	meterCap  Cap    // Protocol name and version for egress metering.
-	meterCode uint64 // Message within protocol for egress metering.
-	meterSize uint32 // Compressed message size for ingress metering.
+	meterCap  Cap    // Protocol name and version for egress metering
+	meterCode uint64 // Message within protocol for egress metering
+	meterSize uint32 // Compressed message size for ingress metering
 }
 
 // Decode parses the RLP content of a message into
@@ -86,6 +86,9 @@ type MsgWriter interface {
 	WriteMsg(Msg) error
 }
 
+// MsgReadWriter provides reading and writing of encoded messages.
+// Implementations should ensure that ReadMsg and WriteMsg can be
+// called simultaneously from multiple goroutines.
 type MsgReadWriter interface {
 	MsgReader
 	MsgWriter
@@ -118,7 +121,7 @@ func SendItems(w MsgWriter, msgcode uint64, elems ...interface{}) error {
 // have been read.
 type eofSignal struct {
 	wrapped io.Reader
-	count   uint32
+	count   uint32 // number of bytes left
 	eof     chan<- struct{}
 }
 
@@ -211,8 +214,10 @@ func (p *MsgPipeRW) ReadMsg() (Msg, error) {
 // interrupts any reads from a message payload.
 func (p *MsgPipeRW) Close() error {
 	if p.closed.Swap(true) {
+		// someone else is already closing
 		return nil
 	}
+	close(p.closing)
 	return nil
 }
 

@@ -65,7 +65,7 @@ type protoHandshake struct {
 	ID         []byte // secp256k1 public key
 
 	// Ignore additional fields (for forward compatibility).
-	Rest []rlp.RawValue `rlp:"tail"` // TODO to learn what this?
+	Rest []rlp.RawValue `rlp:"tail"`
 }
 
 // PeerEventType is the type of peer events emitted by a p2p.Server

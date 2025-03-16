@@ -36,7 +36,6 @@ func (h *expHeap) nextExpiry() mclock.AbsTime {
 	return (*h)[0].exp
 }
 
-// todo what is the heap?
 // add adds an item and sets its expiry time.
 func (h *expHeap) add(item string, exp mclock.AbsTime) {
 	heap.Push(h, expItem{item, exp})

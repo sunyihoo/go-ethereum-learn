@@ -45,6 +45,7 @@ import (
 )
 
 const SizeLimit = 300 // maximum encoded size of a node record in bytes
+
 var (
 	ErrInvalidSig     = errors.New("invalid signature on node record")
 	errNotSorted      = errors.New("record key/value pairs are not sorted by key")

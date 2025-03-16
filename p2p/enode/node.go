@@ -38,7 +38,7 @@ type Node struct {
 	r  enr.Record
 	id ID
 
-	// hostname tracks the DNS name of the node
+	// hostname tracks the DNS name of the node.
 	hostname string
 
 	// endpoint information
@@ -308,7 +308,7 @@ func (n ID) String() string {
 
 // GoString returns the Go syntax representation of a ID is a call to HexID.
 func (n ID) GoString() string {
-	return fmt.Sprintf("encode.HexID(\"%x\")", n[:])
+	return fmt.Sprintf("enode.HexID(\"%x\")", n[:])
 }
 
 // TerminalString returns a shortened hex string for terminal logging.

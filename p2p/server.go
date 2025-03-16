@@ -165,7 +165,7 @@ type Config struct {
 	EnableMsgEvents bool
 
 	// Logger is a custom logger to use with the p2p.Server.
-	Logger log.Logger
+	Logger log.Logger `toml:",omitempty"`
 
 	clock mclock.Clock
 }
@@ -213,6 +213,7 @@ type Server struct {
 	// State of run loop and listenLoop.
 	inboundHistory expHeap
 }
+
 type peerOpFunc func(map[enode.ID]*Peer)
 
 type peerDrop struct {
@@ -504,7 +505,6 @@ func (srv *Server) Start() (err error) {
 			return err
 		}
 	}
-
 	if err := srv.setupDiscovery(); err != nil {
 		return err
 	}
@@ -625,6 +625,7 @@ func (srv *Server) setupDialScheduler() {
 		srv.dialsched.addStatic(n)
 	}
 }
+
 func (srv *Server) maxInboundConns() int {
 	return srv.MaxPeers - srv.maxDialedConns()
 }
