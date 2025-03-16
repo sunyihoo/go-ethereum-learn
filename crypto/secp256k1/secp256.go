@@ -45,7 +45,6 @@ import (
 	"unsafe"
 )
 
-// todo learn
 var context *C.secp256k1_context
 
 func init() {
