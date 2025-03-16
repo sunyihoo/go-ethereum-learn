@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.62
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.49.1
+	github.com/cespare/cp v1.1.1
 	github.com/cloudflare/cloudflare-go v0.115.0
 	github.com/cockroachdb/pebble v1.1.4
 	github.com/consensys/gnark-crypto v0.16.0
@@ -24,10 +25,12 @@ require (
 	github.com/ethereum/go-verkle v0.2.2
 	github.com/fatih/color v1.18.0
 	github.com/ferranbt/fastssz v0.1.4
+	github.com/fjl/gencodec v0.1.1
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gballet/go-libpcsclite v0.0.0-20191108122812-4678299bea08
 	github.com/gofrs/flock v0.12.1
 	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/golang/protobuf v1.5.3
 	github.com/golang/snappy v1.0.0
 	github.com/google/gofuzz v1.0.0
 	github.com/google/uuid v1.6.0
@@ -97,14 +100,12 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
-	github.com/fjl/gencodec v0.1.1 // indirect
 	github.com/garslo/gogen v0.0.0-20170306192744-1d203ffc1f61 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
