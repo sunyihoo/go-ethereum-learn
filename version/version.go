@@ -22,3 +22,5 @@ const (
 	Patch = 13         // Patch version component of the current release
 	Meta  = "unstable" // Version metadata to append to the version string
 )
+
+var gitCommit string = "9b68875d68b409eb2efdb68a4b623aaacc10a5b6"
