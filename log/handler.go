@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/big"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -80,6 +81,21 @@ func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	h.wr.Write(buf)
 	h.buf = buf[:0]
 	return nil
+}
+
+// Source returns a Source for the log event.
+// If the Record was created without the necessary information,
+// or if the location is unavailable, it returns a non-nil *Source
+// with zero fields.
+func (h *TerminalHandler) Source(r slog.Record) slog.Value {
+	fs := runtime.CallersFrames([]uintptr{r.PC})
+	f, _ := fs.Next()
+	src := &slog.Source{
+		Function: f.Function,
+		File:     f.File,
+		Line:     f.Line,
+	}
+	return slog.StringValue(fmt.Sprintf("%s:%d", src.File, src.Line))
 }
 
 func (h *TerminalHandler) Enabled(_ context.Context, level slog.Level) bool {

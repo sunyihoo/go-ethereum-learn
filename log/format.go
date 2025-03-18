@@ -61,9 +61,14 @@ func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byt
 	} else {
 		b.WriteString(LevelAlignedString(r.Level))
 	}
+
 	b.WriteString("[")
 	writeTimeTermFormat(b, r.Time)
 	b.WriteString("] ")
+
+	b.WriteString(h.Source(r).String())
+	b.WriteString(" ")
+
 	b.WriteString(msg)
 
 	// try to justify the log output for short messages
