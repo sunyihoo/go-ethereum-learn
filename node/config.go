@@ -457,6 +457,8 @@ func (c *Config) KeyDirConfig() (string, error) {
 
 // GetKeyStoreDir retrieves the key directory and will create
 // and ephemeral one if necessary.
+// 获取用于存储加密密钥的目录（KeyStore 目录）。
+// 如果指定的目录不存在，函数会自动创建一个临时的（ephemeral）目录作为替代。
 func (c *Config) GetKeyStoreDir() (string, bool, error) {
 	keydir, err := c.KeyDirConfig()
 	if err != nil {

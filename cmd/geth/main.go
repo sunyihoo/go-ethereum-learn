@@ -46,7 +46,10 @@ import (
 )
 
 const (
-	clientIdentifier = "geth" // Client identifier to advertise over the network
+	// 这条注释是关于在网络上广播客户端标识符的。具体来说，它指的是在以太坊网络中，客户端（例如节点）会向其他节点广播自己的标识符（identifier），以便其他节点能够识别和区分不同的客户端。
+	//
+	//在以太坊的上下文中，客户端标识符通常包括客户端的名称、版本号、支持的协议版本等信息。这个标识符可以帮助网络中的其他节点了解客户端的类型和能力，从而更好地进行通信和协作
+	clientIdentifier = "geth" // Client identifier to advertise over the network 通过网络播发的客户端标识符
 )
 
 var (
@@ -256,6 +259,7 @@ func init() {
 		debug.Flags,
 		metricsFlags,
 	)
+	// 环境变量前缀
 	flags.AutoEnvVars(app.Flags, "GETH")
 
 	app.Before = func(ctx *cli.Context) error {
@@ -314,6 +318,7 @@ func prepare(ctx *cli.Context) {
 		log.Info("Starting Geth on Ethereum mainnet...")
 	}
 	// If we're a full node on mainnet without --cache specified, bump default cache allowance
+	// 如果我们在主网上作为全节点运行且未指定 --cache 参数，增加默认缓存分配。
 	if !ctx.IsSet(utils.CacheFlag.Name) && !ctx.IsSet(utils.NetworkIdFlag.Name) {
 		// Make sure we're not on any supported preconfigured testnet either
 		if !ctx.IsSet(utils.HoleskyFlag.Name) &&

@@ -130,10 +130,12 @@ func New(conf *Config) (*Node, error) {
 	node.keyDirTemp = isEphem
 	// Creates an empty AccountManager with no backends. Callers (e.g. cmd/geth)
 	// are required to add the backends later on.
+	// 创建一个空的 AccountManager 实例
 	// TODO learn the NewManager
 	node.accman = accounts.NewManager(nil)
 
 	// Initialize the p2p server. This creates the node key and discovery databases.
+	// 初始化 p2p 服务器。这将创建节点密钥和发现数据库。
 	node.server.Config.PrivateKey = node.config.NodeKey()
 	node.server.Config.Name = node.config.NodeName()
 	node.server.Config.Logger = node.log
