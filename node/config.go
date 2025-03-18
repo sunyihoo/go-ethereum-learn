@@ -44,17 +44,27 @@ const (
 // Config represents a small collection of configuration values to fine tune the
 // P2P network layer of a protocol stack. These values can be further extended by
 // all registered services.
+// Config 表示一小部分配置值，用于微调协议栈的 P2P 网络层。
+// 这些值可以被所有注册的服务进一步扩展。
 type Config struct {
+	// 节点身份相关
+
 	// Name sets the instance name of the node. It must not contain the / character and is
 	// used in the devp2p node identifier. The instance name of geth is "geth". If no
 	// value is specified, the basename of the current executable is used.
+	// 节点的实例名称，用于 devp2p 节点标识符。默认为当前可执行文件的名称。
+	// Name 设置节点的实例名称。该名称不能包含 `/` 字符，
+	// 并用于 devp2p 节点标识符。Geth 的实例名称为 "geth"。
+	// 如果未指定值，则使用当前可执行文件的名称。
 	Name string `toml:"-"`
 
 	// UserIdent, if set, is used as an additional component in the devp2p node identifier.
+	// 用户自定义标识符，作为 devp2p 节点标识符的附加组件。
 	UserIdent string `toml:",omitempty"`
 
 	// Version should be set to the version number of the program. It is used
 	// in the devp2p node identifier.
+	// 程序版本号，用于 devp2p 节点标识符。
 	Version string `toml:"-"`
 
 	// DataDir is the file system folder the node should use for any data storage
@@ -62,6 +72,7 @@ type Config struct {
 	// registered services, instead those can use utility methods to create/access
 	// databases or flat files. This enables ephemeral nodes which can fully reside
 	// in memory.
+	// 节点用于数据存储的文件系统目录。注册的服务可以通过工具方法访问或创建数据库或文件。
 	DataDir string
 
 	// Configuration of peer-to-peer networking.
@@ -74,32 +85,40 @@ type Config struct {
 	// If KeyStoreDir is empty, the default location is the "keystore" subdirectory of
 	// DataDir. If DataDir is unspecified and KeyStoreDir is empty, an ephemeral directory
 	// is created by New and destroyed when the node is stopped.
+	// 存储私钥的文件系统目录。如果未指定，则默认为 DataDir 下的 keystore 子目录。
 	KeyStoreDir string `toml:",omitempty"`
 
 	// ExternalSigner specifies an external URI for a clef-type signer.
+	// 外部签名器（如 Clef）的 URI。
 	ExternalSigner string `toml:",omitempty"`
 
 	// UseLightweightKDF lowers the memory and CPU requirements of the key store
 	// scrypt KDF at the expense of security.
+	// 降低密钥存储的安全级别以减少内存和 CPU 使用。
 	UseLightweightKDF bool `toml:",omitempty"`
 
 	// InsecureUnlockAllowed is a deprecated option to  allow users to accounts in unsafe http environment.
+	// 允许在不安全的 HTTP 环境中解锁账户（已弃用）。
 	InsecureUnlockAllowed bool `toml:",omitempty"`
 
 	// NoUSB disables hardware wallet monitoring and connectivity.
 	// Deprecated: USB monitoring is disabled by default and must be enabled explicitly.
+	// 禁用硬件钱包监控和连接（已弃用）。
 	NoUSB bool `toml:",omitempty"`
 
 	// USB enables hardware wallet monitoring and connectivity.
+	// 启用硬件钱包监控和连接。
 	USB bool `toml:",omitempty"`
 
 	// SmartCardDaemonPath is the path to the smartcard daemon's socket.
+	// 智能卡守护程序的套接字路径。
 	SmartCardDaemonPath string `toml:",omitempty"`
 
 	// IPCPath is the requested location to place the IPC endpoint. If the path is
 	// a simple file name, it is placed inside the data directory (or on the root
 	// pipe path on Windows), whereas if it's a resolvable path name (absolute or
 	// relative), then that specific path is enforced. An empty path disables IPC.
+	// IPC 端点的路径。如果为空，则禁用 IPC。
 	IPCPath string
 
 	// HTTPHost is the host interface on which to start the HTTP RPC server. If this
@@ -123,6 +142,7 @@ type Config struct {
 	// By explicitly checking the Host-header, the server will not allow requests
 	// made against the server with a malicious host domain.
 	// Requests using ip address directly are not affected
+	// 允许的虚拟主机名称列表，防止 DNS 劫持攻击。
 	HTTPVirtualHosts []string `toml:",omitempty"`
 
 	// HTTPModules is a list of API modules to expose via the HTTP RPC interface.
@@ -174,6 +194,7 @@ type Config struct {
 	//
 	// *WARNING* Only set this if the node is running in a trusted network, exposing
 	// private APIs to untrusted users is a major security risk.
+	// 是否暴露所有 API 模块（仅适用于受信任的网络）。
 	WSExposeAll bool `toml:",omitempty"`
 
 	// GraphQLCors is the Cross-Origin Resource Sharing header to send to requesting
@@ -196,6 +217,7 @@ type Config struct {
 	oldGethResourceWarning bool
 
 	// AllowUnprotectedTxs allows non EIP-155 protected transactions to be send over RPC.
+	// 允许通过 RPC 发送未受 EIP-155 保护的交易。
 	AllowUnprotectedTxs bool `toml:",omitempty"`
 
 	// BatchRequestLimit is the maximum number of requests in a batch.
@@ -216,6 +238,10 @@ type Config struct {
 // IPCEndpoint resolves an IPC endpoint based on a configured value, taking into
 // account the set data folders as well as the designated platform we're currently
 // running on.
+// IPCEndpoint 根据配置的值解析 IPC 端点，
+// 同时考虑到设置的数据目录以及当前运行的平台。
+// IPC（Inter-Process Communication，进程间通信）是一种允许不同进程之间进行数据交换的机制。
+// 在以太坊节点中，IPC 通常用于本地客户端（如 geth）与其他程序（如钱包或 DApp）之间的通信。
 func (c *Config) IPCEndpoint() string {
 	// Short circuit if IPC has not been enabled
 	if c.IPCPath == "" {
@@ -368,6 +394,9 @@ func (c *Config) instanceDir() string {
 // NodeKey retrieves the currently configured private key of the node, checking
 // first any manually set key, falling back to the one found in the configured
 // data folder. If no key can be found, a new one is generated.
+// NodeKey 获取当前配置的节点私钥，
+// 首先检查是否存在手动设置的密钥，如果未找到则回退到配置的数据目录中的密钥。
+// 如果仍未找到，则生成一个新的密钥。
 func (c *Config) NodeKey() *ecdsa.PrivateKey {
 	// Use any specifically configured key.
 	if c.P2P.PrivateKey != nil {

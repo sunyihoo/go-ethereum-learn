@@ -36,20 +36,25 @@ const (
 	DefaultAuthPort = 8551        // Default port for the authenticated apis
 )
 
+// 这段代码定义了 Engine API 的批处理限制常量，包括批处理项数、批处理响应大小和请求体大小的最大值。
+// 这些限制确保了共识客户端和执行客户端之间的通信是高效且安全的，同时也防止了资源耗尽问题。
+// 这些值是固定且不可配置的，以确保系统的稳定性和一致性。
 const (
 	// Engine API batch limits: these are not configurable by users, and should cover the
 	// needs of all CLs.
-	engineAPIBatchItemLimit         = 2000
-	engineAPIBatchResponseSizeLimit = 250 * 1000 * 1000
-	engineAPIBodyLimit              = 128 * 1024 * 1024
+	//定义了 Engine API 的批处理限制常量，这些常量不可由用户配置，其目的是确保 CLs（共识客户端）的需求得到满足。
+	engineAPIBatchItemLimit         = 2000              // 制单次批处理请求中可包含的最大项数，防止处理过大的批处理请求。
+	engineAPIBatchResponseSizeLimit = 250 * 1000 * 1000 // 250 MB 限制批处理响应的总大小，防止发送或接收过大的响应。
+	engineAPIBodyLimit              = 128 * 1024 * 1024 // 128 MB 限制单次请求体的大小，防止处理过大的请求。
 )
 
+// 这段代码定义了与 认证 API 相关的默认配置变量，用于设置跨域资源共享（CORS）、虚拟主机（Vhosts）、来源（Origins）、API 前缀以及模块的默认值。
 var (
-	DefaultAuthCors    = []string{"localhost"} // Default cors domain for the authenticated apis
-	DefaultAuthVhosts  = []string{"localhost"} // Default virtual hosts for the authenticated apis
-	DefaultAuthOrigins = []string{"localhost"} // Default origins for the authenticated apis
-	DefaultAuthPrefix  = ""                    // Default prefix for the authenticated apis
-	DefaultAuthModules = []string{"eth", "engine"}
+	DefaultAuthCors    = []string{"localhost"}     // Default cors domain for the authenticated apis 认证 API 的默认跨域资源共享（CORS）域。
+	DefaultAuthVhosts  = []string{"localhost"}     // Default virtual hosts for the authenticated apis 认证 API 的默认虚拟主机（Vhosts）。
+	DefaultAuthOrigins = []string{"localhost"}     // Default origins for the authenticated apis 认证 API 的默认来源（Origins）。
+	DefaultAuthPrefix  = ""                        // Default prefix for the authenticated apis 认证 API 的默认前缀。
+	DefaultAuthModules = []string{"eth", "engine"} // 认证 API 的默认模块列表。
 )
 
 // DefaultConfig contains reasonable default settings.

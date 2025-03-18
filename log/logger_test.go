@@ -24,4 +24,7 @@ func TestLog(t *testing.T) {
 	handlsr := NewTerminalHandler(os.Stderr, false)
 	log = slog.New(handlsr)
 	log.Info("[ E:/Learn/go-ethereum-learn/log/logger_test.go:26 ]")
+	h := NewTerminalHandler(os.Stderr, false)
+	l := NewLogger(h)
+	l.Info("message")
 }
