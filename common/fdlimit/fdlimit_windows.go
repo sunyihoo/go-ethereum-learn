@@ -18,11 +18,16 @@ package fdlimit
 
 import "fmt"
 
+// 文件描述符是操作系统内核用于管理打开文件或资源的抽象标识符。
+// 它通常是一个非负整数，用于在系统级别唯一标识打开的文件、套接字（socket）、管道（pipe）或其他输入/输出资源。
+// 文件描述符是操作系统与应用程序之间的重要接口，用于在程序中进行文件或资源的读写操作。
+
 // hardlimit is the number of file descriptors allowed at max by the kernel.
 const hardlimit = 16384
 
 // Raise tries to maximize the file descriptor allowance of this process
 // to the maximum hard-limit allowed by the OS.
+// 目的是尝试将当前进程的文件描述符（File Descriptor, FD）限制提高到操作系统允许的最大硬限制（hard-limit）。
 func Raise(max uint64) (uint64, error) {
 	// This method is NOP by design:
 	//  * Linux/Darwin counterparts need to manually increase per process limits
