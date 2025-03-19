@@ -52,6 +52,8 @@ func StartHTTPEndpoint(endpoint string, timeouts rpc.HTTPTimeouts, handler http.
 // checkModuleAvailability checks that all names given in modules are actually
 // available API services. It assumes that the MetadataApi module ("rpc") is always available;
 // the registration of this "rpc" module happens in NewServer() and is thus common to all endpoints.
+// 验证用户请求的 API 模块是否确实存在于以太坊节点中。它会遍历用户指定的模块名称列表（modules），
+// 确保每个名称对应的 API 服务已注册。此外，它会确保 "rpc" 模块（元数据 API）始终被包含，因为该模块是 RPC 服务的基础，必须存在。
 func checkModuleAvailability(modules []string, apis []rpc.API) (bad, available []string) {
 	availableSet := make(map[string]struct{})
 	for _, api := range apis {
