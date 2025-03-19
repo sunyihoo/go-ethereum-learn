@@ -25,6 +25,7 @@ import (
 
 // PrettyDuration is a pretty printed version of a time.Duration value that cuts
 // the unnecessary precision off from the formatted textual representation.
+// PrettyDuration 是一个美化后的 time.Duration 值表示形式，它会从格式化后的文本表示中去除不必要的精度。
 type PrettyDuration time.Duration
 
 var prettyDurationRe = regexp.MustCompile(`\.[0-9]{4,}`)

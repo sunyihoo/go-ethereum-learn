@@ -258,21 +258,25 @@ func (a Address) String() string {
 	return a.Hex()
 }
 
+// 这个函数 checksumHex 用于计算以太坊地址的校验和（checksum），并将其应用于地址的十六进制表示中。
 func (a *Address) checksumHex() []byte {
 	buf := a.hex()
 
 	// compute checksum
+	// 使用 Keccak-256 哈希算法计算地址的校验和哈希。
 	sha := sha3.NewLegacyKeccak256()
 	sha.Write(buf[2:])
 	hash := sha.Sum(nil)
+	// 遍历地址的十六进制字符，并根据哈希值决定是否需要将字符转换为大写。
+	// 从索引 2 开始（跳过前缀 0x），遍历到 buf 的末尾
 	for i := 2; i < len(buf); i++ {
-		hashByte := hash[(i-2)/2]
-		if i%2 == 0 {
-			hashByte = hashByte >> 4
+		hashByte := hash[(i-2)/2] // 从哈希值中提取当前字符对应的字节。
+		if i%2 == 0 {             // 判断当前字符在哈希字节中的位置：
+			hashByte = hashByte >> 4 // 如果是偶数索引，取哈希字节的高 4 位
 		} else {
-			hashByte &= 0xf
+			hashByte &= 0xf // 如果是奇数索引，取哈希字节的低 4 位
 		}
-		if buf[i] > '9' && hashByte > 7 {
+		if buf[i] > '9' && hashByte > 7 { // 如果当前字符是字母（buf[i] > '9'）且哈希字节的值大于 7，则将字符转换为大写（buf[i] -= 32）
 			buf[i] -= 32
 		}
 	}
