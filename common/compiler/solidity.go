@@ -56,6 +56,8 @@ type solcOutputV8 struct {
 //
 // Returns an error if the JSON is malformed or missing data, or if the JSON
 // embedded within the JSON is malformed.
+// 将 solc --combined-output 的直接输出解析为一个映射（map），其中键是合约名称，值是对应的 Contract 结构体。
+// 函数的输入包括 solc 的输出、源代码、语言版本、编译器版本和编译选项，这些信息会被传递到 Contract 结构体中。
 func ParseCombinedJSON(combinedJSON []byte, source string, languageVersion string, compilerVersion string, compilerOptions string) (map[string]*Contract, error) {
 	var output solcOutput
 	if err := json.Unmarshal(combinedJSON, &output); err != nil {
