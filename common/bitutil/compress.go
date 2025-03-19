@@ -54,6 +54,14 @@ var (
 //             len(nonZeroBitset(data)) == (len(data)+7)/8
 //         nonZeroBytes(data) contains the non-zero bytes of data in the same order
 
+// 如果数据全为零，直接返回 nil。
+// 如果数据长度小于等于 1，直接返回原始数据。
+// 否则：
+// 计算 nonZeroBitset(data)，得到非零位向量。
+// 计算 nonZeroBytes(data)，得到非零字节。
+// 递归压缩 nonZeroBitset(data)。
+// 将压缩后的 nonZeroBitset(data) 和 nonZeroBytes(data) 拼接起来，作为最终结果。
+
 // CompressBytes compresses the input byte slice according to the sparse bitset
 // representation algorithm. If the result is bigger than the original input, no
 // compression is done.
@@ -81,13 +89,13 @@ func bitsetEncodeBytes(data []byte) []byte {
 		return data
 	}
 	// Calculate the bitset of set bytes, and gather the non-zero bytes
-	nonZeroBitset := make([]byte, (len(data)+7)/8)
+	nonZeroBitset := make([]byte, (len(data)+7)/8) // 位向量的长度为 (len(data) + 7) / 8，每个位表示一个字节是否为零。
 	nonZeroBytes := make([]byte, 0, len(data))
 
 	for i, b := range data {
 		if b != 0 {
 			nonZeroBytes = append(nonZeroBytes, b)
-			nonZeroBitset[i/8] |= 1 << byte(7-i%8)
+			nonZeroBitset[i/8] |= 1 << byte(7-i%8) // 位的存储是 MSB 优先（最高位优先），第 i 字节是否为非零
 		}
 	}
 	if len(nonZeroBytes) == 0 {

@@ -5,6 +5,7 @@
 // Adapted from: https://go.dev/src/crypto/subtle/xor_generic.go
 
 // Package bitutil implements fast bitwise operations.
+// bitutil 包实现了高效的按位操作。
 package bitutil
 
 import (
@@ -12,11 +13,13 @@ import (
 	"unsafe"
 )
 
-const wordSize = int(unsafe.Sizeof(uintptr(0)))
+const wordSize = int(unsafe.Sizeof(uintptr(0))) // 字的大小
 const supportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64" || runtime.GOARCH == "ppc64" || runtime.GOARCH == "ppc64le" || runtime.GOARCH == "s390x"
 
 // XORBytes xors the bytes in a and b. The destination is assumed to have enough
 // space. Returns the number of bytes xor'd.
+// XORBytes 对 a 和 b 中的字节进行异或操作。假设目标空间足够。
+// 返回异或操作的字节数。
 func XORBytes(dst, a, b []byte) int {
 	if supportsUnaligned {
 		return fastXORBytes(dst, a, b)
