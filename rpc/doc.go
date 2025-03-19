@@ -107,3 +107,49 @@ ClientFromContext method. Using this client instance, server-to-client method ca
 performed on the RPC connection.
 */
 package rpc
+
+// 该包实现了双向的 JSON-RPC 2.0 协议，支持多种传输方式（如 HTTP、WebSocket 等）。
+// 提供了通过网络或其他 I/O 连接访问对象导出方法的能力。
+// 支持服务注册机制，将对象注册为“服务”，使其方法能够被远程调用。
+// 支持发布/订阅（Pub/Sub）模式，用于事件通知和数据推送。
+//
+// RPC 方法
+// 方法必须是导出的（首字母大写）。
+// 方法返回值可以是：无返回值、返回值加错误、或者仅返回值或仅错误。
+// 当返回错误时，客户端会收到错误信息，忽略其他返回值；当没有错误时，返回值会发送给客户端。
+// 支持可选参数，通过指针类型实现。
+//
+// 服务器实现
+// 服务器通过 ServeCodec 方法接受 ServerCodec 实例处理请求和响应。
+// 支持并发处理请求，响应顺序可能与请求顺序不一致。
+//
+// 示例
+// 注册一个 CalculatorService 服务，提供加法和除法方法。
+// 启动服务器并监听 Unix 域套接字 /tmp/calculator.sock。
+//
+// 订阅机制
+//
+// 订阅方法必须是导出的。
+// 第一个参数必须是 context.Context。
+// 返回值必须是 rpc.Subscription 和 error。
+//
+// 示例： NewBlocks(ctx context.Context) (rpc.Subscription, error) 方法用于订阅新区块事件
+//
+// 订阅管理：
+// 订阅通过 subscribe 方法创建，通过 unsubscribe 方法取消。
+// 当连接关闭时，订阅会自动删除。
+//
+// 反向调用
+//
+// 在方法中可以通过 ClientFromContext 获取 rpc.Client 实例。
+// 允许服务器通过 RPC 连接向客户端发起调用。
+//
+//总结
+// rpc 包是 go-ethereum 的核心组件之一，提供了以下功能：
+//
+// 远程方法调用：通过网络调用对象的导出方法。
+// 发布/订阅模式：支持事件驱动的推送机制。
+// 双向通信：支持服务器向客户端发起调用。
+// 灵活的传输支持：通过 ServerCodec 支持多种传输协议。
+// 并发处理：能够高效处理大量并发请求。
+// 这些功能使得 rpc 包成为以太坊节点与客户端之间通信的核心工具，广泛应用于区块链的节点管理、数据同步、事件通知等场景。
