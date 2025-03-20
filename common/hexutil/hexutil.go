@@ -28,6 +28,7 @@ encodes as "0x".
 Integers are encoded using the least amount of digits (no leading zero digits). Their
 encoding may be of uneven length. The number zero encodes as "0x0".
 */
+//该包实现了带有 0x 前缀的十六进制编码，专为以太坊的 RPC API 设计，用于在 JSON 中传输二进制数据。
 package hexutil
 
 import (
@@ -37,7 +38,7 @@ import (
 	"strconv"
 )
 
-const uintBits = 32 << (uint64(^uint(0)) >> 63)
+const uintBits = 32 << (uint64(^uint(0)) >> 63) // uint64(^uint(0)) >> 63 将这个值右移 63 位，实际是检查这个类型是否为 64 位（如果值为 1，则表示是 64 位，否则为 0，表示是 32 位）。
 
 // Errors
 var (
@@ -123,7 +124,10 @@ var bigWordNibbles int
 func init() {
 	// This is a weird way to compute the number of nibbles required for big.Word.
 	// The usual way would be to use constant arithmetic but go vet can't handle that.
-	b, _ := new(big.Int).SetString("FFFFFFFFFF", 16)
+	//这是一个奇怪的方式来计算 big.Word 所需的 nibbles 数量。 nibbles 半字节 nibble 是计算机中的一种基本数据单位，由 4 个二进制位组成。
+	//通常的方法是使用常量算术，但 go vet 无法处理这种情况。
+	// 计算 big.Word 需要的 nibbles 数量
+	b, _ := new(big.Int).SetString("FFFFFFFFFF", 16) // FFFFFFFFFF 是 10 个十六进制字符，每个字符占 4 位,二进制位数为 40 位
 	switch len(b.Bits()) {
 	case 1:
 		bigWordNibbles = 16
@@ -201,7 +205,7 @@ func checkNumber(input string) (raw string, err error) {
 	if len(input) == 0 {
 		return "", ErrEmptyNumber
 	}
-	if len(input) > 1 && input[0] == '0' {
+	if len(input) > 1 && input[0] == '0' { // 以太坊（Ethereum） 中的十六进制数通常要求去掉前导零，以便保证数据的统一性和一致性。
 		return "", ErrLeadingZero
 	}
 	return input, nil
