@@ -33,14 +33,16 @@ import (
 // Account represents an Ethereum account and its attached data.
 // This type is used to specify accounts in the genesis block state, and
 // is also useful for JSON encoding/decoding of accounts.
+// Account 表示一个以太坊账户及其附加数据。
+// 此类型用于指定创世区块状态中的账户，同时也适用于账户的 JSON 编码/解码。
 type Account struct {
-	Code    []byte                      `json:"code,omitempty"`
-	Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
-	Balance *big.Int                    `json:"balance" gencodec:"required"`
-	Nonce   uint64                      `json:"nonce,omitempty"`
+	Code    []byte                      `json:"code,omitempty"`              // 表示账户的智能合约代码。如果这是一个外部账户（EOA），则为空；如果是合约账户，则存储该合约的字节码。
+	Storage map[common.Hash]common.Hash `json:"storage,omitempty"`           // 表示合约账户的存储状态。键是存储槽的哈希，值是存储在该槽中的数据。这是智能合约状态的一部分。
+	Balance *big.Int                    `json:"balance" gencodec:"required"` // 表示账户的余额，以wei为单位（以太坊的最小货币单位）。
+	Nonce   uint64                      `json:"nonce,omitempty"`             // 表示账户的交易计数器（nonce）。对于EOA，它记录该账户发出的交易数量；对于合约账户，通常为0。
 
 	// used in tests
-	PrivateKey []byte `json:"secretKey,omitempty"`
+	PrivateKey []byte `json:"secretKey,omitempty"` // 表示账户的私钥
 }
 
 type accountMarshaling struct {

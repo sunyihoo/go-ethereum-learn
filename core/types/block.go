@@ -37,12 +37,18 @@ import (
 // A BlockNonce is a 64-bit hash which proves (combined with the
 // mix-hash) that a sufficient amount of computation has been carried
 // out on a block.
+// BlockNonce 是一个64位哈希值，它证明（结合 mix-hash）已经对一个区块执行了足够的计算工作。
+// BlockNonce 表示以太坊区块头中的 nonce 字段。nonce是一个64位值，在工作量证明（Proof of Work, PoW）共识机制中用于挖矿。
+// mix-hash 是挖矿过程中生成的中间结果，与 nonce 一起用于验证PoW的有效性。两者结合后，通过哈希函数（在以太坊中是Ethash算法）生成最终的区块哈希。
+// “sufficient amount of computation”: 指的是PoW的难度要求。矿工需要找到一个 nonce，使得区块哈希低于当前网络的难度目标。
 type BlockNonce [8]byte
 
 // EncodeNonce converts the given integer to a block nonce.
+// EncodeNonce 将给定的整数转换为区块nonce。
+// 使用大端字节序是因为以太坊协议中约定 nonce 值的存储和传输遵循大端序，这与网络协议和跨平台兼容性有关。
 func EncodeNonce(i uint64) BlockNonce {
 	var n BlockNonce
-	binary.BigEndian.PutUint64(n[:], i)
+	binary.BigEndian.PutUint64(n[:], i) // 将输入的 uint64 值 i 按照大端字节序（Big Endian）写入 n 的字节数组中。
 	return n
 }
 
@@ -63,49 +69,59 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 
 // ExecutionWitness represents the witness + proof used in a verkle context,
 // to provide the ability to execute a block statelessly.
+// ExecutionWitness 表示在 Verkle 上下文中所使用的见证和证明，
+// 以提供无状态执行区块的能力。
+// 它的目的是支持“无状态执行”（stateless execution），即客户端无需维护完整的状态树即可验证和执行区块。
 type ExecutionWitness struct {
-	StateDiff   verkle.StateDiff    `json:"stateDiff"`
-	VerkleProof *verkle.VerkleProof `json:"verkleProof"`
+	StateDiff   verkle.StateDiff    `json:"stateDiff"`   // 存储执行区块时涉及的状态变化（例如账户余额、存储槽等的更新）。它描述了从旧状态到新状态的差异。
+	VerkleProof *verkle.VerkleProof `json:"verkleProof"` // 提供 Verkle 树的加密证明，用于验证状态差异的正确性。它可能是路径证明（path proof）或 Merkle 风格的证明，具体取决于 Verkle 树的实现。
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
 //go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
 // Header represents a block header in the Ethereum blockchain.
+// Header 表示以太坊区块链中的区块头。
 type Header struct {
-	ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"`
-	UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"`
-	Coinbase    common.Address `json:"miner"`
-	Root        common.Hash    `json:"stateRoot"        gencodec:"required"`
-	TxHash      common.Hash    `json:"transactionsRoot" gencodec:"required"`
-	ReceiptHash common.Hash    `json:"receiptsRoot"     gencodec:"required"`
-	Bloom       Bloom          `json:"logsBloom"        gencodec:"required"`
-	Difficulty  *big.Int       `json:"difficulty"       gencodec:"required"`
-	Number      *big.Int       `json:"number"           gencodec:"required"`
-	GasLimit    uint64         `json:"gasLimit"         gencodec:"required"`
-	GasUsed     uint64         `json:"gasUsed"          gencodec:"required"`
-	Time        uint64         `json:"timestamp"        gencodec:"required"`
-	Extra       []byte         `json:"extraData"        gencodec:"required"`
-	MixDigest   common.Hash    `json:"mixHash"`
-	Nonce       BlockNonce     `json:"nonce"`
+	ParentHash  common.Hash    `json:"parentHash"       gencodec:"required"` // 前一区块的哈希值，用于链接区块链。父哈希
+	UncleHash   common.Hash    `json:"sha3Uncles"       gencodec:"required"` // 叔块（uncle blocks）的哈希值，通过 SHA3 计算。
+	Coinbase    common.Address `json:"miner"`                                // 矿工的地址，接收区块奖励。
+	Root        common.Hash    `json:"stateRoot"        gencodec:"required"` // 状态树的根哈希（state root），反映区块执行后的账户状态。
+	TxHash      common.Hash    `json:"transactionsRoot" gencodec:"required"` // 交易树的根哈希（transactions root）。
+	ReceiptHash common.Hash    `json:"receiptsRoot"     gencodec:"required"` // 收据树的根哈希（receipts root），存储交易执行结果。
+	Bloom       Bloom          `json:"logsBloom"        gencodec:"required"` // Bloom过滤器，用于快速查询日志。
+	Difficulty  *big.Int       `json:"difficulty"       gencodec:"required"` // 挖矿难度，PoW机制的核心参数。 以太坊难度值通常远小于 2⁸⁰，限制其大小防止异常。
+	Number      *big.Int       `json:"number"           gencodec:"required"` // 区块高度（从0开始）。
+	GasLimit    uint64         `json:"gasLimit"         gencodec:"required"` // 区块的燃气上限。
+	GasUsed     uint64         `json:"gasUsed"          gencodec:"required"` // 区块中交易实际使用的燃气量。
+	Time        uint64         `json:"timestamp"        gencodec:"required"` // 区块时间戳（Unix时间，秒为单位）。
+	Extra       []byte         `json:"extraData"        gencodec:"required"` // 额外数据字段，矿工可自定义（有长度限制-通常 32 字节以内，最大100KB）。
+	MixDigest   common.Hash    `json:"mixHash"`                              // 挖矿过程中的中间哈希值，与nonce一起验证PoW。
+	Nonce       BlockNonce     `json:"nonce"`                                // 挖矿nonce值，用于PoW计算。
 
 	// BaseFee was added by EIP-1559 and is ignored in legacy headers.
-	BaseFee *big.Int `json:"baseFeePerGas" rlp:"optional"`
+	// BaseFee 由 EIP-1559 添加，在旧版区块头中被忽略。
+	BaseFee *big.Int `json:"baseFeePerGas" rlp:"optional"` // 基础费用（base fee），由EIP-1559（伦敦升级）引入，用于动态调整燃气价格。
 
 	// WithdrawalsHash was added by EIP-4895 and is ignored in legacy headers.
-	WithdrawalsHash *common.Hash `json:"withdrawalsRoot" rlp:"optional"`
+	// WithdrawalsHash 由 EIP-4895 添加，在旧版区块头中被忽略。
+	WithdrawalsHash *common.Hash `json:"withdrawalsRoot" rlp:"optional"` // 提款树的根哈希，由EIP-4895（上海升级）引入，支持PoS下的提款。
 
 	// BlobGasUsed was added by EIP-4844 and is ignored in legacy headers.
-	BlobGasUsed *uint64 `json:"blobGasUsed" rlp:"optional"`
+	// BlobGasUsed 由 EIP-4844 添加，在旧版区块头中被忽略。
+	BlobGasUsed *uint64 `json:"blobGasUsed" rlp:"optional"` // Blob燃气使用量，由EIP-4844（Cancun升级）引入，支持数据分片（blobs）。
 
 	// ExcessBlobGas was added by EIP-4844 and is ignored in legacy headers.
-	ExcessBlobGas *uint64 `json:"excessBlobGas" rlp:"optional"`
+	// ExcessBlobGas 由 EIP-4844 添加，在旧版区块头中被忽略。
+	ExcessBlobGas *uint64 `json:"excessBlobGas" rlp:"optional"` // 超额Blob燃气，由EIP-4844引入，用于Blob燃气价格调节。
 
 	// ParentBeaconRoot was added by EIP-4788 and is ignored in legacy headers.
-	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"`
+	// ParentBeaconRoot 由 EIP-4788 添加，在旧版区块头中被忽略。
+	ParentBeaconRoot *common.Hash `json:"parentBeaconBlockRoot" rlp:"optional"` // 父信标链区块的根哈希，由EIP-4788引入，支持PoS与信标链交互。
 
 	// RequestsHash was added by EIP-7685 and is ignored in legacy headers.
-	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
+	// RequestsHash 由 EIP-7685 添加，在旧版区块头中被忽略。
+	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"` // 请求树的根哈希，由EIP-7685引入，用于通用请求机制。
 }
 
 // field type overrides for gencodec
@@ -124,14 +140,17 @@ type headerMarshaling struct {
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
 // RLP encoding.
+// Hash 返回区块头的区块哈希值，它仅仅是其 RLP 编码的 keccak256 哈希。
 func (h *Header) Hash() common.Hash {
 	return rlpHash(h)
 }
 
+// 计算 Header 结构体实例在内存中的字节大小
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
+// Size 返回所有内部内容所使用的大约内存量。它用于近似估计并限制各种缓存的内存消耗。
 func (h *Header) Size() common.StorageSize {
 	var baseFeeBits int
 	if h.BaseFee != nil {
@@ -144,8 +163,12 @@ func (h *Header) Size() common.StorageSize {
 // any 'sane' production values should hold, and can mainly be used to prevent
 // that the unbounded fields are stuffed with junk data to add processing
 // overhead
+// SanityCheck 检查一些基本事项 -- 这些检查远远超出了任何“合理”的生产环境中应该出现的值，
+// 主要用于防止无界字段被填充垃圾数据以增加处理开销。
+// 防止恶意构造的区块头（如填充超大数据）增加处理开销或引发崩溃。
+// 这些限制远超生产环境中的“合理”值，属于防御性编程。
 func (h *Header) SanityCheck() error {
-	if h.Number != nil && !h.Number.IsUint64() {
+	if h.Number != nil && !h.Number.IsUint64() { // 区块号不应该超过 64 位，因为实际区块链高度远低于此值。
 		return fmt.Errorf("too large block number: bitlen %d", h.Number.BitLen())
 	}
 	if h.Difficulty != nil {
@@ -166,6 +189,8 @@ func (h *Header) SanityCheck() error {
 
 // EmptyBody returns true if there is no additional 'body' to complete the header
 // that is: no transactions, no uncles and no withdrawals.
+// EmptyBody 如果没有额外的“区块体”来补充区块头，则返回 true，
+// 也就是说：没有交易、没有叔块和没有提款。
 func (h *Header) EmptyBody() bool {
 	var (
 		emptyWithdrawals = h.WithdrawalsHash == nil || *h.WithdrawalsHash == EmptyWithdrawalsHash

@@ -55,6 +55,7 @@ func getPooledBuffer(size uint64) ([]byte, *bytes.Buffer, error) {
 }
 
 // rlpHash encodes x and hashes the encoded bytes.
+// rlpHash 对 x 进行编码并对编码后的字节进行哈希。
 func rlpHash(x interface{}) (h common.Hash) {
 	sha := hasherPool.Get().(crypto.KeccakState)
 	defer hasherPool.Put(sha)
