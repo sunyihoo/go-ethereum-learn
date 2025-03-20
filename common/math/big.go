@@ -26,7 +26,7 @@ import (
 var (
 	tt256     = BigPow(2, 256)
 	tt256m1   = new(big.Int).Sub(tt256, big.NewInt(1))
-	MaxBig256 = new(big.Int).Set(tt256m1)
+	MaxBig256 = new(big.Int).Set(tt256m1) // 2 ^ 256 - 1   256位最大数值
 )
 
 const (
