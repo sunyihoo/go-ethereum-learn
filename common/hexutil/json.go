@@ -40,6 +40,7 @@ var (
 type Bytes []byte
 
 // MarshalText implements encoding.TextMarshaler
+// encoding.TextMarshaler主要用于将数据类型转换为文本格式。这种格式可以是任何自定义的文本形式，例如可以是纯文本、CSV 格式等。
 func (b Bytes) MarshalText() ([]byte, error) {
 	result := make([]byte, len(b)*2+2)
 	copy(result, `0x`)
