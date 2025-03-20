@@ -15,6 +15,11 @@
 //
 // Internally the queue is based on the standard heap package working on a
 // sortable version of the block based stack.
+// prque 包实现了一个支持任意值类型和 int64 优先级的优先队列数据结构。
+//
+// 如果你想使用最小优先级队列，只需将优先级取反。
+//
+// 在内部，队列基于标准堆包，操作于基于块的可排序栈上。
 package prque
 
 import (
