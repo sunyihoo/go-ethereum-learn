@@ -26,6 +26,11 @@ import (
 // When scheduling an Alarm, the channel returned by C() will receive a value no later
 // than the scheduled time. An Alarm can be reused after it has fired and can also be
 // canceled by calling Stop.
+// Alarm 通过通道发送定时通知。它与普通的定时器非常相似，
+// 但在需要反复重新调度同一个定时器的代码中更易于使用。
+//
+// 当调度一个 Alarm 时，C() 返回的通道将在不晚于预定时间接收到一个值。
+// Alarm 在触发后可以重复使用，也可以通过调用 Stop 来取消。
 type Alarm struct {
 	ch       chan struct{}
 	clock    Clock
@@ -82,6 +87,9 @@ func (e *Alarm) schedule(now, newDeadline AbsTime) {
 			// The e.deadline > now part of the condition is important. If the old
 			// deadline lies in the past, we assume the timer has already fired and needs
 			// to be rescheduled.
+			// 在这里，当前的计时器可以被重用，因为它已经被调度为早于新的截止时间发生。
+			//
+			// 条件中的 e.deadline > now 部分很重要。如果旧的截止时间在过去，我们假设计时器已经触发，需要重新调度。
 			return
 		}
 		e.timer.Stop()

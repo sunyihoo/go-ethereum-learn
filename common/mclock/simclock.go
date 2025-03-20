@@ -31,6 +31,10 @@ import (
 // perform the action that is supposed to time out. Ensure that the timer you want to test
 // is created. Then run the clock until after the timeout. Finally observe the effect of
 // the timeout using a channel or semaphore.
+// Simulated 实现了一个虚拟的时间时钟，用于可重复的时间敏感测试。它在虚拟时间轴上模拟了一个调度器，假设实际处理时间为零。
+//
+// 虚拟时钟不会自行推进，需要调用 Run 来推进并执行计时器。
+// 由于无法影响 Go 的调度器，测试涉及 goroutine 的超时行为需要特别注意。以下是测试此类超时的推荐方法：首先执行预期会超时的操作，确保要测试的计时器已创建。然后运行时钟直到超时之后，最后通过通道或信号量观察超时的效果。
 type Simulated struct {
 	now       AbsTime
 	scheduled simTimerHeap
