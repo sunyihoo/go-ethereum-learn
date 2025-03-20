@@ -21,6 +21,7 @@ package lru
 //
 // This type is not safe for concurrent use.
 // The zero value is not valid, instances must be created using NewCache.
+// LRU（Least Recently Used，最近最少使用） 是一种常见的缓存淘汰算法，用于在缓存容量不足时决定哪些项目应该被移除。其核心思想是：优先淘汰最近最少使用的项目。
 type BasicLRU[K comparable, V any] struct {
 	list  *list[K]
 	items map[K]cacheItem[K, V]
