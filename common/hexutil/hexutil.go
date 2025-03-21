@@ -29,6 +29,7 @@ Integers are encoded using the least amount of digits (no leading zero digits). 
 encoding may be of uneven length. The number zero encodes as "0x0".
 */
 //该包实现了带有 0x 前缀的十六进制编码，专为以太坊的 RPC API 设计，用于在 JSON 中传输二进制数据。
+//确保字段以十六进制格式输出，符合以太坊 JSON-RPC API（如 eth_getLogs）的要求。
 package hexutil
 
 import (
