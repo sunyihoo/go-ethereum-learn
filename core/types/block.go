@@ -151,6 +151,7 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
 // Size 返回所有内部内容所使用的大约内存量。它用于近似估计并限制各种缓存的内存消耗。
+// 是内存占用估计，包括动态数据。
 func (h *Header) Size() common.StorageSize {
 	var baseFeeBits int
 	if h.BaseFee != nil {
@@ -205,10 +206,13 @@ func (h *Header) EmptyReceipts() bool {
 
 // Body is a simple (mutable, non-safe) data container for storing and moving
 // a block's data contents (transactions and uncles) together.
+// Body 是一个简单的（可变的、非线程安全的）数据容器，用于存储和移动
+// 区块的数据内容（交易和叔块）。
+// 在区块生成、验证或同步过程中，存储和传递非头部的区块数据。
 type Body struct {
-	Transactions []*Transaction
+	Transactions []*Transaction // Header.TxHash 是 Body.Transactions 的 Merkle 根哈希。
 	Uncles       []*Header
-	Withdrawals  []*Withdrawal `rlp:"optional"`
+	Withdrawals  []*Withdrawal `rlp:"optional"` // rlp:"optional" 在 RLP 编码中是可选字段，表示旧区块（不支持提款）可以省略此字段。
 }
 
 // Block represents an Ethereum block.
@@ -228,28 +232,49 @@ type Body struct {
 //
 //   - We do not copy body data on access because it does not affect the caches, and also
 //     because it would be too expensive.
+//
+// Block 表示以太坊中的一个区块。
+//
+// 请注意，Block 类型尽量保持“不可变”，并包含一些依赖此特性的缓存。关于区块不可变性的规则如下：
+//
+//   - 在构造区块时，我们会复制所有数据。这使得区块内部持有的引用独立于传入的任何值。
+//
+//   - 在访问时，我们会复制所有头部数据。这是因为头部数据的任何更改都会干扰区块中缓存的哈希值和大小值。调用代码应利用这一点以避免过度分配！
+//
+//   - 当新的区块体数据附加到区块时，会返回区块的一个浅拷贝。这确保区块修改是无竞争的。
+//
+//   - 在访问时，我们不复制区块体数据，因为它不会影响缓存，而且这样做成本太高。
+//
+// 获取 uncles, transactions, withdrawals 时，直接返回原始引用。
+// 因为这些数据不影响缓存，且复制成本高。
 type Block struct {
-	header       *Header
-	uncles       []*Header
-	transactions Transactions
-	withdrawals  Withdrawals
+	header       *Header      // 区块头
+	uncles       []*Header    // 叔块列表
+	transactions Transactions // 交易列表 存储区块中的交易数据。
+	withdrawals  Withdrawals  // 提款列表 存储区块中的提款数据（EIP-4895 引入）。
 
 	// witness is not an encoded part of the block body.
 	// It is held in Block in order for easy relaying to the places
 	// that process it.
-	witness *ExecutionWitness
+	// 不是区块体的编码部分，存储在 Block 中以便于传递到处理它的地方。
+	witness *ExecutionWitness // 执行见证 用于无状态执行（Verkle 树相关），不参与区块的 RLP 编码。
 
 	// caches
-	hash atomic.Pointer[common.Hash]
-	size atomic.Uint64
+	hash atomic.Pointer[common.Hash] // 区块哈希的缓存 提供线程安全的哈希值访问，避免重复计算
+	size atomic.Uint64               // 区块大小的缓存 提供线程安全的大小访问，记录近似内存占用。
 
 	// These fields are used by package eth to track
 	// inter-peer block relay.
-	ReceivedAt   time.Time
-	ReceivedFrom interface{}
+	ReceivedAt   time.Time   // 区块接收时间
+	ReceivedFrom interface{} // 区块来源
 }
 
 // "external" block encoding. used for eth protocol, etc.
+// “外部”区块编码。用于 ETH 协议等。 用于表示区块的外部序列化形式。
+// 包含区块的所有核心数据，适合在节点间传输或存储
+// 主要用于以太坊的 P2P 协议（ETH 协议），在节点间交换区块数据。
+// 提供一种简洁的结构体，将区块的所有数据（头和体）打包为一个整体。
+// 专为序列化（如 RLP 编码）设计，用于网络传输或存储。
 type extblock struct {
 	Header      *Header
 	Txs         []*Transaction
@@ -262,6 +287,9 @@ type extblock struct {
 //
 // The body elements and the receipts are used to recompute and overwrite the
 // relevant portions of the header.
+// NewBlock 创建一个新的区块。输入数据会被复制，对头部和字段值的更改不会影响该区块。
+//
+// 区块体元素和收据用于重新计算并覆盖头部中的相关部分。
 func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher) *Block {
 	if body == nil {
 		body = &Body{}
@@ -276,7 +304,7 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 	if len(txs) == 0 {
 		b.header.TxHash = EmptyTxsHash
 	} else {
-		b.header.TxHash = DeriveSha(Transactions(txs), hasher)
+		b.header.TxHash = DeriveSha(Transactions(txs), hasher) // 计算交易的 Merkle 根哈希
 		b.transactions = make(Transactions, len(txs))
 		copy(b.transactions, txs)
 	}
@@ -284,14 +312,14 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 	if len(receipts) == 0 {
 		b.header.ReceiptHash = EmptyReceiptsHash
 	} else {
-		b.header.ReceiptHash = DeriveSha(Receipts(receipts), hasher)
-		b.header.Bloom = CreateBloom(receipts)
+		b.header.ReceiptHash = DeriveSha(Receipts(receipts), hasher) // 计算收据的 Merkle 根哈希
+		b.header.Bloom = CreateBloom(receipts)                       // 生成 Bloom 过滤器
 	}
 
 	if len(uncles) == 0 {
 		b.header.UncleHash = EmptyUncleHash
 	} else {
-		b.header.UncleHash = CalcUncleHash(uncles)
+		b.header.UncleHash = CalcUncleHash(uncles) // 计算叔块哈希
 		b.uncles = make([]*Header, len(uncles))
 		for i := range uncles {
 			b.uncles[i] = CopyHeader(uncles[i])
@@ -304,7 +332,7 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 		b.header.WithdrawalsHash = &EmptyWithdrawalsHash
 		b.withdrawals = Withdrawals{}
 	} else {
-		hash := DeriveSha(Withdrawals(withdrawals), hasher)
+		hash := DeriveSha(Withdrawals(withdrawals), hasher) // 计算提款的 Merkle 根哈希
 		b.header.WithdrawalsHash = &hash
 		b.withdrawals = slices.Clone(withdrawals)
 	}
@@ -313,7 +341,9 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 }
 
 // CopyHeader creates a deep copy of a block header.
+// CopyHeader 创建区块头的深拷贝。
 func CopyHeader(h *Header) *Header {
+	// 浅拷贝直接复制字段值，对于基本类型（如 uint64）是独立的，但对于指针类型（如 *big.Int）和切片（如 []byte），只是复制引用。
 	cpy := *h
 	if cpy.Difficulty = new(big.Int); h.Difficulty != nil {
 		cpy.Difficulty.Set(h.Difficulty)
@@ -352,14 +382,15 @@ func CopyHeader(h *Header) *Header {
 }
 
 // DecodeRLP decodes a block from RLP.
+// DecodeRLP 从 RLP 中解码一个区块。
 func (b *Block) DecodeRLP(s *rlp.Stream) error {
-	var eb extblock
-	_, size, _ := s.Kind()
+	var eb extblock        // 用于临时存储解码后的数据。
+	_, size, _ := s.Kind() // 获取 RLP 数据的类型和大小信息。size 数据的大小（字节数）。size 表示整个 RLP 列表的编码长度，用于后续缓存。
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
 	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
-	b.size.Store(rlp.ListSize(size))
+	b.size.Store(rlp.ListSize(size)) // 记录了区块的编码大小，用于缓存。 rlp.ListSize(size) 将原始大小转换为 RLP 列表的总字节数。
 	return nil
 }
 
@@ -375,17 +406,24 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 
 // Body returns the non-header content of the block.
 // Note the returned data is not an independent copy.
+// Body 返回区块的非头部内容。
+// 请注意，返回的数据不是独立的副本。
+// non-header content 表示返回的数据是区块体，不包括 header 和其他元数据（如 witness, hash, size）。
+// 用于访问区块的交易、叔块和提款数据，例如在验证或处理过程中。
 func (b *Block) Body() *Body {
 	return &Body{b.transactions, b.uncles, b.withdrawals}
 }
 
 // Accessors for body data. These do not return a copy because the content
 // of the body slices does not affect the cached hash/size in block.
+// 区块体数据的访问方法。这些方法不返回副本，
+// 因为body切片的内容不会影响区块中缓存的哈希值或大小。block.hash block.size
 
 func (b *Block) Uncles() []*Header          { return b.uncles }
 func (b *Block) Transactions() Transactions { return b.transactions }
 func (b *Block) Withdrawals() Withdrawals   { return b.withdrawals }
 
+// Transaction 根据交易哈希查找并返回对应的交易。
 func (b *Block) Transaction(hash common.Hash) *Transaction {
 	for _, transaction := range b.transactions {
 		if transaction.Hash() == hash {
@@ -396,29 +434,31 @@ func (b *Block) Transaction(hash common.Hash) *Transaction {
 }
 
 // Header returns the block header (as a copy).
+// Header 返回区块头（作为副本）。
 func (b *Block) Header() *Header {
 	return CopyHeader(b.header)
 }
 
 // Header value accessors. These do copy!
+// 区块头值的访问方法。这些方法会进行复制！
 
-func (b *Block) Number() *big.Int     { return new(big.Int).Set(b.header.Number) }
-func (b *Block) GasLimit() uint64     { return b.header.GasLimit }
-func (b *Block) GasUsed() uint64      { return b.header.GasUsed }
-func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
-func (b *Block) Time() uint64         { return b.header.Time }
+func (b *Block) Number() *big.Int     { return new(big.Int).Set(b.header.Number) }     // 返回区块号的副本。
+func (b *Block) GasLimit() uint64     { return b.header.GasLimit }                     // 返回燃气上限。
+func (b *Block) GasUsed() uint64      { return b.header.GasUsed }                      // 返回已用燃气量。
+func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) } // 返回挖矿难度的副本。
+func (b *Block) Time() uint64         { return b.header.Time }                         // 返回时间戳。
 
-func (b *Block) NumberU64() uint64        { return b.header.Number.Uint64() }
-func (b *Block) MixDigest() common.Hash   { return b.header.MixDigest }
-func (b *Block) Nonce() uint64            { return binary.BigEndian.Uint64(b.header.Nonce[:]) }
-func (b *Block) Bloom() Bloom             { return b.header.Bloom }
-func (b *Block) Coinbase() common.Address { return b.header.Coinbase }
-func (b *Block) Root() common.Hash        { return b.header.Root }
-func (b *Block) ParentHash() common.Hash  { return b.header.ParentHash }
-func (b *Block) TxHash() common.Hash      { return b.header.TxHash }
-func (b *Block) ReceiptHash() common.Hash { return b.header.ReceiptHash }
-func (b *Block) UncleHash() common.Hash   { return b.header.UncleHash }
-func (b *Block) Extra() []byte            { return common.CopyBytes(b.header.Extra) }
+func (b *Block) NumberU64() uint64        { return b.header.Number.Uint64() }                   // 返回区块号的 uint64 表示。
+func (b *Block) MixDigest() common.Hash   { return b.header.MixDigest }                         // 返回混合摘要。
+func (b *Block) Nonce() uint64            { return binary.BigEndian.Uint64(b.header.Nonce[:]) } // 返回 PoW nonce 的 uint64 表示。
+func (b *Block) Bloom() Bloom             { return b.header.Bloom }                             // 返回 Bloom 过滤器。
+func (b *Block) Coinbase() common.Address { return b.header.Coinbase }                          // 返回矿工地址。
+func (b *Block) Root() common.Hash        { return b.header.Root }                              // 返回状态树根哈希。
+func (b *Block) ParentHash() common.Hash  { return b.header.ParentHash }                        // 返回父区块哈希。
+func (b *Block) TxHash() common.Hash      { return b.header.TxHash }                            // 返回交易树根哈希。
+func (b *Block) ReceiptHash() common.Hash { return b.header.ReceiptHash }                       // 返回收据树根哈希。
+func (b *Block) UncleHash() common.Hash   { return b.header.UncleHash }                         // 返回叔块树根哈希。
+func (b *Block) Extra() []byte            { return common.CopyBytes(b.header.Extra) }           // 返回额外数据的副本。
 
 func (b *Block) BaseFee() *big.Int {
 	if b.header.BaseFee == nil {
@@ -449,15 +489,17 @@ func (b *Block) BlobGasUsed() *uint64 {
 }
 
 // ExecutionWitness returns the verkle execution witneess + proof for a block
+// ExecutionWitness 返回区块的 Verkle 执行见证和证明。
 func (b *Block) ExecutionWitness() *ExecutionWitness { return b.witness }
 
 // Size returns the true RLP encoded storage size of the block, either by encoding
 // and returning it, or returning a previously cached value.
+// Size 返回区块的真实 RLP 编码存储大小，可以通过编码并返回结果，或者返回之前缓存的值。
 func (b *Block) Size() uint64 {
 	if size := b.size.Load(); size > 0 {
 		return size
 	}
-	c := writeCounter(0)
+	c := writeCounter(0) // 创建一个 writeCounter 对象，用于统计编码后的字节数。
 	rlp.Encode(&c, b)
 	b.size.Store(uint64(c))
 	return uint64(c)
@@ -465,17 +507,20 @@ func (b *Block) Size() uint64 {
 
 // SanityCheck can be used to prevent that unbounded fields are
 // stuffed with junk data to add processing overhead
+// SanityCheck 可用于防止无界字段被填充垃圾数据以增加处理开销。
 func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
 }
 
 type writeCounter uint64
 
+// 实现了 io.Writer，通过累加写入字节数统计大小。
 func (c *writeCounter) Write(b []byte) (int, error) {
 	*c += writeCounter(len(b))
 	return len(b), nil
 }
 
+// CalcUncleHash 计算叔父块头的哈希
 func CalcUncleHash(uncles []*Header) common.Hash {
 	if len(uncles) == 0 {
 		return EmptyUncleHash
@@ -485,13 +530,13 @@ func CalcUncleHash(uncles []*Header) common.Hash {
 
 // CalcRequestsHash creates the block requestsHash value for a list of requests.
 func CalcRequestsHash(requests [][]byte) common.Hash {
-	h1, h2 := sha256.New(), sha256.New()
+	h1, h2 := sha256.New(), sha256.New() // 双层哈希: 使用两个 SHA-256 实例，先哈希单个请求，再汇总。
 	var buf common.Hash
 	for _, item := range requests {
-		if len(item) > 1 { // skip items with only requestType and no data.
-			h1.Reset()
+		if len(item) > 1 { // skip items with only requestType and no data. 跳过只有请求类型而无数据的项
+			h1.Reset() // 重置 h1，确保每次计算从干净状态开始。
 			h1.Write(item)
-			h2.Write(h1.Sum(buf[:0]))
+			h2.Write(h1.Sum(buf[:0])) // h1.Sum(buf[:0])计算 item 的 SHA-256 哈希，写入 buf（不追加，直接覆盖）；h2.Write 将该哈希写入 h2，累积到最终结果。
 		}
 	}
 	h2.Sum(buf[:0])
@@ -501,12 +546,23 @@ func CalcRequestsHash(requests [][]byte) common.Hash {
 // NewBlockWithHeader creates a block with the given header data. The
 // header data is copied, changes to header and to the field values
 // will not affect the block.
+// NewBlockWithHeader 使用给定的头部数据创建一个区块。
+// 头部数据会被复制，对头部及其字段值的更改不会影响该区块。
 func NewBlockWithHeader(header *Header) *Block {
 	return &Block{header: CopyHeader(header)}
 }
 
 // WithSeal returns a new block with the data from b but the header replaced with
 // the sealed one.
+//
+// WithSeal 返回一个新区块，使用 b 的数据，但头部替换为已密封的头部。
+//
+// “已密封”（sealed）通常意味着头部已完成计算（如 PoW 的 nonce 已填入，或 PoS 的签名已添加），不可再修改。
+// 在区块密封过程（如挖矿完成或共识达成）后，更新头部并生成新区块。
+//
+// “密封”的含义:
+//   - 在 PoW 中，可能指 nonce 和 mixDigest 已计算完成。
+//   - 在 PoS 中，可能指签名或其他共识字段已填充。
 func (b *Block) WithSeal(header *Header) *Block {
 	return &Block{
 		header:       CopyHeader(header),
@@ -519,6 +575,8 @@ func (b *Block) WithSeal(header *Header) *Block {
 
 // WithBody returns a new block with the original header and a deep copy of the
 // provided body.
+// WithBody 返回一个新区块，包含原始头部和提供的区块体的深拷贝。
+// 用于更新区块体数据，例如在同步或验证过程中替换交易、叔块或提款。
 func (b *Block) WithBody(body Body) *Block {
 	block := &Block{
 		header:       b.header,
@@ -533,6 +591,8 @@ func (b *Block) WithBody(body Body) *Block {
 	return block
 }
 
+// WithWitness 返回一个新区块，使用 b 的原始数据，但将见证替换为提供的见证。
+// 在无状态执行场景中，更新 Block 的执行见证数据，例如同步或验证时添加证明。
 func (b *Block) WithWitness(witness *ExecutionWitness) *Block {
 	return &Block{
 		header:       b.header,
@@ -545,6 +605,8 @@ func (b *Block) WithWitness(witness *ExecutionWitness) *Block {
 
 // Hash returns the keccak256 hash of b's header.
 // The hash is computed on the first call and cached thereafter.
+// Hash 返回 b 的头部 Keccak256 哈希值。
+// 哈希值在第一次调用时计算，此后缓存。
 func (b *Block) Hash() common.Hash {
 	if hash := b.hash.Load(); hash != nil {
 		return *hash
@@ -558,12 +620,20 @@ type Blocks []*Block
 
 // HeaderParentHashFromRLP returns the parentHash of an RLP-encoded
 // header. If 'header' is invalid, the zero hash is returned.
+//
+// HeaderParentHashFromRLP 返回 RLP 编码的区块头的 parentHash。
+// 如果 'header' 无效，则返回零哈希。
+//
+// header 表示 RLP 编码的区块头数据
 func HeaderParentHashFromRLP(header []byte) common.Hash {
 	// parentHash is the first list element.
+	// 将 RLP 编码的头部数据解析为列表，并提取列表内容。
+	// listContent 列表内容的字节数据（不含列表前缀）
 	listContent, _, err := rlp.SplitList(header)
 	if err != nil {
 		return common.Hash{}
 	}
+	//从列表内容中提取第一个字符串元素，即 ParentHash。
 	parentHash, _, err := rlp.SplitString(listContent)
 	if err != nil {
 		return common.Hash{}
