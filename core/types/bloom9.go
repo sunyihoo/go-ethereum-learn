@@ -29,11 +29,15 @@ type bytesBacked interface {
 	Bytes() []byte
 }
 
+// 布隆过滤器是一种高效的数据结构，用于快速检测某个元素是否可能存在于一个集合中。在以太坊中，布隆过滤器用于日志（logs）的索引和查询。
+
 const (
 	// BloomByteLength represents the number of bytes used in a header log bloom.
+	// BloomByteLength 表示区块头日志布隆过滤器使用的字节数。
 	BloomByteLength = 256
 
 	// BloomBitLength represents the number of bits used in a header log bloom.
+	// BloomBitLength 表示区块头日志布隆过滤器使用的位数。
 	BloomBitLength = 8 * BloomByteLength
 )
 
@@ -50,6 +54,8 @@ func BytesToBloom(b []byte) Bloom {
 
 // SetBytes sets the content of b to the given bytes.
 // It panics if d is not of suitable size.
+// SetBytes 将 b 的内容设置为给定的字节切片。
+// 如果 d 的大小不合适，它会触发 panic。
 func (b *Bloom) SetBytes(d []byte) {
 	if len(b) < len(d) {
 		panic(fmt.Sprintf("bloom bytes too big %d %d", len(b), len(d)))
@@ -58,11 +64,13 @@ func (b *Bloom) SetBytes(d []byte) {
 }
 
 // Add adds d to the filter. Future calls of Test(d) will return true.
+// Add 将 d 添加到过滤器中。之后对 Test(d) 的调用将返回 true。
 func (b *Bloom) Add(d []byte) {
 	b.add(d, make([]byte, 6))
 }
 
 // add is internal version of Add, which takes a scratch buffer for reuse (needs to be at least 6 bytes)
+// add 是 Add 的内部版本，它接受一个可重用的临时缓冲区（至少需要 6 个字节）。
 func (b *Bloom) add(d []byte, buf []byte) {
 	i1, v1, i2, v2, i3, v3 := bloomValues(d, buf)
 	b[i1] |= v1
@@ -73,16 +81,22 @@ func (b *Bloom) add(d []byte, buf []byte) {
 // Big converts b to a big integer.
 // Note: Converting a bloom filter to a big.Int and then calling GetBytes
 // does not return the same bytes, since big.Int will trim leading zeroes
+//
+// Big 将 b 转换为一个大整数。
+// 注意：将布隆过滤器转换为 big.Int 然后调用 GetBytes
+// 不会返回相同的字节，因为 big.Int 会去除前导零。
 func (b Bloom) Big() *big.Int {
 	return new(big.Int).SetBytes(b[:])
 }
 
 // Bytes returns the backing byte slice of the bloom
+// Bytes 返回布隆过滤器的底层字节切片。
 func (b Bloom) Bytes() []byte {
 	return b[:]
 }
 
 // Test checks if the given topic is present in the bloom filter
+// Test 检查给定的主题是否存在于布隆过滤器中。
 func (b Bloom) Test(topic []byte) bool {
 	i1, v1, i2, v2, i3, v3 := bloomValues(topic, make([]byte, 6))
 	return v1 == v1&b[i1] &&
@@ -91,17 +105,22 @@ func (b Bloom) Test(topic []byte) bool {
 }
 
 // MarshalText encodes b as a hex string with 0x prefix.
+// MarshalText 将 b 编码为带有 0x 前缀的十六进制字符串。
 func (b Bloom) MarshalText() ([]byte, error) {
 	return hexutil.Bytes(b[:]).MarshalText()
 }
 
 // UnmarshalText b as a hex string with 0x prefix.
+// UnmarshalText 将带有 0x 前缀的十六进制字符串解码为 b。
 func (b *Bloom) UnmarshalText(input []byte) error {
 	return hexutil.UnmarshalFixedText("Bloom", input, b[:])
 }
 
 // CreateBloom creates a bloom filter out of the give Receipts (+Logs)
+// CreateBloom 从给定的收据（及其日志）创建布隆过滤器。
 func CreateBloom(receipts Receipts) Bloom {
+	// bloomValues 从 Keccak256 哈希的前 6 字节（hashbuf[0:6]）计算三个 11 位索引和 3 位偏移。
+	// 布隆过滤器内容:包含所有日志的 Address 和 Topics，用于快速事件过滤
 	buf := make([]byte, 6)
 	var bin Bloom
 	for _, receipt := range receipts {
@@ -116,6 +135,7 @@ func CreateBloom(receipts Receipts) Bloom {
 }
 
 // LogsBloom returns the bloom bytes for the given logs
+// LogsBloom 返回给定日志的布隆字节
 func LogsBloom(logs []*Log) []byte {
 	buf := make([]byte, 6)
 	var bin Bloom
@@ -136,6 +156,12 @@ func Bloom9(data []byte) []byte {
 }
 
 // bloomValues returns the bytes (index-value pairs) to set for the given data
+// bloomValues 函数返回需要为给定数据设置的字节（索引-值对）
+//
+// 根据输入的数据生成布隆过滤器（Bloom Filter）中需要设置的比特位。布隆过滤器是一种概率型数据结构，用于快速判断一个元素是否可能存在于一个集合中。
+//
+// i1, i2, i3（uint）布隆过滤器字节数组的索引（0 到 255）
+// v1, v2, v3（byte）要设置的位值（例如 0x01, 0x02, ..., 0x80）
 func bloomValues(data []byte, hashbuf []byte) (uint, byte, uint, byte, uint, byte) {
 	sha := hasherPool.Get().(crypto.KeccakState)
 	sha.Reset()
@@ -143,10 +169,20 @@ func bloomValues(data []byte, hashbuf []byte) (uint, byte, uint, byte, uint, byt
 	sha.Read(hashbuf)
 	hasherPool.Put(sha)
 	// The actual bits to flip
+	// 每个值表示要翻转的位（bit to flip），范围是 2⁰ 到 2⁷
+	// 计算位值
+	//
+	// 从 hashbuf[1] 的低 3 位（& 0x7）计算位偏移（0-7）
+	// 1 << n 生成位掩码（如 0x01, 0x02, ..., 0x80）（1000 0000为1<<7）
 	v1 := byte(1 << (hashbuf[1] & 0x7))
 	v2 := byte(1 << (hashbuf[3] & 0x7))
 	v3 := byte(1 << (hashbuf[5] & 0x7))
 	// The indices for the bytes to OR in
+	// 计算索引 索引范围是 0 到 255（BloomByteLength = 256）
+	// "& 0x7ff" 操作保留了这 16 位整数的低 11 位（0x7ff 是二进制的 01111111111）。
+	// 这是因为以太坊的布隆过滤器每个哈希值会映射到 2048 个比特位中的 3 个比特位，而 2048 可以用 11 位来表示。
+	// ">> 3"操作将结果右移 3 位，相当于除以 8，因为布隆过滤器是以字节为单位存储的，每个字节包含 8 个比特位。
+	// BloomByteLength 布隆过滤器的总字节长度。减 1 是因为索引是从 0 开始的。
 	i1 := BloomByteLength - uint((binary.BigEndian.Uint16(hashbuf)&0x7ff)>>3) - 1
 	i2 := BloomByteLength - uint((binary.BigEndian.Uint16(hashbuf[2:])&0x7ff)>>3) - 1
 	i3 := BloomByteLength - uint((binary.BigEndian.Uint16(hashbuf[4:])&0x7ff)>>3) - 1
@@ -155,6 +191,7 @@ func bloomValues(data []byte, hashbuf []byte) (uint, byte, uint, byte, uint, byt
 }
 
 // BloomLookup is a convenience-method to check presence in the bloom filter
+// BloomLookup 是一个便捷方法，用于检查布隆过滤器中是否存在某个元素。
 func BloomLookup(bin Bloom, topic bytesBacked) bool {
 	return bin.Test(topic.Bytes())
 }

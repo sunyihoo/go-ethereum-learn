@@ -73,9 +73,14 @@ func (h storageJSON) MarshalText() ([]byte, error) {
 	return hexutil.Bytes(h[:]).MarshalText()
 }
 
+// 在以太坊中，创世块（genesis block）是区块链的第一个块，它的初始状态包括账户地址和对应的账户信息（例如余额、存储等）。
+// GenesisAlloc 是一个类型，用于定义这种初始分配的状态。
+
 // GenesisAlloc specifies the initial state of a genesis block.
+// GenesisAlloc 指定了创世块的初始状态。
 type GenesisAlloc map[common.Address]Account
 
+// UnmarshalJSON 这段代码通常用于解析以太坊创世块的 JSON 文件（例如 genesis.json），将文件中定义的账户地址和状态加载到内存中。
 func (ga *GenesisAlloc) UnmarshalJSON(data []byte) error {
 	m := make(map[common.UnprefixedAddress]Account)
 	if err := json.Unmarshal(data, &m); err != nil {
