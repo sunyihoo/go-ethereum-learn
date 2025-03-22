@@ -40,12 +40,18 @@ import (
 	"github.com/holiman/uint256"
 )
 
+// 定义一个正则表达式，用于验证类型化数据的引用类型
 var typedDataReferenceTypeRegexp = regexp.MustCompile(`^[A-Za-z](\w*)(\[\d*\])*$`)
 
+// ValidationInfo 表示单个验证消息。
+//
+// 用于记录交易或数据验证中的问题或状态。
 type ValidationInfo struct {
 	Typ     string `json:"type"`
 	Message string `json:"message"`
 }
+
+// ValidationMessages 表示多个验证消息的集合。
 type ValidationMessages struct {
 	Messages []ValidationInfo
 }
@@ -83,34 +89,42 @@ func (vs *ValidationMessages) GetWarnings() error {
 // SendTxArgs represents the arguments to submit a transaction
 // This struct is identical to ethapi.TransactionArgs, except for the usage of
 // common.MixedcaseAddress in From and To
+//
+// SendTxArgs 表示提交交易的参数
+// 此结构体与 ethapi.TransactionArgs 相同，除了 From 和 To 使用了 common.MixedcaseAddress
+//
+// 表示交易提交的完整参数，支持传统、EIP-1559 和 Blob 交易。
 type SendTxArgs struct {
-	From                 common.MixedcaseAddress  `json:"from"`
-	To                   *common.MixedcaseAddress `json:"to"`
-	Gas                  hexutil.Uint64           `json:"gas"`
-	GasPrice             *hexutil.Big             `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big             `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big             `json:"maxPriorityFeePerGas"`
-	Value                hexutil.Big              `json:"value"`
-	Nonce                hexutil.Uint64           `json:"nonce"`
+	From                 common.MixedcaseAddress  `json:"from"`                 // 发送者地址（支持大小写混合校验）。
+	To                   *common.MixedcaseAddress `json:"to"`                   // 接收者地址（指针，可选，nil 表示创建合约）。
+	Gas                  hexutil.Uint64           `json:"gas"`                  // 燃气限制。
+	GasPrice             *hexutil.Big             `json:"gasPrice"`             // 传统交易的燃气价格（可选）。
+	MaxFeePerGas         *hexutil.Big             `json:"maxFeePerGas"`         // EIP-1559 的每单位燃气最大费用（可选）。
+	MaxPriorityFeePerGas *hexutil.Big             `json:"maxPriorityFeePerGas"` // EIP-1559 的每单位燃气优先费（可选）。
+	Value                hexutil.Big              `json:"value"`                // 转账金额（以 Wei 为单位）。
+	Nonce                hexutil.Uint64           `json:"nonce"`                // 发送者账户的交易计数。
 
 	// We accept "data" and "input" for backwards-compatibility reasons.
 	// "input" is the newer name and should be preferred by clients.
 	// Issue detail: https://github.com/ethereum/go-ethereum/issues/15628
-	Data  *hexutil.Bytes `json:"data,omitempty"`
-	Input *hexutil.Bytes `json:"input,omitempty"`
+	// 我们接受 "data" 和 "input" 是为了向后兼容。
+	// "input" 是较新的名称，客户端应优先使用。
+	// 问题详情：https://github.com/ethereum/go-ethereum/issues/15628
+	Data  *hexutil.Bytes `json:"data,omitempty"`  // 交易数据（旧名称，可选）。
+	Input *hexutil.Bytes `json:"input,omitempty"` // 交易数据（新名称，可选，优先使用）。
 
 	// For non-legacy transactions
-	AccessList *types.AccessList `json:"accessList,omitempty"`
-	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
+	AccessList *types.AccessList `json:"accessList,omitempty"` // EIP-2930 访问列表（可选）。
+	ChainID    *hexutil.Big      `json:"chainId,omitempty"`    // 链 ID（可选，用于 EIP-155）。
 
 	// For BlobTxType
-	BlobFeeCap *hexutil.Big  `json:"maxFeePerBlobGas,omitempty"`
-	BlobHashes []common.Hash `json:"blobVersionedHashes,omitempty"`
+	BlobFeeCap *hexutil.Big  `json:"maxFeePerBlobGas,omitempty"`    // Blob 燃气的最大费用（可选）。
+	BlobHashes []common.Hash `json:"blobVersionedHashes,omitempty"` // Blob 的版本化哈希（可选）。
 
 	// For BlobTxType transactions with blob sidecar
-	Blobs       []kzg4844.Blob       `json:"blobs,omitempty"`
-	Commitments []kzg4844.Commitment `json:"commitments,omitempty"`
-	Proofs      []kzg4844.Proof      `json:"proofs,omitempty"`
+	Blobs       []kzg4844.Blob       `json:"blobs,omitempty"`       // Blob 的版本化哈希（可选）。
+	Commitments []kzg4844.Commitment `json:"commitments,omitempty"` // Blob 的 KZG 承诺（可选）。
+	Proofs      []kzg4844.Proof      `json:"proofs,omitempty"`      // Blob 的 KZG 证明（可选）。
 }
 
 func (args SendTxArgs) String() string {
@@ -122,6 +136,7 @@ func (args SendTxArgs) String() string {
 }
 
 // data retrieves the transaction calldata. Input field is preferred.
+// data 获取交易的调用数据，优先使用 Input 字段。
 func (args *SendTxArgs) data() []byte {
 	if args.Input != nil {
 		return *args.Input
@@ -133,6 +148,7 @@ func (args *SendTxArgs) data() []byte {
 }
 
 // ToTransaction converts the arguments to a transaction.
+// ToTransaction 将参数转换为交易。
 func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 	// Add the To-field, if specified
 	var to *common.Address
@@ -140,12 +156,13 @@ func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 		dstAddr := args.To.Address()
 		to = &dstAddr
 	}
+	// 验证 Blob 侧车
 	if err := args.validateTxSidecar(); err != nil {
 		return nil, err
 	}
 	var data types.TxData
 	switch {
-	case args.BlobHashes != nil:
+	case args.BlobHashes != nil: // Blob 交易 (EIP-4844)
 		al := types.AccessList{}
 		if args.AccessList != nil {
 			al = *args.AccessList
@@ -171,7 +188,7 @@ func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 			}
 		}
 
-	case args.MaxFeePerGas != nil:
+	case args.MaxFeePerGas != nil: // 动态费用交易 (EIP-1559)
 		al := types.AccessList{}
 		if args.AccessList != nil {
 			al = *args.AccessList
@@ -187,7 +204,7 @@ func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 			Data:       args.data(),
 			AccessList: al,
 		}
-	case args.AccessList != nil:
+	case args.AccessList != nil: // 访问列表交易 (EIP-2930)。
 		data = &types.AccessListTx{
 			To:         to,
 			ChainID:    (*big.Int)(args.ChainID),
@@ -198,7 +215,7 @@ func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 			Data:       args.data(),
 			AccessList: *args.AccessList,
 		}
-	default:
+	default: // 传统交易
 		data = &types.LegacyTx{
 			To:       to,
 			Nonce:    uint64(args.Nonce),
@@ -213,6 +230,8 @@ func (args *SendTxArgs) ToTransaction() (*types.Transaction, error) {
 }
 
 // validateTxSidecar validates blob data, if present
+// validateTxSidecar 验证存在的 Blob 数据。
+// 验证和补全 Blob 交易的侧车数据
 func (args *SendTxArgs) validateTxSidecar() error {
 	// No blobs, we're done.
 	if args.Blobs == nil {
@@ -229,6 +248,7 @@ func (args *SendTxArgs) validateTxSidecar() error {
 	}
 
 	// len(blobs) == len(commitments) == len(proofs) == len(hashes)
+	// 验证 Blobs, Commitments, Proofs, BlobHashes 的长度是否一致
 	if args.Commitments != nil && len(args.Commitments) != n {
 		return fmt.Errorf("number of blobs and commitments mismatch (have=%d, want=%d)", len(args.Commitments), n)
 	}
@@ -241,6 +261,7 @@ func (args *SendTxArgs) validateTxSidecar() error {
 
 	if args.Commitments == nil {
 		// Generate commitment and proof.
+		// 为每个 Blob 生成 Commitment 和 Proof（使用 KZG-4844）
 		commitments := make([]kzg4844.Commitment, n)
 		proofs := make([]kzg4844.Proof, n)
 		for i, b := range args.Blobs {
@@ -257,7 +278,7 @@ func (args *SendTxArgs) validateTxSidecar() error {
 		}
 		args.Commitments = commitments
 		args.Proofs = proofs
-	} else {
+	} else { // 验证每个 Blob 的证明。
 		for i, b := range args.Blobs {
 			if err := kzg4844.VerifyBlobProof(&b, args.Commitments[i], args.Proofs[i]); err != nil {
 				return fmt.Errorf("failed to verify blob proof: %v", err)
@@ -267,10 +288,10 @@ func (args *SendTxArgs) validateTxSidecar() error {
 
 	hashes := make([]common.Hash, n)
 	hasher := sha256.New()
-	for i, c := range args.Commitments {
+	for i, c := range args.Commitments { // 从 Commitments 计算 BlobHashes
 		hashes[i] = kzg4844.CalcBlobHashV1(hasher, &c)
 	}
-	if args.BlobHashes != nil {
+	if args.BlobHashes != nil { // 如果 args.BlobHashes 非空，验证匹配；否则赋值
 		for i, h := range hashes {
 			if h != args.BlobHashes[i] {
 				return fmt.Errorf("blob hash verification failed (have=%s, want=%s)", args.BlobHashes[i], h)
@@ -282,9 +303,10 @@ func (args *SendTxArgs) validateTxSidecar() error {
 	return nil
 }
 
+// SigFormat 表示签名数据的格式
 type SigFormat struct {
-	Mime        string
-	ByteVersion byte
+	Mime        string // MIME 类型，用于标识数据的类型或用途。
+	ByteVersion byte   // 单字节版本号，可能用于区分格式的版本或类型。
 }
 
 var (
@@ -312,28 +334,35 @@ type ValidatorData struct {
 }
 
 // TypedData is a type to encapsulate EIP-712 typed messages
+// TypedData 是一个封装 EIP-712 类型化消息的类型
+//
+//	封装 EIP-712 的所有组成部分，用于签名和验证
 type TypedData struct {
-	Types       Types            `json:"types"`
-	PrimaryType string           `json:"primaryType"`
-	Domain      TypedDataDomain  `json:"domain"`
-	Message     TypedDataMessage `json:"message"`
+	Types       Types            `json:"types"`       // 定义所有类型
+	PrimaryType string           `json:"primaryType"` // 主类型名称，指定消息的根类型。
+	Domain      TypedDataDomain  `json:"domain"`      // 域分隔符，用于区分不同应用或链
+	Message     TypedDataMessage `json:"message"`     // 实际消息内容
 }
 
 // Type is the inner type of an EIP-712 message
+// Type 是 EIP-712 消息的内部类型
 type Type struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name string `json:"name"` // 字段名称
+	Type string `json:"type"` // 字段类型（如 string, uint256, address[]）
 }
 
 // isArray returns true if the type is a fixed or variable sized array.
 // This method may return false positives, in case the Type is not a valid
 // expression, e.g. "fooo[[[[".
+// isArray 如果类型是固定大小或可变大小的数组，则返回 true。
+// 如果 Type 不是有效的表达式（例如 "fooo[[[["），此方法可能返回误报。
 func (t *Type) isArray() bool {
 	return strings.IndexByte(t.Type, '[') > 0
 }
 
 // typeName returns the canonical name of the type. If the type is 'Person[]' or 'Person[2]', then
 // this method returns 'Person'
+// typeName 返回类型的规范名称。如果类型是 'Person[]' 或 'Person[2]'，则此方法返回 'Person'。
 func (t *Type) typeName() string {
 	return strings.Split(t.Type, "[")[0]
 }
@@ -347,13 +376,20 @@ type TypePriority struct {
 
 type TypedDataMessage = map[string]interface{}
 
+// EIP-712 背景：提供结构化数据的签名标准，使签名对用户更直观。
+// 哈希公式 hash = keccak256("\x19\x01" || domainHash || messageHash)
+
 // TypedDataDomain represents the domain part of an EIP-712 message.
+// TypedDataDomain 表示 EIP-712 消息的域部分。
+//
+//	表示 EIP-712 的域分隔符，确保签名特定于应用和链。
+//	防止签名跨应用或链重放
 type TypedDataDomain struct {
-	Name              string                `json:"name"`
-	Version           string                `json:"version"`
-	ChainId           *math.HexOrDecimal256 `json:"chainId"`
-	VerifyingContract string                `json:"verifyingContract"`
-	Salt              string                `json:"salt"`
+	Name              string                `json:"name"`              // 应用名称
+	Version           string                `json:"version"`           // 应用版本
+	ChainId           *math.HexOrDecimal256 `json:"chainId"`           // 链 ID（支持 16 进制或十进制）。
+	VerifyingContract string                `json:"verifyingContract"` // 验证合约地址
+	Salt              string                `json:"salt"`              // 可选的盐值（额外唯一性）
 }
 
 // TypedDataAndHash is a helper function that calculates a hash for typed data conforming to EIP-712.
@@ -362,6 +398,17 @@ type TypedDataDomain struct {
 // See https://eips.ethereum.org/EIPS/eip-712 for the full specification.
 //
 // This gives context to the signed typed data and prevents signing of transactions.
+//
+// TypedDataAndHash 是一个辅助函数，用于计算符合 EIP-712 标准的类型化数据的哈希值。
+// 此哈希值随后可安全用于计算签名。
+//
+// 完整规范请参见 https://eips.ethereum.org/EIPS/eip-712。
+//
+// 这为签名的类型化数据提供了上下文，并防止对交易的签名。
+// hash = keccak256("\x19\x01" || domainSeparator || structHash)
+// \x19\x01: 前缀，表示 EIP-712 签名，防止与交易签名混淆。 前缀 \x19\x01 防止重放攻击。
+// domainSeparator: 域分隔符的哈希。
+// structHash: 主类型数据的哈希。
 func TypedDataAndHash(typedData TypedData) ([]byte, string, error) {
 	domainSeparator, err := typedData.HashStruct("EIP712Domain", typedData.Domain.Map())
 	if err != nil {
@@ -376,15 +423,23 @@ func TypedDataAndHash(typedData TypedData) ([]byte, string, error) {
 }
 
 // HashStruct generates a keccak256 hash of the encoding of the provided data
+// HashStruct 生成所提供数据的编码的 keccak256 哈希
 func (typedData *TypedData) HashStruct(primaryType string, data TypedDataMessage) (hexutil.Bytes, error) {
-	encodedData, err := typedData.EncodeData(primaryType, data, 1)
+	encodedData, err := typedData.EncodeData(primaryType, data, 1) // 调用 EncodeData 编码数据。
 	if err != nil {
 		return nil, err
 	}
-	return crypto.Keccak256(encodedData), nil
+	return crypto.Keccak256(encodedData), nil // 对编码结果计算哈希。
 }
 
 // Dependencies returns an array of custom types ordered by their hierarchical reference tree
+// Dependencies 返回按层次引用树排序的自定义类型数组
+// 返回 primaryType 的依赖类型列表（按层次顺序）。
+//
+//	 流程:
+//		- 去掉数组标记（[n] 或 []）。
+//		- 如果已找到或类型不存在，返回当前列表。
+//		- 添加当前类型，递归查找字段的依赖。
 func (typedData *TypedData) Dependencies(primaryType string, found []string) []string {
 	primaryType = strings.Split(primaryType, "[")[0]
 
@@ -409,6 +464,13 @@ func (typedData *TypedData) Dependencies(primaryType string, found []string) []s
 // `name ‖ "(" ‖ member₁ ‖ "," ‖ member₂ ‖ "," ‖ … ‖ memberₙ ")"`
 //
 // each member is written as `type ‖ " " ‖ name` encodings cascade down and are sorted by name
+//
+// EncodeType 生成以下编码：
+// `name ‖ "(" ‖ member₁ ‖ "," ‖ member₂ ‖ "," ‖ … ‖ memberₙ ")"`
+//
+// 每个成员写作 `type ‖ " " ‖ name`，编码按名称排序并级联向下
+//
+// 生成类型的字符串编码 eg: TypeName(type1 name1,type2 name2,...)
 func (typedData *TypedData) EncodeType(primaryType string) hexutil.Bytes {
 	// Get dependencies primary first, then alphabetical
 	deps := typedData.Dependencies(primaryType, []string{})
@@ -436,6 +498,7 @@ func (typedData *TypedData) EncodeType(primaryType string) hexutil.Bytes {
 }
 
 // TypeHash creates the keccak256 hash  of the data
+// TypeHash 创建数据的 keccak256 哈希
 func (typedData *TypedData) TypeHash(primaryType string) hexutil.Bytes {
 	return crypto.Keccak256(typedData.EncodeType(primaryType))
 }
@@ -444,6 +507,11 @@ func (typedData *TypedData) TypeHash(primaryType string) hexutil.Bytes {
 // `enc(value₁) ‖ enc(value₂) ‖ … ‖ enc(valueₙ)`
 //
 // each encoded member is 32-byte long
+//
+// EncodeData 生成以下编码：
+// `enc(value₁) ‖ enc(value₂) ‖ … ‖ enc(valueₙ)`
+//
+// 每个编码成员长度为 32 字节
 func (typedData *TypedData) EncodeData(primaryType string, data map[string]interface{}, depth int) (hexutil.Bytes, error) {
 	if err := typedData.validate(); err != nil {
 		return nil, err
@@ -531,21 +599,22 @@ func (typedData *TypedData) encodeArrayValue(encValue interface{}, encType strin
 }
 
 // Attempt to parse bytes in different formats: byte array, hex string, hexutil.Bytes.
+// 尝试以不同格式解析字节：字节数组、十六进制字符串、hexutil.Bytes。
 func parseBytes(encType interface{}) ([]byte, bool) {
 	// Handle array types.
 	val := reflect.ValueOf(encType)
-	if val.Kind() == reflect.Array && val.Type().Elem().Kind() == reflect.Uint8 {
+	if val.Kind() == reflect.Array && val.Type().Elem().Kind() == reflect.Uint8 { // 检查 val 是否为数组类型（reflect.Array），并且数组的元素类型是 uint8（即字节类型）。
 		v := reflect.MakeSlice(reflect.TypeOf([]byte{}), val.Len(), val.Len())
 		reflect.Copy(v, val)
 		return v.Bytes(), true
 	}
 
 	switch v := encType.(type) {
-	case []byte:
+	case []byte: // 如果输入已经是字节切片，直接返回并标记成功（true）
 		return v, true
-	case hexutil.Bytes:
+	case hexutil.Bytes: // 如果输入是 hexutil.Bytes 类型（这是 go-ethereum 中定义的十六进制字节类型），直接返回其值并标记成功。
 		return v, true
-	case string:
+	case string: // 如果输入是字符串，假设它是十六进制编码格式，调用 hexutil.Decode 解码为字节数组。如果解码成功，返回字节数组和 true；如果失败，返回 nil 和 false。
 		bytes, err := hexutil.Decode(v)
 		if err != nil {
 			return nil, false
@@ -558,13 +627,13 @@ func parseBytes(encType interface{}) ([]byte, bool) {
 
 func parseInteger(encType string, encValue interface{}) (*big.Int, error) {
 	var (
-		length int
-		signed = strings.HasPrefix(encType, "int")
+		length int                                 // 整数的位长度
+		signed = strings.HasPrefix(encType, "int") // 通过检查 encType 是否以 "int" 开头，判断是否为有符号整数
 		b      *big.Int
 	)
 	if encType == "int" || encType == "uint" {
 		length = 256
-	} else {
+	} else { // 从 encType 中提取长度部分（例如 "uint64" 提取 "64"），使用 strconv.Atoi 将其转换为整数。如果转换失败，返回错误。
 		lengthStr := ""
 		if strings.HasPrefix(encType, "uint") {
 			lengthStr = strings.TrimPrefix(encType, "uint")
@@ -591,6 +660,7 @@ func parseInteger(encType string, encValue interface{}) (*big.Int, error) {
 	case float64:
 		// JSON parses non-strings as float64. Fail if we cannot
 		// convert it losslessly
+		// JSON 解析非字符串时可能返回 float64。检查是否可以无损转换为 int64（即小数部分为 0）
 		if float64(int64(v)) == v {
 			b = big.NewInt(int64(v))
 		} else {
@@ -600,10 +670,10 @@ func parseInteger(encType string, encValue interface{}) (*big.Int, error) {
 	if b == nil {
 		return nil, fmt.Errorf("invalid integer value %v/%v for type %v", encValue, reflect.TypeOf(encValue), encType)
 	}
-	if b.BitLen() > length {
+	if b.BitLen() > length { // 检查 b 的位长度（BitLen()）是否超过指定的 length，如果超过，返回错误
 		return nil, fmt.Errorf("integer larger than '%v'", encType)
 	}
-	if !signed && b.Sign() == -1 {
+	if !signed && b.Sign() == -1 { // 如果是无符号类型（!signed）但值为负数（b.Sign() == -1），返回错误
 		return nil, fmt.Errorf("invalid negative value for unsigned type %v", encType)
 	}
 	return b, nil
@@ -611,6 +681,7 @@ func parseInteger(encType string, encValue interface{}) (*big.Int, error) {
 
 // EncodePrimitiveValue deals with the primitive values found
 // while searching through the typed data
+// EncodePrimitiveValue 处理在类型化数据中搜索时发现的原始值
 func (typedData *TypedData) EncodePrimitiveValue(encType string, encValue interface{}, depth int) ([]byte, error) {
 	switch encType {
 	case "address":
