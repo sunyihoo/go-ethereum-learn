@@ -29,10 +29,16 @@ import (
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
 
+// AuditLogger 包装 ExternalAPI，为每个方法添加审计日志。
 type AuditLogger struct {
 	log log.Logger
 	api ExternalAPI
 }
+
+// 记录请求日志（type: request）。
+// 调用底层 api 方法。
+// 记录响应日志（type: response）。
+// 返回结果。
 
 func (l *AuditLogger) List(ctx context.Context) ([]common.Address, error) {
 	l.log.Info("List", "type", "request", "metadata", MetadataFromContext(ctx).String())
