@@ -24,9 +24,22 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// StdIOUI 通过标准输入输出与 RPC 客户端交互的 UI。
 type StdIOUI struct {
 	client *rpc.Client
 }
+
+// 以下方法通过 dispatch 或 notify 调用远程服务：
+//
+// ApproveTx: 批准交易签名。
+// ApproveSignData: 批准数据签名。
+// ApproveListing: 批准账户列出。
+// ApproveNewAccount: 批准新账户创建。
+// ShowError: 显示错误消息。
+// ShowInfo: 显示信息消息。
+// OnApprovedTx: 通知已签名交易。
+// OnSignerStartup: 通知签名者启动。
+// OnInputRequired: 请求用户输入。
 
 func NewStdIOUI() *StdIOUI {
 	client, err := rpc.DialContext(context.Background(), "stdio://")
@@ -42,6 +55,8 @@ func (ui *StdIOUI) RegisterUIServer(api *UIServerAPI) {
 }
 
 // dispatch sends a request over the stdio
+// dispatch 通过标准输入输出发送请求
+// 通过 RPC 发送请求并等待响应。
 func (ui *StdIOUI) dispatch(serviceMethod string, args interface{}, reply interface{}) error {
 	err := ui.client.Call(&reply, serviceMethod, args)
 	if err != nil {
@@ -51,6 +66,8 @@ func (ui *StdIOUI) dispatch(serviceMethod string, args interface{}, reply interf
 }
 
 // notify sends a request over the stdio, and does not listen for a response
+// notify 通过标准输入输出发送请求，且不监听响应
+// 通过 RPC 发送通知（无响应）。
 func (ui *StdIOUI) notify(serviceMethod string, args interface{}) error {
 	ctx := context.Background()
 	err := ui.client.Notify(ctx, serviceMethod, args)
