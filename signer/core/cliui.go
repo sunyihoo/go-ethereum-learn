@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// CommandlineUI 提供命令行交互界面。
 type CommandlineUI struct {
 	in  *bufio.Reader
 	mu  sync.Mutex
@@ -41,12 +42,14 @@ func NewCommandlineUI() *CommandlineUI {
 	return &CommandlineUI{in: bufio.NewReader(os.Stdin)}
 }
 
+// RegisterUIServer 注册 UI 服务器 API。
 func (ui *CommandlineUI) RegisterUIServer(api *UIServerAPI) {
 	ui.api = api
 }
 
 // readString reads a single line from stdin, trimming if from spaces, enforcing
 // non-emptyness.
+// readString 从标准输入读取一行，去除首尾空格，确保非空。
 func (ui *CommandlineUI) readString() string {
 	for {
 		fmt.Printf("> ")
@@ -60,10 +63,12 @@ func (ui *CommandlineUI) readString() string {
 	}
 }
 
+// OnInputRequired 处理用户输入请求（如密码）。
 func (ui *CommandlineUI) OnInputRequired(info UserInputRequest) (UserInputResponse, error) {
+	// 显示标题和提示。
 	fmt.Printf("## %s\n\n%s\n", info.Title, info.Prompt)
 	defer fmt.Println("-----------------------")
-	if info.IsPassword {
+	if info.IsPassword { // 如果是密码，使用 PromptPassword；否则调用 readString。
 		text, err := prompt.Stdin.PromptPassword("> ")
 		if err != nil {
 			log.Error("Failed to read password", "error", err)
@@ -76,6 +81,7 @@ func (ui *CommandlineUI) OnInputRequired(info UserInputRequest) (UserInputRespon
 }
 
 // confirm returns true if user enters 'Yes', otherwise false
+// confirm 如果用户输入 'Yes' 则返回 true，否则返回 false
 func (ui *CommandlineUI) confirm() bool {
 	fmt.Printf("Approve? [y/N]:\n")
 	if ui.readString() == "y" {
@@ -87,6 +93,7 @@ func (ui *CommandlineUI) confirm() bool {
 
 // sanitize quotes and truncates 'txt' if longer than 'limit'. If truncated,
 // and ellipsis is added after the quoted string
+// sanitize 对 'txt' 进行引用并截断，如果超过 'limit'，在引用字符串后添加省略号。格式化字符串，限制长度。
 func sanitize(txt string, limit int) string {
 	if len(txt) > limit {
 		return fmt.Sprintf("%q...", txt[:limit])
@@ -94,6 +101,7 @@ func sanitize(txt string, limit int) string {
 	return fmt.Sprintf("%q", txt)
 }
 
+// 显示请求元数据。
 func showMetadata(metadata Metadata) {
 	fmt.Printf("Request context:\n\t%v -> %v -> %v\n", metadata.Remote, metadata.Scheme, metadata.Local)
 	fmt.Printf("\nAdditional HTTP header data, provided by the external caller:\n")
@@ -101,6 +109,7 @@ func showMetadata(metadata Metadata) {
 }
 
 // ApproveTx prompt the user for confirmation to request to sign Transaction
+// 请求用户批准交易签名。
 func (ui *CommandlineUI) ApproveTx(request *SignTxRequest) (SignTxResponse, error) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
@@ -165,6 +174,7 @@ func (ui *CommandlineUI) ApproveTx(request *SignTxRequest) (SignTxResponse, erro
 }
 
 // ApproveSignData prompt the user for confirmation to request to sign data
+// 请求用户批准数据签名。
 func (ui *CommandlineUI) ApproveSignData(request *SignDataRequest) (SignDataResponse, error) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
@@ -194,6 +204,7 @@ func (ui *CommandlineUI) ApproveSignData(request *SignDataRequest) (SignDataResp
 
 // ApproveListing prompt the user for confirmation to list accounts
 // the list of accounts to list can be modified by the UI
+// 请求用户批准列出账户。
 func (ui *CommandlineUI) ApproveListing(request *ListRequest) (ListResponse, error) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
@@ -214,6 +225,7 @@ func (ui *CommandlineUI) ApproveListing(request *ListRequest) (ListResponse, err
 }
 
 // ApproveNewAccount prompt the user for confirmation to create new Account, and reveal to caller
+// 请求用户批准创建新账户。
 func (ui *CommandlineUI) ApproveNewAccount(request *NewAccountRequest) (NewAccountResponse, error) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
@@ -240,6 +252,7 @@ func (ui *CommandlineUI) ShowInfo(message string) {
 	fmt.Printf("## Info \n%s\n", message)
 }
 
+// OnApprovedTx 显示已签名的交易（JSON 格式）。
 func (ui *CommandlineUI) OnApprovedTx(tx ethapi.SignTransactionResult) {
 	fmt.Printf("Transaction signed:\n ")
 	if jsn, err := json.MarshalIndent(tx.Tx, "  ", "  "); err != nil {
@@ -249,6 +262,7 @@ func (ui *CommandlineUI) OnApprovedTx(tx ethapi.SignTransactionResult) {
 	}
 }
 
+// 显示最多 20 个账户。
 func (ui *CommandlineUI) showAccounts() {
 	accounts, err := ui.api.ListAccounts(context.Background())
 	if err != nil {
@@ -272,6 +286,7 @@ func (ui *CommandlineUI) showAccounts() {
 	fmt.Print(out.String(), msg)
 }
 
+// OnSignerStartup 显示签名者启动信息并列出账户。
 func (ui *CommandlineUI) OnSignerStartup(info StartupInfo) {
 	fmt.Print("\n------- Signer info -------\n")
 	for k, v := range info.Info {
