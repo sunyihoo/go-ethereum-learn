@@ -63,6 +63,10 @@ cloc:
 	@#cloc . --exclude-ext=json,js,txt,c,h,sol --not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go" | tee ./stat/${d}.txt
 	cloc . --exclude-ext=json,js,txt,c,h,sol  --not-match-f="(.*?).pb.go"--not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go"  --fullpath --not-match-d=crypto/secp256k1 | tee ./stat/${d}.txt
 
+.PHONY: dir
+dir:
+	for d in ./*/ ; do (cd "$d" && echo "$d" && cloc --vcs git --include-lang=Go); done
+
 only_cloc:
 	echo ${d}
 	@#cloc . --exclude-ext=json,js,txt,c,h,sol --not-match-f="(.*?).pb.go" --not-match-f="(.*?)_test.go" | tee ./stat/${d}.txt
