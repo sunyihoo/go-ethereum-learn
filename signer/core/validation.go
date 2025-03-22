@@ -21,14 +21,17 @@ import (
 	"regexp"
 )
 
+// 定义匹配可打印 7 位 ASCII 字符的正则表达式
 var printable7BitAscii = regexp.MustCompile("^[A-Za-z0-9!\"#$%&'()*+,\\-./:;<=>?@[\\]^_`{|}~ ]+$")
 
 // ValidatePasswordFormat returns an error if the password is too short, or consists of characters
 // outside the range of the printable 7bit ascii set
+// ValidatePasswordFormat 如果密码太短或包含可打印 7 位 ASCII 集范围外的字符，则返回错误
 func ValidatePasswordFormat(password string) error {
 	if len(password) < 10 {
 		return errors.New("password too short (<10 characters)")
 	}
+	// 检查密码是否仅包含可打印 7 位 ASCII 字符
 	if !printable7BitAscii.MatchString(password) {
 		return errors.New("password contains invalid characters - only 7bit printable ascii allowed")
 	}
