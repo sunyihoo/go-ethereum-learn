@@ -26,16 +26,22 @@ import (
 
 //go:generate go run github.com/fjl/gencodec -type AccessTuple -out gen_access_tuple.go
 
+// AccessList 和 AccessTuple 定义了 EIP-2930 访问列表交易中的访问列表结构，用于指定交易中预加载的状态（地址和存储槽）。
+// StorageKeys 方法计算访问列表中所有存储键的总数。这些结构和方法是柏林硬分叉（2021 年）中引入的 Gas 优化机制的一部分。
+
 // AccessList is an EIP-2930 access list.
+// AccessList 是 EIP-2930 访问列表。
 type AccessList []AccessTuple
 
 // AccessTuple is the element type of an access list.
+// AccessTuple 是访问列表的元素类型。
 type AccessTuple struct {
-	Address     common.Address `json:"address"     gencodec:"required"`
-	StorageKeys []common.Hash  `json:"storageKeys" gencodec:"required"`
+	Address     common.Address `json:"address"     gencodec:"required"` // 地址
+	StorageKeys []common.Hash  `json:"storageKeys" gencodec:"required"` // 存储键列表
 }
 
 // StorageKeys returns the total number of storage keys in the access list.
+// StorageKeys 返回访问列表中存储键的总数。
 func (al AccessList) StorageKeys() int {
 	sum := 0
 	for _, tuple := range al {
@@ -44,20 +50,26 @@ func (al AccessList) StorageKeys() int {
 	return sum
 }
 
+// EIP-2930：2021 年柏林硬分叉引入，交易类型 0x01，添加访问列表。
+// EIP-2929：增加状态访问的 Gas 成本，AccessList 可抵消部分费用。
+// V 不再包含 ChainID，简化签名逻辑。
+
 // AccessListTx is the data of EIP-2930 access list transactions.
+// AccessListTx 是 EIP-2930 访问列表交易的数据。
 type AccessListTx struct {
-	ChainID    *big.Int        // destination chain ID
-	Nonce      uint64          // nonce of sender account
-	GasPrice   *big.Int        // wei per gas
-	Gas        uint64          // gas limit
-	To         *common.Address `rlp:"nil"` // nil means contract creation
-	Value      *big.Int        // wei amount
-	Data       []byte          // contract invocation input data
-	AccessList AccessList      // EIP-2930 access list
-	V, R, S    *big.Int        // signature values
+	ChainID    *big.Int        // destination chain ID 目标链 ID 从 EIP-155 的签名嵌入改为显式字段，增强重放保护。
+	Nonce      uint64          // nonce of sender account 发送者账户的 nonce 发送者账户的交易计数器。防止交易重放，确保顺序执行。
+	GasPrice   *big.Int        // wei per gas 每单位 Gas 的价格（单位 Wei）决定交易费用（GasPrice * Gas）
+	Gas        uint64          // gas limit Gas 限制，限制交易的计算资源，未用尽的 Gas 退回。
+	To         *common.Address `rlp:"nil"` // nil means contract creation，nil 表示合约创建
+	Value      *big.Int        // wei amount Wei 金额
+	Data       []byte          // contract invocation input data 合约调用的输入数据或字节码
+	AccessList AccessList      // EIP-2930 access list EIP-2930 访问列表，指定交易预加载的状态，降低 Gas 成本（EIP-2929）
+	V, R, S    *big.Int        // signature values 签名值 V 为恢复标识符（0 或 1），不再嵌入 ChainID（与 LegacyTx 的 EIP-155 不同）。 R 和 S 是签名结果，用于验证发送者。
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
+// copy 创建交易数据的深拷贝并初始化所有字段。
 func (tx *AccessListTx) copy() TxData {
 	cpy := &AccessListTx{
 		Nonce: tx.Nonce,
@@ -96,6 +108,7 @@ func (tx *AccessListTx) copy() TxData {
 }
 
 // accessors for innerTx.
+// 用于 innerTx 的访问器。
 func (tx *AccessListTx) txType() byte           { return AccessListTxType }
 func (tx *AccessListTx) chainID() *big.Int      { return tx.ChainID }
 func (tx *AccessListTx) accessList() AccessList { return tx.AccessList }
@@ -121,9 +134,12 @@ func (tx *AccessListTx) setSignatureValues(chainID, v, r, s *big.Int) {
 }
 
 func (tx *AccessListTx) encode(b *bytes.Buffer) error {
+	// 使用 RLP 编码交易到缓冲区
+	// RLP 是以太坊的标准序列化格式，EIP-2930 交易直接编码所有字段。
 	return rlp.Encode(b, tx)
 }
 
 func (tx *AccessListTx) decode(input []byte) error {
+	// 从字节数据解码 RLP 到交易
 	return rlp.DecodeBytes(input, tx)
 }
