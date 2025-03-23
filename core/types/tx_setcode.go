@@ -31,36 +31,49 @@ import (
 
 // DelegationPrefix is used by code to denote the account is delegating to
 // another account.
-var DelegationPrefix = []byte{0xef, 0x01, 0x00}
+// DelegationPrefix 被代码用来表示账户正在委托给另一个账户。
+var DelegationPrefix = []byte{0xef, 0x01, 0x00} // 定义一个 3 字节的前缀（[0xef, 0x01, 0x00]），用于标识账户委托状态。长度为 3 字节，与以太坊地址（20 字节）组合后总长 23 字节。
 
 // ParseDelegation tries to parse the address from a delegation slice.
+// ParseDelegation 尝试从委托字节切片中解析出地址。
+//
+// 从字节切片中解析委托地址，验证前缀并提取目标地址。
 func ParseDelegation(b []byte) (common.Address, bool) {
+	// 检查长度和前缀是否匹配。检查字节长度是否为 23（3 字节前缀 + 20 字节地址）。
 	if len(b) != 23 || !bytes.HasPrefix(b, DelegationPrefix) {
 		return common.Address{}, false
 	}
+	// 从前缀后的字节解析出地址
 	return common.BytesToAddress(b[len(DelegationPrefix):]), true
 }
 
 // AddressToDelegation adds the delegation prefix to the specified address.
+// AddressToDelegation 将委托前缀添加到指定地址。
+//
+// 将地址转换为带前缀的委托格式字节切片。
 func AddressToDelegation(addr common.Address) []byte {
 	return append(DelegationPrefix, addr.Bytes()...)
 }
 
+// SetCodeTx 定义了 EIP-7702 交易类型（预计 2025 年布拉格升级引入），允许在签名者地址临时部署代码。它基于 EIP-1559 的动态费用机制，并引入 AuthList 来授权代码安装。
+
 // SetCodeTx implements the EIP-7702 transaction type which temporarily installs
 // the code at the signer's address.
+// SetCodeTx 实现了 EIP-7702 交易类型，该交易类型在签名者的地址临时安装代码。
 type SetCodeTx struct {
 	ChainID    *uint256.Int
 	Nonce      uint64
-	GasTipCap  *uint256.Int // a.k.a. maxPriorityFeePerGas
-	GasFeeCap  *uint256.Int // a.k.a. maxFeePerGas
+	GasTipCap  *uint256.Int // a.k.a. maxPriorityFeePerGas 又称 maxPriorityFeePerGas，最大优先费每单位 Gas
+	GasFeeCap  *uint256.Int // a.k.a. maxFeePerGas 又称 maxFeePerGas，最大费用每单位 Gas
 	Gas        uint64
 	To         common.Address
 	Value      *uint256.Int
 	Data       []byte
 	AccessList AccessList
-	AuthList   []SetCodeAuthorization
+	AuthList   []SetCodeAuthorization // 授权列表 AuthList 引入临时代码部署，支持账户抽象。账户抽象：允许 EOA（外部拥有账户）临时获得合约功能。模糊 EOA 和合约账户界限，提升用户体验。
 
 	// Signature values
+	// 签名值
 	V *uint256.Int
 	R *uint256.Int
 	S *uint256.Int
@@ -69,13 +82,16 @@ type SetCodeTx struct {
 //go:generate go run github.com/fjl/gencodec -type SetCodeAuthorization -field-override authorizationMarshaling -out gen_authorization.go
 
 // SetCodeAuthorization is an authorization from an account to deploy code at its address.
+// SetCodeAuthorization 是账户授权在其地址部署代码的结构。
+//
+//	SetCodeAuthorization：定义了授权结构，表示某个账户允许在其地址部署代码，包含签名以验证授权。
 type SetCodeAuthorization struct {
-	ChainID uint256.Int    `json:"chainId" gencodec:"required"`
-	Address common.Address `json:"address" gencodec:"required"`
-	Nonce   uint64         `json:"nonce" gencodec:"required"`
-	V       uint8          `json:"yParity" gencodec:"required"`
-	R       uint256.Int    `json:"r" gencodec:"required"`
-	S       uint256.Int    `json:"s" gencodec:"required"`
+	ChainID uint256.Int    `json:"chainId" gencodec:"required"` // 链 ID
+	Address common.Address `json:"address" gencodec:"required"` // 地址
+	Nonce   uint64         `json:"nonce" gencodec:"required"`   // nonce
+	V       uint8          `json:"yParity" gencodec:"required"` // Y 平价（签名恢复标识符）
+	R       uint256.Int    `json:"r" gencodec:"required"`       // 签名 R 值
+	S       uint256.Int    `json:"s" gencodec:"required"`       // 签名 S 值
 }
 
 // field type overrides for gencodec
@@ -88,12 +104,15 @@ type authorizationMarshaling struct {
 }
 
 // SignSetCode creates a signed the SetCode authorization.
+// SignSetCode 创建一个签名的 SetCode 授权。
 func SignSetCode(prv *ecdsa.PrivateKey, auth SetCodeAuthorization) (SetCodeAuthorization, error) {
 	sighash := auth.sigHash()
+	// 使用私钥对哈希签名
 	sig, err := crypto.Sign(sighash[:], prv)
 	if err != nil {
 		return SetCodeAuthorization{}, err
 	}
+	// 解码签名，提取 R 和 S
 	r, s, _ := decodeSignature(sig)
 	return SetCodeAuthorization{
 		ChainID: auth.ChainID,
@@ -114,24 +133,33 @@ func (a *SetCodeAuthorization) sigHash() common.Hash {
 }
 
 // Authority recovers the the authorizing account of an authorization.
+// Authority 恢复授权账户的地址。
+//
+// Authority 方法从 SetCodeAuthorization 的签名值（V, R, S）恢复授权账户的地址。它是 EIP-7702 交易中验证授权合法性的核心功能，确保只有授权账户能允许在其地址部署代码。
 func (a *SetCodeAuthorization) Authority() (common.Address, error) {
+	// 计算签名哈希
 	sighash := a.sigHash()
+	// 验证签名值的有效性
 	if !crypto.ValidateSignatureValues(a.V, a.R.ToBig(), a.S.ToBig(), true) {
 		return common.Address{}, ErrInvalidSig
 	}
 	// encode the signature in uncompressed format
+	// 将签名编码为未压缩格式
 	var sig [crypto.SignatureLength]byte
 	a.R.WriteToSlice(sig[:32])
 	a.S.WriteToSlice(sig[32:64])
 	sig[64] = a.V
 	// recover the public key from the signature
+	// 从签名恢复公钥
 	pub, err := crypto.Ecrecover(sighash[:], sig[:])
 	if err != nil {
 		return common.Address{}, err
 	}
+	// 检查公钥的有效性
 	if len(pub) == 0 || pub[0] != 4 {
 		return common.Address{}, errors.New("invalid public key")
 	}
+	// 从公钥派生地址
 	var addr common.Address
 	copy(addr[:], crypto.Keccak256(pub[1:])[12:])
 	return addr, nil
