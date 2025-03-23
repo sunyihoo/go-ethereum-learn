@@ -30,13 +30,17 @@ var embeddedJSON []byte
 
 // Database is a 4byte database with the possibility of maintaining an immutable
 // set (embedded) into the process and a mutable set (loaded and written to file).
+//
+// Database 是一个 4byte 数据库，可以维护一个嵌入进程的不可变集合（embedded）
+// 和一个可变集合（加载并写入文件）。
 type Database struct {
-	embedded   map[string]string
-	custom     map[string]string
-	customPath string
+	embedded   map[string]string // 存储不可变的 4 字节签名及其描述（例如方法签名），嵌入到进程中。
+	custom     map[string]string // 存储可变的 4 字节签名及其描述，可以从文件加载或写入。 允许用户自定义签名数据库，扩展对非标准合约的支持。
+	customPath string            // 可变集合的存储路径，用于持久化 custom 数据。 持久化存储便于在不同会话中重用自定义签名。
 }
 
 // newEmpty exists for testing purposes.
+// newEmpty 存在用于测试目的。
 func newEmpty() *Database {
 	return &Database{
 		embedded: make(map[string]string),
@@ -45,6 +49,7 @@ func newEmpty() *Database {
 }
 
 // New loads the standard signature database embedded in the package.
+// New 加载包中嵌入的标准签名数据库。
 func New() (*Database, error) {
 	return NewWithFile("")
 }
@@ -55,6 +60,11 @@ func New() (*Database, error) {
 //
 // The provided path will be used to write new values into if they are submitted
 // via the API.
+//
+// NewFromFile 从文件中加载签名数据库，如果文件不是有效的 JSON 则返回错误。
+// 该构造函数不对内容进行其他验证。此方法不会加载嵌入的 4byte 数据库。
+//
+// 提供的路径将用于写入通过 API 提交的新值。
 func NewFromFile(path string) (*Database, error) {
 	raw, err := os.Open(path)
 	if err != nil {
@@ -72,6 +82,9 @@ func NewFromFile(path string) (*Database, error) {
 // NewWithFile loads both the standard signature database (embedded resource
 // file) as well as a custom database. The latter will be used to write new
 // values into if they are submitted via the API.
+//
+// NewWithFile 加载标准签名数据库（嵌入的资源文件）以及自定义数据库。
+// 后者将用于写入通过 API 提交的新值。
 func NewWithFile(path string) (*Database, error) {
 	db := &Database{make(map[string]string), make(map[string]string), path}
 	db.customPath = path
@@ -80,6 +93,7 @@ func NewWithFile(path string) (*Database, error) {
 		return nil, err
 	}
 	// Custom file may not exist. Will be created during save, if needed.
+	// 自定义文件可能不存在。如果需要，将在保存时创建。
 	if _, err := os.Stat(path); err == nil {
 		var blob []byte
 		if blob, err = os.ReadFile(path); err != nil {
@@ -93,6 +107,7 @@ func NewWithFile(path string) (*Database, error) {
 }
 
 // Size returns the number of 4byte entries in the embedded and custom datasets.
+// Size 返回嵌入和自定义数据集中 4byte 条目的数量。
 func (db *Database) Size() (int, int) {
 	return len(db.embedded), len(db.custom)
 }
@@ -100,6 +115,10 @@ func (db *Database) Size() (int, int) {
 // Selector checks the given 4byte ID against the known ABI methods.
 //
 // This method does not validate the match, it's assumed the caller will do.
+//
+// Selector 检查给定的 4byte ID 是否存在于已知的 ABI 方法中。
+//
+// 此方法不对匹配进行验证，假设调用者会这样做。
 func (db *Database) Selector(id []byte) (string, error) {
 	if len(id) < 4 {
 		return "", fmt.Errorf("expected 4-byte id, got %d", len(id))
@@ -119,8 +138,14 @@ func (db *Database) Selector(id []byte) (string, error) {
 //
 // Node, this method does _not_ validate the correctness of the data. It assumes
 // the caller has already done so.
+//
+// AddSelector 将一个新的 4byte 条目插入数据库。如果启用了自定义数据库保存，
+// 新数据集也会持久化到磁盘。
+//
+// 注意，此方法不对数据的正确性进行验证，假设调用者已完成验证。
 func (db *Database) AddSelector(selector string, data []byte) error {
 	// If the selector is already known, skip duplicating it
+	// 如果选择器已知，跳过重复添加
 	if len(data) < 4 {
 		return nil
 	}
@@ -128,6 +153,7 @@ func (db *Database) AddSelector(selector string, data []byte) error {
 		return nil
 	}
 	// Inject the custom selector into the database and persist if needed
+	// 如果启用了自定义数据库保存，新数据集也会持久化到磁盘。
 	db.custom[hex.EncodeToString(data[:4])] = selector
 	if db.customPath == "" {
 		return nil

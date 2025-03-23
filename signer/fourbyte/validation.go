@@ -28,11 +28,15 @@ import (
 // ValidateTransaction does a number of checks on the supplied transaction, and
 // returns either a list of warnings, or an error (indicating that the transaction
 // should be immediately rejected).
+//
+// ValidateTransaction 对提供的交易执行多项检查，并返回警告列表或错误（表示交易应立即被拒绝）。
 func (db *Database) ValidateTransaction(selector *string, tx *apitypes.SendTxArgs) (*apitypes.ValidationMessages, error) {
+	//初始化验证消息对象，用于收集警告和严重问题。
 	messages := new(apitypes.ValidationMessages)
 
 	// Prevent accidental erroneous usage of both 'input' and 'data' (show stopper)
-	if tx.Data != nil && tx.Input != nil && !bytes.Equal(*tx.Data, *tx.Input) {
+	// 防止意外错误地同时使用 'input' 和 'data'（致命问题）
+	if tx.Data != nil && tx.Input != nil && !bytes.Equal(*tx.Data, *tx.Input) { // 检查 Data 和 Input 是否同时存在且不相同，若是，返回错误。 在以太坊 JSON-RPC 中，data 和 input 都表示调用数据，互斥使用，避免歧义。
 		return nil, errors.New(`ambiguous request: both "data" and "input" are set and are not identical`)
 	}
 	// ToTransaction validates, among other things, that blob hashes match with blobs, and also
@@ -41,6 +45,7 @@ func (db *Database) ValidateTransaction(selector *string, tx *apitypes.SendTxArg
 		return nil, err
 	}
 	// Place data on 'data', and nil 'input'
+	// 将数据放在 'data' 上，并将 'input' 置为 nil
 	var data []byte
 	if tx.Input != nil {
 		tx.Data = tx.Input
@@ -50,6 +55,7 @@ func (db *Database) ValidateTransaction(selector *string, tx *apitypes.SendTxArg
 		data = *tx.Data
 	}
 	// Contract creation doesn't validate call data, handle first
+	// 合约创建不验证调用数据，首先处理
 	if tx.To == nil {
 		// Contract creation should contain sufficient data to deploy a contract. A
 		// typical error is omitting sender due to some quirk in the javascript call
@@ -94,12 +100,16 @@ func (db *Database) ValidateTransaction(selector *string, tx *apitypes.SendTxArg
 
 // ValidateCallData checks if the ABI call-data + method selector (if given) can
 // be parsed and seems to match.
+// ValidateCallData 检查 ABI 调用数据和方法选择器（如果提供）是否能够被解析并看似匹配。
 func (db *Database) ValidateCallData(selector *string, data []byte, messages *apitypes.ValidationMessages) {
 	// If the data is empty, we have a plain value transfer, nothing more to do
+	// 如果数据为空，则为普通价值转移，无需进一步操作
+	// 如果 data 为空，表示交易仅转移以太币，无调用数据，直接返回。
 	if len(data) == 0 {
 		return
 	}
 	// Validate the call data that it has the 4byte prefix and the rest divisible by 32 bytes
+	// 验证调用数据，确保有 4 字节前缀，其余部分可被 32 字节整除
 	if len(data) < 4 {
 		messages.Warn("Transaction data is not valid ABI (missing the 4 byte call prefix)")
 		return
@@ -108,6 +118,7 @@ func (db *Database) ValidateCallData(selector *string, data []byte, messages *ap
 		messages.Warn(fmt.Sprintf("Transaction data is not valid ABI (length should be a multiple of 32 (was %d))", n))
 	}
 	// If a custom method selector was provided, validate with that
+	// 如果提供了自定义方法选择器，则使用它进行验证
 	if selector != nil {
 		if info, err := verifySelector(*selector, data); err != nil {
 			messages.Warn(fmt.Sprintf("Transaction contains data, but provided ABI signature could not be matched: %v", err))
@@ -118,6 +129,7 @@ func (db *Database) ValidateCallData(selector *string, data []byte, messages *ap
 		return
 	}
 	// No method selector was provided, check the database for embedded ones
+	// 未提供方法选择器，检查数据库中的嵌入签名
 	embedded, err := db.Selector(data[:4])
 	if err != nil {
 		messages.Warn(fmt.Sprintf("Transaction contains data, but the ABI signature could not be found: %v", err))
