@@ -33,6 +33,9 @@ import (
 
 // consoleOutput is an override for the console.log and console.error methods to
 // stream the output into the configured output stream instead of stdout.
+//
+// consoleOutput 是对 console.log 和 console.error 方法的重写，
+// 将输出流重定向到配置的输出流，而不是标准输出（stdout）。
 func consoleOutput(call goja.FunctionCall) goja.Value {
 	output := []string{"JS:> "}
 	for _, argument := range call.Arguments {
@@ -44,10 +47,15 @@ func consoleOutput(call goja.FunctionCall) goja.Value {
 
 // rulesetUI provides an implementation of UIClientAPI that evaluates a javascript
 // file for each defined UI-method
+// rulesetUI 提供了 UIClientAPI 的实现，该实现为每个定义的 UI 方法评估一个 JavaScript 文件
+// 为以太坊客户端（如 Geth）提供一个灵活的 UI 处理机制，通过 JavaScript 规则定义行为。
+//
+//	在以太坊生态中，UIClientAPI 通常用于与外部用户界面交互，例如处理交易签名请求或账户权限管理。
+//	rulesetUI 通过 JavaScript 提供动态、可配置的规则支持。
 type rulesetUI struct {
-	next    core.UIClientAPI // The next handler, for manual processing
+	next    core.UIClientAPI // The next handler, for manual processing  下一个处理器，用于手动处理。这是一个指向 core.UIClientAPI 接口的字段，表示处理器链中的下一环节。如果当前 rulesetUI 无法处理某个请求，会将任务传递给 next。
 	storage storage.Storage
-	jsRules string // The rules to use
+	jsRules string // The rules to use 要使用的规则
 }
 
 func NewRuleEvaluator(next core.UIClientAPI, jsbackend storage.Storage) (*rulesetUI, error) {
@@ -70,15 +78,18 @@ func (r *rulesetUI) Init(javascriptRules string) error {
 }
 func (r *rulesetUI) execute(jsfunc string, jsarg interface{}) (goja.Value, error) {
 	// Instantiate a fresh vm engine every time
+	// 每次实例化一个新的虚拟机引擎
 	vm := goja.New()
 
 	// Set the native callbacks
+	// 设置原生回调函数
 	consoleObj := vm.NewObject()
 	consoleObj.Set("log", consoleOutput)
 	consoleObj.Set("error", consoleOutput)
 	vm.Set("console", consoleObj)
 
 	storageObj := vm.NewObject()
+	// 模拟以太坊客户端的持久化存储（如 LevelDB），用于保存规则状态或用户配置，可能与账户管理相关。
 	storageObj.Set("put", func(call goja.FunctionCall) goja.Value {
 		key, val := call.Argument(0).String(), call.Argument(1).String()
 		if val == "" {
@@ -96,6 +107,8 @@ func (r *rulesetUI) execute(jsfunc string, jsarg interface{}) (goja.Value, error
 	vm.Set("storage", storageObj)
 
 	// Load bootstrap libraries
+	// 加载引导库
+	// 编译并运行 BigNumber.js 库，支持大整数运算。
 	script, err := goja.Compile("bignumber.js", deps.BigNumberJS, true)
 	if err != nil {
 		log.Warn("Failed loading libraries", "err", err)
@@ -104,6 +117,7 @@ func (r *rulesetUI) execute(jsfunc string, jsarg interface{}) (goja.Value, error
 	vm.RunProgram(script)
 
 	// Run the actual rule implementation
+	// 执行实际的规则实现
 	_, err = vm.RunString(r.jsRules)
 	if err != nil {
 		log.Warn("Execution failed", "err", err)
@@ -114,6 +128,10 @@ func (r *rulesetUI) execute(jsfunc string, jsarg interface{}) (goja.Value, error
 	// All calls are objects with the parameters being keys in that object.
 	// To provide additional insulation between js and go, we serialize it into JSON on the Go-side,
 	// and deserialize it on the JS side.
+	// 执行实际的调用
+	// 所有调用都是对象，参数是该对象中的键。
+	// 为了在 JavaScript 和 Go 之间提供额外的隔离，我们在 Go 端将其序列化为 JSON，
+	// 并在 JS 端反序列化。
 
 	jsonbytes, err := json.Marshal(jsarg)
 	if err != nil {
@@ -121,6 +139,7 @@ func (r *rulesetUI) execute(jsfunc string, jsarg interface{}) (goja.Value, error
 		return goja.Undefined(), err
 	}
 	// Now, we call foobar(JSON.parse(<jsondata>)).
+	// 现在，我们调用 foobar(JSON.parse(<jsondata>))。
 	var call string
 	if len(jsonbytes) > 0 {
 		call = fmt.Sprintf("%v(JSON.parse(%v))", jsfunc, string(jsonbytes))
