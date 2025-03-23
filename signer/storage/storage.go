@@ -20,26 +20,32 @@ import "errors"
 
 var (
 	// ErrZeroKey is returned if an attempt was made to inset a 0-length key.
+	// ErrZeroKey 在尝试插入长度为 0 的键时返回。
 	ErrZeroKey = errors.New("0-length key")
 
 	// ErrNotFound is returned if an unknown key is attempted to be retrieved.
+	// ErrNotFound 在尝试检索未知键时返回。
 	ErrNotFound = errors.New("not found")
 )
 
 type Storage interface {
 	// Put stores a value by key. 0-length keys results in noop.
+	// Put 通过键存储一个值。键的长度为 0 时不执行任何操作。
 	Put(key, value string)
 
 	// Get returns the previously stored value, or an error if the key is 0-length
 	// or unknown.
+	// Get 返回之前存储的值，如果键的长度为 0 或未知则返回错误。
 	Get(key string) (string, error)
 
 	// Del removes a key-value pair. If the key doesn't exist, the method is a noop.
+	// Del 删除一个键值对。如果键不存在，该方法不执行任何操作。
 	Del(key string)
 }
 
 // EphemeralStorage is an in-memory storage that does
 // not persist values to disk. Mainly used for testing
+// EphemeralStorage 是一种内存存储，不会将值持久化到磁盘。主要用于测试。
 type EphemeralStorage struct {
 	data map[string]string
 }
@@ -77,6 +83,7 @@ func NewEphemeralStorage() Storage {
 }
 
 // NoStorage is a dummy construct which doesn't remember anything you tell it
+// NoStorage 是一个虚拟构造，它不会记住你告诉它的任何内容。
 type NoStorage struct{}
 
 func (s *NoStorage) Put(key, value string) {}

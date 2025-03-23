@@ -36,14 +36,19 @@ type storedCredential struct {
 
 // AESEncryptedStorage is a storage type which is backed by a json-file. The json-file contains
 // key-value mappings, where the keys are _not_ encrypted, only the values are.
+// AESEncryptedStorage 是一种由 JSON 文件支持的存储类型。该 JSON 文件包含键值映射，
+// 其中键未加密，只有值是加密的。
 type AESEncryptedStorage struct {
 	// File to read/write credentials
+	// 用于读写凭证的文件
 	filename string
 	// Key stored in base64
+	// 以 base64 存储的密钥
 	key []byte
 }
 
 // NewAESEncryptedStorage creates a new encrypted storage backed by the given file/key
+// NewAESEncryptedStorage 创建一个新的加密存储，由给定的文件和密钥支持
 func NewAESEncryptedStorage(filename string, key []byte) *AESEncryptedStorage {
 	return &AESEncryptedStorage{
 		filename: filename,
@@ -52,6 +57,7 @@ func NewAESEncryptedStorage(filename string, key []byte) *AESEncryptedStorage {
 }
 
 // Put stores a value by key. 0-length keys results in noop.
+// Put 通过键存储一个值。键的长度为 0 时不执行任何操作。
 func (s *AESEncryptedStorage) Put(key, value string) {
 	if len(key) == 0 {
 		return
@@ -111,6 +117,7 @@ func (s *AESEncryptedStorage) Del(key string) {
 }
 
 // readEncryptedStorage reads the file with encrypted creds
+// readEncryptedStorage 读取包含加密凭证的文件
 func (s *AESEncryptedStorage) readEncryptedStorage() (map[string]storedCredential, error) {
 	creds := make(map[string]storedCredential)
 	raw, err := os.ReadFile(s.filename)
@@ -130,6 +137,7 @@ func (s *AESEncryptedStorage) readEncryptedStorage() (map[string]storedCredentia
 }
 
 // writeEncryptedStorage write the file with encrypted creds
+// writeEncryptedStorage 写入包含加密凭证的文件
 func (s *AESEncryptedStorage) writeEncryptedStorage(creds map[string]storedCredential) error {
 	raw, err := json.Marshal(creds)
 	if err != nil {
@@ -144,19 +152,28 @@ func (s *AESEncryptedStorage) writeEncryptedStorage(creds map[string]storedCrede
 // encrypt encrypts plaintext with the given key, with additional data
 // The 'additionalData' is used to place the (plaintext) KV-store key into the V,
 // to prevent the possibility to alter a K, or swap two entries in the KV store with each other.
+//
+// encrypt 使用给定的密钥加密明文，并带有附加数据
+// 'additionalData' 用于将（明文）键值存储的键放入 V 中，
+// 以防止更改键 K 或在键值存储中互换两个条目。
 func encrypt(key []byte, plaintext []byte, additionalData []byte) ([]byte, []byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, nil, err
 	}
+	//GCM 模式在以太坊中常用于需要完整性验证的场景（如 keystore），比 CTR 模式更安全。
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, nil, err
 	}
+	// 生成一个随机 nonce（默认 12 字节），从 rand.Reader 读取，确保每次加密唯一。\
+	// Nonce 的随机性防止重放攻击，在 Geth 的 keystore 中也有类似机制。
 	nonce := make([]byte, aesgcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, nil, err
 	}
+	// 使用 Seal 方法加密 plaintext，additionalData 不加密但用于认证。
+	// additionalData（这里是键）防止键值对互换或篡改，增强存储安全性。
 	ciphertext := aesgcm.Seal(nil, nonce, plaintext, additionalData)
 	return ciphertext, nonce, nil
 }
