@@ -28,64 +28,78 @@ import (
 )
 
 // txJSON is the JSON representation of transactions.
+// txJSON 是交易的 JSON 表示形式。
+//
+// Geth 中，交易的 JSON 表示广泛用于 RPC 接口（如 eth_getTransactionByHash），txJSON 是其核心数据结构。
 type txJSON struct {
-	Type hexutil.Uint64 `json:"type"`
+	Type hexutil.Uint64 `json:"type"` // 表示交易类型（如 0x0 传统交易、0x2 EIP-1559 交易）
 
-	ChainID              *hexutil.Big           `json:"chainId,omitempty"`
+	ChainID              *hexutil.Big           `json:"chainId,omitempty"` // 链 ID，用于防止跨链重放攻击
 	Nonce                *hexutil.Uint64        `json:"nonce"`
 	To                   *common.Address        `json:"to"`
 	Gas                  *hexutil.Uint64        `json:"gas"`
-	GasPrice             *hexutil.Big           `json:"gasPrice"`
-	MaxPriorityFeePerGas *hexutil.Big           `json:"maxPriorityFeePerGas"`
-	MaxFeePerGas         *hexutil.Big           `json:"maxFeePerGas"`
-	MaxFeePerBlobGas     *hexutil.Big           `json:"maxFeePerBlobGas,omitempty"`
-	Value                *hexutil.Big           `json:"value"`
-	Input                *hexutil.Bytes         `json:"input"`
-	AccessList           *AccessList            `json:"accessList,omitempty"`
-	BlobVersionedHashes  []common.Hash          `json:"blobVersionedHashes,omitempty"`
+	GasPrice             *hexutil.Big           `json:"gasPrice"`                      // 传统交易的 Gas 价格
+	MaxPriorityFeePerGas *hexutil.Big           `json:"maxPriorityFeePerGas"`          // EIP-1559 的优先费上限
+	MaxFeePerGas         *hexutil.Big           `json:"maxFeePerGas"`                  // EIP-1559 的总费用上限
+	MaxFeePerBlobGas     *hexutil.Big           `json:"maxFeePerBlobGas,omitempty"`    // EIP-4844 Blob 交易的 Gas 费用上限，可选 EIP-4844：引入 Blob 数据以降低 Rollup 成本。
+	Value                *hexutil.Big           `json:"value"`                         // 交易转账的 ETH 数量（以 Wei 为单位）
+	Input                *hexutil.Bytes         `json:"input"`                         // 交易数据（如智能合约调用参数）
+	AccessList           *AccessList            `json:"accessList,omitempty"`          // EIP-2930 的访问列表，优化 Gas 使用，可选。
+	BlobVersionedHashes  []common.Hash          `json:"blobVersionedHashes,omitempty"` // EIP-4844 Blob 数据的版本哈希，可选。
 	AuthorizationList    []SetCodeAuthorization `json:"authorizationList,omitempty"`
 	V                    *hexutil.Big           `json:"v"`
 	R                    *hexutil.Big           `json:"r"`
 	S                    *hexutil.Big           `json:"s"`
-	YParity              *hexutil.Uint64        `json:"yParity,omitempty"`
+	YParity              *hexutil.Uint64        `json:"yParity,omitempty"` // EIP-1559 及之后的奇偶校验值，可选。
 
 	// Blob transaction sidecar encoding:
+	// Blob 交易的侧边编码：
+	// EIP-4844（Shard Blob Transactions）引入 Blob 数据结构，用于数据分片和 Rollup 优化。
 	Blobs       []kzg4844.Blob       `json:"blobs,omitempty"`
 	Commitments []kzg4844.Commitment `json:"commitments,omitempty"`
 	Proofs      []kzg4844.Proof      `json:"proofs,omitempty"`
 
 	// Only used for encoding:
-	Hash common.Hash `json:"hash"`
+	// 仅用于编码：
+	Hash common.Hash `json:"hash"` // 交易哈希是唯一标识符，用于索引和验证。
 }
 
 // yParityValue returns the YParity value from JSON. For backwards-compatibility reasons,
 // this can be given in the 'v' field or the 'yParity' field. If both exist, they must match.
+// yParityValue 从 JSON 返回 YParity 值。为了向后兼容，
+// 可以在 'v' 字段或 'yParity' 字段中提供此值。如果两者都存在，则必须匹配。
+//
+// YParity 是 ECDSA 签名的一部分，表示 Y 坐标的奇偶性，用于恢复公钥。
+// EIP-1559 引入 YParity 字段以简化签名格式，而传统交易使用 V（包含链 ID 和奇偶性）。
 func (tx *txJSON) yParityValue() (*big.Int, error) {
 	if tx.YParity != nil {
 		val := uint64(*tx.YParity)
 		if val != 0 && val != 1 {
 			return nil, errInvalidYParity
 		}
-		bigval := new(big.Int).SetUint64(val)
+		bigval := new(big.Int).SetUint64(val) // 为了向后兼容，旧交易可能只提供 V，而新交易可能同时提供 V 和 YParity。
 		if tx.V != nil && tx.V.ToInt().Cmp(bigval) != 0 {
 			return nil, errVYParityMismatch
 		}
 		return bigval, nil
 	}
-	if tx.V != nil {
+	if tx.V != nil { // 传统交易（预 EIP-1559）使用 V 表示奇偶性加链 ID，此处简化处理，仅提取值。
 		return tx.V.ToInt(), nil
 	}
 	return nil, errVYParityMissing
 }
 
 // MarshalJSON marshals as JSON with a hash.
+// MarshalJSON 将交易序列化为带有哈希的 JSON。
 func (tx *Transaction) MarshalJSON() ([]byte, error) {
 	var enc txJSON
 	// These are set for all tx types.
+	// 这些字段对所有交易类型都设置。
 	enc.Hash = tx.Hash()
 	enc.Type = hexutil.Uint64(tx.Type())
 
 	// Other fields are set conditionally depending on tx type.
+	// 其他字段根据交易类型有条件地设置。
 	switch itx := tx.inner.(type) {
 	case *LegacyTx:
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
@@ -97,11 +111,11 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		enc.V = (*hexutil.Big)(itx.V)
 		enc.R = (*hexutil.Big)(itx.R)
 		enc.S = (*hexutil.Big)(itx.S)
-		if tx.Protected() {
+		if tx.Protected() { // ChainID 在受保护交易（EIP-155）时设置。 Protected() 检查是否包含 EIP-155 的链 ID，防止跨链重放攻击。
 			enc.ChainID = (*hexutil.Big)(tx.ChainId())
 		}
 
-	case *AccessListTx:
+	case *AccessListTx: // EIP-2930：引入访问列表，减少 Gas 成本。 新增 ChainID  AccessList 和 YParity，支持访问列表优化。
 		enc.ChainID = (*hexutil.Big)(itx.ChainID)
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
 		enc.To = tx.To()
@@ -116,7 +130,7 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		yparity := itx.V.Uint64()
 		enc.YParity = (*hexutil.Uint64)(&yparity)
 
-	case *DynamicFeeTx:
+	case *DynamicFeeTx: // 引入优先费和最大费用机制。使用动态费用字段代替 GasPrice。
 		enc.ChainID = (*hexutil.Big)(itx.ChainID)
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
 		enc.To = tx.To()
@@ -132,7 +146,7 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		yparity := itx.V.Uint64()
 		enc.YParity = (*hexutil.Uint64)(&yparity)
 
-	case *BlobTx:
+	case *BlobTx: // EIP-4844：引入 Blob 数据，优化 Rollup 成本。新增；Blob Gas 费用和侧边数据。
 		enc.ChainID = (*hexutil.Big)(itx.ChainID.ToBig())
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
 		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
@@ -154,7 +168,7 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 			enc.Commitments = itx.Sidecar.Commitments
 			enc.Proofs = itx.Sidecar.Proofs
 		}
-	case *SetCodeTx:
+	case *SetCodeTx: // AuthorizationList 支持自定义授权列表，可能为未来扩展。
 		enc.ChainID = (*hexutil.Big)(itx.ChainID.ToBig())
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
 		enc.To = tx.To()
