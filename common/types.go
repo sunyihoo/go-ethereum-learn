@@ -320,6 +320,7 @@ func (a Address) Format(s fmt.State, c rune) {
 
 // SetBytes sets the address to the value of b.
 // If b is larger than len(a), b will be cropped from the left.
+// 如果 b 大于 len（a），则 b 将从左侧裁剪。
 func (a *Address) SetBytes(b []byte) {
 	if len(b) > len(a) {
 		b = b[len(b)-AddressLength:]
