@@ -19,6 +19,9 @@
 // read-only database.
 // There really are no guarantees in this database, since the local geth does not
 // exclusive access, but it can be used for basic diagnostics of a remote node.
+//
+// 包 remotedb 实现基于远程 geth 节点的键值数据库层。在底层，它利用 `debug_dbGet` 方法实现一个只读数据库。
+// 这个数据库实际上没有任何保证，因为本地 geth 没有独占访问权，但它可以用于远程节点的基本诊断。
 package remotedb
 
 import (
@@ -27,7 +30,15 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// debug_dbGet 方法（只读的）：
+// 这是 geth 提供的一个调试 RPC（远程过程调用）方法，允许用户通过 JSON-RPC 接口从节点的数据库中获取特定键的值。
+//
+// 以太坊节点可以通过 RPC 接口（如 HTTP 或 WebSocket）暴露功能，允许外部客户端与之交互。
+// remotedb 利用这种机制连接到远程 geth 节点，而不是在本地运行完整节点。
+
 // Database is a key-value lookup for a remote database via debug_dbGet.
+//
+// Database 是通过 debug_dbGet 方法对远程数据库进行键值查询的数据库。
 type Database struct {
 	remote *rpc.Client
 }
@@ -41,6 +52,7 @@ func (db *Database) Has(key []byte) (bool, error) {
 
 func (db *Database) Get(key []byte) ([]byte, error) {
 	var resp hexutil.Bytes
+	// 调用远程节点的 debug_dbGet 方法获取键对应的值
 	err := db.remote.Call(&resp, "debug_dbGet", hexutil.Bytes(key))
 	if err != nil {
 		return nil, err
@@ -57,6 +69,7 @@ func (db *Database) HasAncient(kind string, number uint64) (bool, error) {
 
 func (db *Database) Ancient(kind string, number uint64) ([]byte, error) {
 	var resp hexutil.Bytes
+	// 调用远程节点的 debug_dbAncient 方法获取旧数据
 	err := db.remote.Call(&resp, "debug_dbAncient", kind, number)
 	if err != nil {
 		return nil, err
@@ -70,6 +83,7 @@ func (db *Database) AncientRange(kind string, start, count, maxBytes uint64) ([]
 
 func (db *Database) Ancients() (uint64, error) {
 	var resp uint64
+	// 调用远程节点的 debug_dbAncients 方法获取旧数据总数
 	err := db.remote.Call(&resp, "debug_dbAncients")
 	return resp, err
 }
@@ -143,6 +157,7 @@ func (db *Database) Close() error {
 	return nil
 }
 
+// New 使用提供的 RPC 客户端创建一个新的 ethdb.Database 实例。
 func New(client *rpc.Client) ethdb.Database {
 	return &Database{
 		remote: client,
