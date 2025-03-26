@@ -16,11 +16,12 @@
 
 package version
 
+// 通过 Major（主版本）、 Minor（次版本）、 Patch（补丁版本）和 Meta（元数据）来标识软件的当前版本。
 const (
-	Major = 1          // Major version component of the current release
-	Minor = 14         // Minor version component of the current release
-	Patch = 13         // Patch version component of the current release
-	Meta  = "unstable" // Version metadata to append to the version string
+	Major = 1          // Major version component of the current release 当前发布版本的主要版本组成部分
+	Minor = 14         // Minor version component of the current release 当前发布版本的次要版本组成部分
+	Patch = 13         // Patch version component of the current release 当前发布版本的补丁版本组成部分
+	Meta  = "unstable" // Version metadata to append to the version string 附加到版本字符串的版本元数据
 )
 
 var gitCommit string = "9b68875d68b409eb2efdb68a4b623aaacc10a5b6"
