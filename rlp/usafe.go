@@ -25,6 +25,7 @@ import (
 )
 
 // byteArrayBytes returns a slice of the byte array v.
+// byteArrayBytes 返回字节数组 v 的一个切片。
 func byteArrayBytes(v reflect.Value, length int) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(v.UnsafeAddr())), length)
 }
