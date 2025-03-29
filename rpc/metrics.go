@@ -24,17 +24,19 @@ import (
 )
 
 var (
-	rpcRequestGauge        = metrics.NewRegisteredGauge("rpc/requests", nil)
-	successfulRequestGauge = metrics.NewRegisteredGauge("rpc/success", nil)
-	failedRequestGauge     = metrics.NewRegisteredGauge("rpc/failure", nil)
+	rpcRequestGauge        = metrics.NewRegisteredGauge("rpc/requests", nil) // RPC 请求计数器
+	successfulRequestGauge = metrics.NewRegisteredGauge("rpc/success", nil)  // 成功 RPC 请求计数器
+	failedRequestGauge     = metrics.NewRegisteredGauge("rpc/failure", nil)  // 失败 RPC 请求计数器
 
 	// serveTimeHistName is the prefix of the per-request serving time histograms.
+	// serveTimeHistName 是每个请求服务时间直方图的前缀。
 	serveTimeHistName = "rpc/duration"
 
-	rpcServingTimer = metrics.NewRegisteredTimer("rpc/duration/all", nil)
+	rpcServingTimer = metrics.NewRegisteredTimer("rpc/duration/all", nil) // 所有 RPC 请求的服务时间计时器
 )
 
 // updateServeTimeHistogram tracks the serving time of a remote RPC call.
+// updateServeTimeHistogram 跟踪远程 RPC 调用的服务时间。
 func updateServeTimeHistogram(method string, success bool, elapsed time.Duration) {
 	note := "success"
 	if !success {
@@ -43,8 +45,8 @@ func updateServeTimeHistogram(method string, success bool, elapsed time.Duration
 	h := fmt.Sprintf("%s/%s/%s", serveTimeHistName, method, note)
 	sampler := func() metrics.Sample {
 		return metrics.ResettingSample(
-			metrics.NewExpDecaySample(1028, 0.015),
+			metrics.NewExpDecaySample(1028, 0.015), // 使用指数衰减采样器
 		)
 	}
-	metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(elapsed.Nanoseconds())
+	metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(elapsed.Nanoseconds()) // 获取或注册直方图并更新服务时间
 }
