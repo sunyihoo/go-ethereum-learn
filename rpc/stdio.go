@@ -26,11 +26,15 @@ import (
 )
 
 // DialStdIO creates a client on stdin/stdout.
+// DialStdIO 在标准输入/输出上创建一个客户端。
+//
+// 在某些测试场景或特定的工具中，可能需要与本地运行的以太坊节点或其他服务进行基于命令行的 RPC 交互，这时可以使用标准输入/输出作为通信通道。
 func DialStdIO(ctx context.Context) (*Client, error) {
 	return DialIO(ctx, os.Stdin, os.Stdout)
 }
 
 // DialIO creates a client which uses the given IO channels
+// DialIO 创建一个使用给定 IO 通道的客户端
 func DialIO(ctx context.Context, in io.Reader, out io.Writer) (*Client, error) {
 	cfg := new(clientConfig)
 	return newClient(ctx, cfg, newClientTransportIO(in, out))
