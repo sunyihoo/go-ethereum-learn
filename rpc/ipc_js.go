@@ -25,14 +25,17 @@ import (
 	"net"
 )
 
+// errNotSupported 一个预定义的错误，用于表示所请求的 RPC 功能（在此上下文中特指 IPC）不可用。
 var errNotSupported = errors.New("rpc: not supported")
 
 // ipcListen will create a named pipe on the given endpoint.
+// ipcListen 在此实现中，表示创建 IPC 监听器是不支持的操作。
 func ipcListen(endpoint string) (net.Listener, error) {
 	return nil, errNotSupported
 }
 
 // newIPCConnection will connect to a named pipe with the given endpoint as name.
+// newIPCConnection 在此实现中，表示连接到 IPC 端点是不支持的操作。
 func newIPCConnection(ctx context.Context, endpoint string) (net.Conn, error) {
 	return nil, errNotSupported
 }
