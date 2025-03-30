@@ -25,6 +25,9 @@ import (
 )
 
 // ServeListener accepts connections on l, serving JSON-RPC on them.
+// ServeListener 在 l 上接受连接，并在这些连接上提供 JSON-RPC 服务。
+//
+// 用于在给定的网络监听器（net.Listener）上接受连接，并为每个连接启动一个 goroutine 处理 JSON-RPC 请求。
 func (s *Server) ServeListener(l net.Listener) error {
 	for {
 		conn, err := l.Accept()
@@ -45,6 +48,10 @@ func (s *Server) ServeListener(l net.Listener) error {
 //
 // The context is used for the initial connection establishment. It does not
 // affect subsequent interactions with the client.
+//
+// DialIPC 创建一个新的 IPC 客户端，连接到给定的端点。
+// 在 Unix 上，它假定端点是 Unix 套接字的完整路径，而在 Windows 上，端点是命名管道的标识符。
+// 上下文用于初始连接建立。它不影响与客户端的后续交互。
 func DialIPC(ctx context.Context, endpoint string) (*Client, error) {
 	cfg := new(clientConfig)
 	return newClient(ctx, cfg, newClientTransportIPC(endpoint))

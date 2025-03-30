@@ -24,11 +24,13 @@ import (
 )
 
 // StartIPCEndpoint starts an IPC endpoint.
+// StartIPCEndpoint 启动一个 IPC 端点。
 func StartIPCEndpoint(ipcEndpoint string, apis []API) (net.Listener, *Server, error) {
 	// Register all the APIs exposed by the services.
+	// 注册服务暴露的所有 API。
 	var (
 		handler    = NewServer()
-		regMap     = make(map[string]struct{})
+		regMap     = make(map[string]struct{}) // 跟踪已注册的 API 命名空间，避免重复记录。
 		registered []string
 	)
 	for _, api := range apis {
@@ -43,6 +45,7 @@ func StartIPCEndpoint(ipcEndpoint string, apis []API) (net.Listener, *Server, er
 	}
 	log.Debug("IPCs registered", "namespaces", strings.Join(registered, ","))
 	// All APIs registered, start the IPC listener.
+	// 所有 API 已注册，启动 IPC 监听器。
 	listener, err := ipcListen(ipcEndpoint)
 	if err != nil {
 		return nil, nil, err
