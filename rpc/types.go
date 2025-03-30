@@ -46,6 +46,7 @@ type API struct {
 // 实现必须是 goroutine 安全的，因为 codec 可以被多个 goroutine 并发调用。
 //
 // 定义了 RPC 会话服务器端读取、解析和写入消息所需的全部方法。
+// ServerCodec 是用于编码和解码 JSON-RPC 消息的接口，支持多种传输方式（如 HTTP、IPC、WebSocket）。
 type ServerCodec interface {
 	peerInfo() PeerInfo                                           // 返回关于连接的对等方的信息。
 	readBatch() (msgs []*jsonrpcMessage, isBatch bool, err error) // 从连接中读取一批 RPC 消息。JSON-RPC 协议支持批量请求。
