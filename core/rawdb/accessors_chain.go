@@ -33,13 +33,22 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+// 规范链（Canonical Chain）
+// 以太坊维护一个规范链，表示当前最长的有效区块链。ReadCanonicalHash 和 WriteCanonicalHash 用于管理块编号与哈希的映射，确保节点能快速定位规范块。
+// 删除映射（DeleteCanonicalHash）可能在链重组（reorg）时使用，移除非规范块的记录。
+// 古老数据（Ancient Data）
+// 以太坊引入“冻结存储”（freezer）机制，将较旧的区块链数据（如块头哈希）存储在单独的表中（ChainFreezerHashTable），减少 LevelDB 的负载。
+// ReadAncients 是访问这些数据的接口，优化了历史数据查询。
+
 // ReadCanonicalHash retrieves the hash assigned to a canonical block number.
+// ReadCanonicalHash 检索分配给规范块编号的哈希。
 func ReadCanonicalHash(db ethdb.Reader, number uint64) common.Hash {
 	var data []byte
 	db.ReadAncients(func(reader ethdb.AncientReaderOp) error {
 		data, _ = reader.Ancient(ChainFreezerHashTable, number)
 		if len(data) == 0 {
 			// Get it by hash from leveldb
+			// 从 LevelDB 中通过哈希获取
 			data, _ = db.Get(headerHashKey(number))
 		}
 		return nil
@@ -48,6 +57,7 @@ func ReadCanonicalHash(db ethdb.Reader, number uint64) common.Hash {
 }
 
 // WriteCanonicalHash stores the hash assigned to a canonical block number.
+// WriteCanonicalHash 存储分配给规范块编号的哈希。
 func WriteCanonicalHash(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	if err := db.Put(headerHashKey(number), hash.Bytes()); err != nil {
 		log.Crit("Failed to store number to hash mapping", "err", err)
@@ -55,6 +65,7 @@ func WriteCanonicalHash(db ethdb.KeyValueWriter, hash common.Hash, number uint64
 }
 
 // DeleteCanonicalHash removes the number to hash canonical mapping.
+// DeleteCanonicalHash 删除块编号到哈希的规范映射。
 func DeleteCanonicalHash(db ethdb.KeyValueWriter, number uint64) {
 	if err := db.Delete(headerHashKey(number)); err != nil {
 		log.Crit("Failed to delete number to hash mapping", "err", err)

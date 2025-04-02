@@ -28,6 +28,7 @@ import (
 )
 
 // ReadDatabaseVersion retrieves the version number of the database.
+// ReadDatabaseVersion 检索数据库的版本号。
 func ReadDatabaseVersion(db ethdb.KeyValueReader) *uint64 {
 	var version uint64
 
@@ -42,7 +43,8 @@ func ReadDatabaseVersion(db ethdb.KeyValueReader) *uint64 {
 	return &version
 }
 
-// WriteDatabaseVersion stores the version number of the database
+// WriteDatabaseVersion stores the version number of the databse
+// WriteDatabaseVersion 存储数据库的版本号。
 func WriteDatabaseVersion(db ethdb.KeyValueWriter, version uint64) {
 	enc, err := rlp.EncodeToBytes(version)
 	if err != nil {
@@ -54,6 +56,7 @@ func WriteDatabaseVersion(db ethdb.KeyValueWriter, version uint64) {
 }
 
 // ReadChainConfig retrieves the consensus settings based on the given genesis hash.
+// ReadChainConfig 根据提供的创世块哈希检索链的共识配置。
 func ReadChainConfig(db ethdb.KeyValueReader, hash common.Hash) *params.ChainConfig {
 	data, _ := db.Get(configKey(hash))
 	if len(data) == 0 {
@@ -68,6 +71,7 @@ func ReadChainConfig(db ethdb.KeyValueReader, hash common.Hash) *params.ChainCon
 }
 
 // WriteChainConfig writes the chain config settings to the database.
+// WriteChainConfig 将链配置写入数据库。
 func WriteChainConfig(db ethdb.KeyValueWriter, hash common.Hash, cfg *params.ChainConfig) {
 	if cfg == nil {
 		return
@@ -83,12 +87,14 @@ func WriteChainConfig(db ethdb.KeyValueWriter, hash common.Hash, cfg *params.Cha
 
 // ReadGenesisStateSpec retrieves the genesis state specification based on the
 // given genesis (block-)hash.
+// ReadGenesisStateSpec 根据给定的创世块哈希检索创世状态的详细信息。
 func ReadGenesisStateSpec(db ethdb.KeyValueReader, blockhash common.Hash) []byte {
 	data, _ := db.Get(genesisStateSpecKey(blockhash))
 	return data
 }
 
 // WriteGenesisStateSpec writes the genesis state specification into the disk.
+// WriteGenesisStateSpec 将创世状态规格写入磁盘。
 func WriteGenesisStateSpec(db ethdb.KeyValueWriter, blockhash common.Hash, data []byte) {
 	if err := db.Put(genesisStateSpecKey(blockhash), data); err != nil {
 		log.Crit("Failed to store genesis state", "err", err)
@@ -97,9 +103,10 @@ func WriteGenesisStateSpec(db ethdb.KeyValueWriter, blockhash common.Hash, data 
 
 // crashList is a list of unclean-shutdown-markers, for rlp-encoding to the
 // database
+// crashList 是存储非正常关机标记的列表，使用 RLP 编码保存到数据库中。
 type crashList struct {
-	Discarded uint64   // how many ucs have we deleted
-	Recent    []uint64 // unix timestamps of 10 latest unclean shutdowns
+	Discarded uint64   // how many ucs have we deleted  表示我们删除了多少旧的非正常关机标记。
+	Recent    []uint64 // unix timestamps of 10 latest unclean shutdowns 最近记录的 10 次非正常关机的 Unix 时间戳。
 }
 
 const crashesToKeep = 10
@@ -108,9 +115,14 @@ const crashesToKeep = 10
 // the previous data
 // - a list of timestamps
 // - a count of how many old unclean-shutdowns have been discarded
+//
+// PushUncleanShutdownMarker 添加一个新的非正常关机标记并返回之前的数据：
+// - 时间戳列表
+// - 已删除的旧标记计数。
 func PushUncleanShutdownMarker(db ethdb.KeyValueStore) ([]uint64, uint64, error) {
 	var uncleanShutdowns crashList
 	// Read old data
+	// 读取旧的数据。
 	if data, err := db.Get(uncleanShutdownKey); err == nil {
 		if err := rlp.DecodeBytes(data, &uncleanShutdowns); err != nil {
 			return nil, 0, err
@@ -120,6 +132,7 @@ func PushUncleanShutdownMarker(db ethdb.KeyValueStore) ([]uint64, uint64, error)
 	var previous = make([]uint64, len(uncleanShutdowns.Recent))
 	copy(previous, uncleanShutdowns.Recent)
 	// Add a new (but cap it)
+	// 添加新的非正常关机标记并将存量限制为 crashesToKeep。
 	uncleanShutdowns.Recent = append(uncleanShutdowns.Recent, uint64(time.Now().Unix()))
 	if count := len(uncleanShutdowns.Recent); count > crashesToKeep+1 {
 		numDel := count - (crashesToKeep + 1)
@@ -127,6 +140,7 @@ func PushUncleanShutdownMarker(db ethdb.KeyValueStore) ([]uint64, uint64, error)
 		uncleanShutdowns.Discarded += uint64(numDel)
 	}
 	// And save it again
+	// 保存更新后的数据。
 	data, _ := rlp.EncodeToBytes(uncleanShutdowns)
 	if err := db.Put(uncleanShutdownKey, data); err != nil {
 		log.Warn("Failed to write unclean-shutdown marker", "err", err)
@@ -136,12 +150,15 @@ func PushUncleanShutdownMarker(db ethdb.KeyValueStore) ([]uint64, uint64, error)
 }
 
 // PopUncleanShutdownMarker removes the last unclean shutdown marker
+// PopUncleanShutdownMarker 移除最后一个非正常关机标记。
 func PopUncleanShutdownMarker(db ethdb.KeyValueStore) {
 	var uncleanShutdowns crashList
 	// Read old data
+	// 读取旧的非正常关机数据。
 	if data, err := db.Get(uncleanShutdownKey); err != nil {
 		log.Warn("Error reading unclean shutdown markers", "error", err)
 	} else if err := rlp.DecodeBytes(data, &uncleanShutdowns); err != nil {
+		// 错误解码时不应发生，可能导致数据损坏。
 		log.Error("Error decoding unclean shutdown markers", "error", err) // Should mos def _not_ happen
 	}
 	if l := len(uncleanShutdowns.Recent); l > 0 {
@@ -154,15 +171,18 @@ func PopUncleanShutdownMarker(db ethdb.KeyValueStore) {
 }
 
 // UpdateUncleanShutdownMarker updates the last marker's timestamp to now.
+// UpdateUncleanShutdownMarker 将最后一个非正常关机标记的时间戳更新为当前时间。
 func UpdateUncleanShutdownMarker(db ethdb.KeyValueStore) {
 	var uncleanShutdowns crashList
 	// Read old data
+	// 读取旧的非正常关机数据。
 	if data, err := db.Get(uncleanShutdownKey); err != nil {
 		log.Warn("Error reading unclean shutdown markers", "error", err)
 	} else if err := rlp.DecodeBytes(data, &uncleanShutdowns); err != nil {
 		log.Warn("Error decoding unclean shutdown markers", "error", err)
 	}
 	// This shouldn't happen because we push a marker on Backend instantiation
+	// 理论上不会出现没有标记的情况，因为初始化时会推送一个标记。
 	count := len(uncleanShutdowns.Recent)
 	if count == 0 {
 		log.Warn("No unclean shutdown marker to update")
@@ -175,13 +195,21 @@ func UpdateUncleanShutdownMarker(db ethdb.KeyValueStore) {
 	}
 }
 
+// Eth2 转换状态 (ReadTransitionStatus 和 WriteTransitionStatus)
+// 功能描述：记录客户端是否已经完成了向 Eth2 的规范性转换。
+// 关键知识点：
+// Eth2 是以太坊 2.0 的新阶段，实现 PoS (Proof-of-Stake) 共识机制。
+// 数据库过渡状态的记录帮助跟踪客户端的网络参与情况。
+
 // ReadTransitionStatus retrieves the eth2 transition status from the database
+// ReadTransitionStatus 从数据库中读取 Eth2 转换状态。
 func ReadTransitionStatus(db ethdb.KeyValueReader) []byte {
 	data, _ := db.Get(transitionStatusKey)
 	return data
 }
 
 // WriteTransitionStatus stores the eth2 transition status to the database
+// WriteTransitionStatus 将 Eth2 转换状态存储到数据库。
 func WriteTransitionStatus(db ethdb.KeyValueWriter, data []byte) {
 	if err := db.Put(transitionStatusKey, data); err != nil {
 		log.Crit("Failed to store the eth2 transition status", "err", err)
