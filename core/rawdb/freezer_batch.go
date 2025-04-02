@@ -26,9 +26,11 @@ import (
 
 // This is the maximum amount of data that will be buffered in memory
 // for a single freezer table batch.
+// 这是单个 freezer 表批次在内存中缓冲的最大数据量。
 const freezerBatchBufferLimit = 2 * 1024 * 1024
 
 // freezerBatch is a write operation of multiple items on a freezer.
+// freezerBatch 是在 freezer 上的多个项的写入操作。
 type freezerBatch struct {
 	tables map[string]*freezerTableBatch
 }
@@ -42,16 +44,19 @@ func newFreezerBatch(f *Freezer) *freezerBatch {
 }
 
 // Append adds an RLP-encoded item of the given kind.
+// Append 添加给定种类的 RLP 编码项。
 func (batch *freezerBatch) Append(kind string, num uint64, item interface{}) error {
 	return batch.tables[kind].Append(num, item)
 }
 
 // AppendRaw adds an item of the given kind.
+// AppendRaw 添加给定种类的项。
 func (batch *freezerBatch) AppendRaw(kind string, num uint64, item []byte) error {
 	return batch.tables[kind].AppendRaw(num, item)
 }
 
 // reset initializes the batch.
+// reset 初始化批次。
 func (batch *freezerBatch) reset() {
 	for _, tb := range batch.tables {
 		tb.reset()
@@ -60,8 +65,10 @@ func (batch *freezerBatch) reset() {
 
 // commit is called at the end of a write operation and
 // writes all remaining data to tables.
+// commit 在写入操作结束时调用，并将所有剩余数据写入表。
 func (batch *freezerBatch) commit() (item uint64, writeSize int64, err error) {
 	// Check that count agrees on all batches.
+	// 检查所有批次的计数是否一致。
 	item = uint64(math.MaxUint64)
 	for name, tb := range batch.tables {
 		if item < math.MaxUint64 && tb.curItem != item {
@@ -71,6 +78,7 @@ func (batch *freezerBatch) commit() (item uint64, writeSize int64, err error) {
 	}
 
 	// Commit all table batches.
+	// 提交所有表批次。
 	for _, tb := range batch.tables {
 		if err := tb.commit(); err != nil {
 			return 0, 0, err
@@ -81,6 +89,7 @@ func (batch *freezerBatch) commit() (item uint64, writeSize int64, err error) {
 }
 
 // freezerTableBatch is a batch for a freezer table.
+// freezerTableBatch 是 freezer 表的批次。
 type freezerTableBatch struct {
 	t *freezerTable
 
@@ -93,6 +102,7 @@ type freezerTableBatch struct {
 }
 
 // newBatch creates a new batch for the freezer table.
+// newBatch 为 freezer 表创建新批次。
 func (t *freezerTable) newBatch() *freezerTableBatch {
 	batch := &freezerTableBatch{t: t}
 	if !t.noCompression {
@@ -103,6 +113,7 @@ func (t *freezerTable) newBatch() *freezerTableBatch {
 }
 
 // reset clears the batch for reuse.
+// reset 清除批次以便重用。
 func (batch *freezerTableBatch) reset() {
 	batch.dataBuffer = batch.dataBuffer[:0]
 	batch.indexBuffer = batch.indexBuffer[:0]
@@ -113,6 +124,8 @@ func (batch *freezerTableBatch) reset() {
 // Append rlp-encodes and adds data at the end of the freezer table. The item number is a
 // precautionary parameter to ensure data correctness, but the table will reject already
 // existing data.
+// Append 对数据进行 rlp 编码并在 freezer 表末尾添加。项编号是预防性参数以确保数据正确性，
+// 但表将拒绝已存在的数据。
 func (batch *freezerTableBatch) Append(item uint64, data interface{}) error {
 	if item != batch.curItem {
 		return fmt.Errorf("%w: have %d want %d", errOutOrderInsertion, item, batch.curItem)
@@ -133,6 +146,8 @@ func (batch *freezerTableBatch) Append(item uint64, data interface{}) error {
 // AppendRaw injects a binary blob at the end of the freezer table. The item number is a
 // precautionary parameter to ensure data correctness, but the table will reject already
 // existing data.
+// AppendRaw 在 freezer 表末尾注入二进制 blob。项编号是预防性参数以确保数据正确性，
+// 但表将拒绝已存在的数据。
 func (batch *freezerTableBatch) AppendRaw(item uint64, blob []byte) error {
 	if item != batch.curItem {
 		return fmt.Errorf("%w: have %d want %d", errOutOrderInsertion, item, batch.curItem)
@@ -147,10 +162,12 @@ func (batch *freezerTableBatch) AppendRaw(item uint64, blob []byte) error {
 
 func (batch *freezerTableBatch) appendItem(data []byte) error {
 	// Check if item fits into current data file.
+	// 检查项是否适合当前数据文件。
 	itemSize := int64(len(data))
 	itemOffset := batch.t.headBytes + int64(len(batch.dataBuffer))
 	if itemOffset+itemSize > int64(batch.t.maxFileSize) {
 		// It doesn't fit, go to next file first.
+		// 不适合，先转到下一个文件。
 		if err := batch.commit(); err != nil {
 			return err
 		}
@@ -161,10 +178,12 @@ func (batch *freezerTableBatch) appendItem(data []byte) error {
 	}
 
 	// Put data to buffer.
+	// 将数据放入缓冲区。
 	batch.dataBuffer = append(batch.dataBuffer, data...)
 	batch.totalBytes += itemSize
 
 	// Put index entry to buffer.
+	// 将索引条目放入缓冲区。
 	entry := indexEntry{filenum: batch.t.headId, offset: uint32(itemOffset + itemSize)}
 	batch.indexBuffer = entry.append(batch.indexBuffer)
 	batch.curItem++
@@ -173,6 +192,7 @@ func (batch *freezerTableBatch) appendItem(data []byte) error {
 }
 
 // maybeCommit writes the buffered data if the buffer is full enough.
+// maybeCommit 如果缓冲区足够满，则写入缓冲数据。
 func (batch *freezerTableBatch) maybeCommit() error {
 	if len(batch.dataBuffer) > freezerBatchBufferLimit {
 		return batch.commit()
@@ -183,6 +203,8 @@ func (batch *freezerTableBatch) maybeCommit() error {
 // commit writes the batched items to the backing freezerTable. Note index
 // file isn't fsync'd after the file write, the recent write can be lost
 // after the power failure.
+// commit 将批处理项写入后备 freezerTable。注意，文件写入后索引文件不会 fsync，
+// 最近的写入可能会在断电后丢失。
 func (batch *freezerTableBatch) commit() error {
 	_, err := batch.t.head.Write(batch.dataBuffer)
 	if err != nil {
@@ -202,10 +224,12 @@ func (batch *freezerTableBatch) commit() error {
 	batch.indexBuffer = batch.indexBuffer[:0]
 
 	// Update headBytes of table.
+	// 更新表的 headBytes。
 	batch.t.headBytes += dataSize
 	batch.t.items.Store(batch.curItem)
 
 	// Update metrics.
+	// 更新指标。
 	batch.t.sizeGauge.Inc(dataSize + indexSize)
 	batch.t.writeMeter.Mark(dataSize + indexSize)
 	return nil
@@ -213,17 +237,23 @@ func (batch *freezerTableBatch) commit() error {
 
 // snappyBuffer writes snappy in block format, and can be reused. It is
 // reset when WriteTo is called.
+// snappyBuffer 以块格式写入 snappy，并且可以重用。
+// 在调用 WriteTo 时重置。
 type snappyBuffer struct {
 	dst []byte
 }
 
 // compress snappy-compresses the data.
+// compress 对数据进行 snappy 压缩。
 func (s *snappyBuffer) compress(data []byte) []byte {
 	// The snappy library does not care what the capacity of the buffer is,
 	// but only checks the length. If the length is too small, it will
 	// allocate a brand new buffer.
 	// To avoid that, we check the required size here, and grow the size of the
 	// buffer to utilize the full capacity.
+	// snappy 库不关心缓冲区的容量，只检查长度。
+	// 如果长度太小，它将分配一个全新的缓冲区。
+	// 为避免这种情况，我们在此处检查所需大小，并增加缓冲区大小以利用全部容量。
 	if n := snappy.MaxEncodedLen(len(data)); len(s.dst) < n {
 		if cap(s.dst) < n {
 			s.dst = make([]byte, n)
@@ -236,6 +266,7 @@ func (s *snappyBuffer) compress(data []byte) []byte {
 }
 
 // writeBuffer implements io.Writer for a byte slice.
+// writeBuffer 为字节切片实现 io.Writer。
 type writeBuffer struct {
 	data []byte
 }
