@@ -37,27 +37,34 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// ENR Tree：EIP-1459 定义的 DNS 树结构，使用 TXT 记录存储节点信息。
+// ENR：EIP-778 定义的节点记录格式。
+// DNS 发现：以太坊客户端（如 Geth）用于快速加入网络。
+
 // Client discovers nodes by querying DNS servers.
+// Client 通过查询 DNS 服务器发现节点。
 type Client struct {
 	cfg          Config
 	clock        mclock.Clock
-	entries      *lru.Cache[string, entry]
-	ratelimit    *rate.Limiter
-	singleflight singleflight.Group
+	entries      *lru.Cache[string, entry] // 缓存解析的条目
+	ratelimit    *rate.Limiter             // 速率限制器
+	singleflight singleflight.Group        // 单次飞行组，用于避免重复查询
 }
 
 // Config holds configuration options for the client.
+// Config 保存客户端的配置选项。
 type Config struct {
-	Timeout         time.Duration      // timeout used for DNS lookups (default 5s)
-	RecheckInterval time.Duration      // time between tree root update checks (default 30min)
-	CacheLimit      int                // maximum number of cached records (default 1000)
-	RateLimit       float64            // maximum DNS requests / second (default 3)
-	ValidSchemes    enr.IdentityScheme // acceptable ENR identity schemes (default enode.ValidSchemes)
-	Resolver        Resolver           // the DNS resolver to use (defaults to system DNS)
-	Logger          log.Logger         // destination of client log messages (defaults to root logger)
+	Timeout         time.Duration      // DNS 查询超时（默认 5 秒）
+	RecheckInterval time.Duration      // 树根更新检查间隔（默认 30 分钟）
+	CacheLimit      int                // 缓存的最大记录数（默认 1000）
+	RateLimit       float64            // 每秒最大 DNS 请求数（默认 3）
+	ValidSchemes    enr.IdentityScheme // 可接受的 ENR 身份方案（默认 enode.ValidSchemes）
+	Resolver        Resolver           // DNS 解析器（默认使用系统 DNS）
+	Logger          log.Logger         // 日志记录器（默认使用根日志器）
 }
 
 // Resolver is a DNS resolver that can query TXT records.
+// Resolver 是一个可以查询 TXT 记录的 DNS 解析器。
 type Resolver interface {
 	LookupTXT(ctx context.Context, domain string) ([]string, error)
 }
@@ -94,18 +101,20 @@ func (cfg Config) withDefaults() Config {
 }
 
 // NewClient creates a client.
+// NewClient 创建一个客户端。
 func NewClient(cfg Config) *Client {
 	cfg = cfg.withDefaults()
-	rlimit := rate.NewLimiter(rate.Limit(cfg.RateLimit), 10)
+	rlimit := rate.NewLimiter(rate.Limit(cfg.RateLimit), 10) // 创建速率限制器
 	return &Client{
 		cfg:       cfg,
-		entries:   lru.NewCache[string, entry](cfg.CacheLimit),
+		entries:   lru.NewCache[string, entry](cfg.CacheLimit), // 初始化 LRU 缓存
 		clock:     mclock.System{},
 		ratelimit: rlimit,
 	}
 }
 
 // SyncTree downloads the entire node tree at the given URL.
+// SyncTree 下载给定 URL 的整个节点树。
 func (c *Client) SyncTree(url string) (*Tree, error) {
 	le, err := parseLink(url)
 	if err != nil {
@@ -122,6 +131,7 @@ func (c *Client) SyncTree(url string) (*Tree, error) {
 
 // NewIterator creates an iterator that visits all nodes at the
 // given tree URLs.
+// NewIterator 创建一个迭代器，访问给定树 URL 中的所有节点。
 func (c *Client) NewIterator(urls ...string) (enode.Iterator, error) {
 	it := c.newRandomIterator()
 	for _, url := range urls {
@@ -133,6 +143,7 @@ func (c *Client) NewIterator(urls ...string) (enode.Iterator, error) {
 }
 
 // resolveRoot retrieves a root entry via DNS.
+// resolveRoot 通过 DNS 检索根条目。
 func (c *Client) resolveRoot(ctx context.Context, loc *linkEntry) (rootEntry, error) {
 	e, err, _ := c.singleflight.Do(loc.str, func() (interface{}, error) {
 		txts, err := c.cfg.Resolver.LookupTXT(ctx, loc.domain)
@@ -163,10 +174,8 @@ func parseAndVerifyRoot(txt string, loc *linkEntry) (rootEntry, error) {
 
 // resolveEntry retrieves an entry from the cache or fetches it from the network
 // if it isn't cached.
+// resolveEntry 从缓存中检索条目，如果未缓存则从网络获取。
 func (c *Client) resolveEntry(ctx context.Context, domain, hash string) (entry, error) {
-	// The rate limit always applies, even when the result might be cached. This is
-	// important because it avoids hot-spinning in consumers of node iterators created on
-	// this client.
 	if err := c.ratelimit.Wait(ctx); err != nil {
 		return nil, err
 	}
@@ -188,6 +197,7 @@ func (c *Client) resolveEntry(ctx context.Context, domain, hash string) (entry, 
 }
 
 // doResolveEntry fetches an entry via DNS.
+// doResolveEntry 通过 DNS 获取条目。
 func (c *Client) doResolveEntry(ctx context.Context, domain, hash string) (entry, error) {
 	wantHash, err := b32format.DecodeString(hash)
 	if err != nil {
@@ -215,6 +225,7 @@ func (c *Client) doResolveEntry(ctx context.Context, domain, hash string) (entry
 }
 
 // randomIterator traverses a set of trees and returns nodes found in them.
+// randomIterator 遍历一组树并返回其中发现的节点。
 type randomIterator struct {
 	cur      *enode.Node
 	ctx      context.Context
@@ -222,8 +233,8 @@ type randomIterator struct {
 	c        *Client
 
 	mu    sync.Mutex
-	lc    linkCache              // tracks tree dependencies
-	trees map[string]*clientTree // all trees
+	lc    linkCache              // 跟踪树依赖关系
+	trees map[string]*clientTree // 所有树
 	// buffers for syncableTrees
 	syncableList []*clientTree
 	disabledList []*clientTree
@@ -240,11 +251,13 @@ func (c *Client) newRandomIterator() *randomIterator {
 }
 
 // Node returns the current node.
+// Node 返回当前节点。
 func (it *randomIterator) Node() *enode.Node {
 	return it.cur
 }
 
 // Close closes the iterator.
+// Close 关闭迭代器。
 func (it *randomIterator) Close() {
 	it.cancelFn()
 
@@ -254,12 +267,14 @@ func (it *randomIterator) Close() {
 }
 
 // Next moves the iterator to the next node.
+// Next 将迭代器移动到下一个节点。
 func (it *randomIterator) Next() bool {
 	it.cur = it.nextNode()
 	return it.cur != nil
 }
 
 // addTree adds an enrtree:// URL to the iterator.
+// addTree 将 enrtree:// URL 添加到迭代器。
 func (it *randomIterator) addTree(url string) error {
 	le, err := parseLink(url)
 	if err != nil {
@@ -270,6 +285,7 @@ func (it *randomIterator) addTree(url string) error {
 }
 
 // nextNode syncs random tree entries until it finds a node.
+// nextNode 同步随机树条目直到找到一个节点。
 func (it *randomIterator) nextNode() *enode.Node {
 	for {
 		ct := it.pickTree()
@@ -279,7 +295,7 @@ func (it *randomIterator) nextNode() *enode.Node {
 		n, err := ct.syncRandom(it.ctx)
 		if err != nil {
 			if errors.Is(err, it.ctx.Err()) {
-				return nil // context canceled.
+				return nil // 上下文已取消
 			}
 			it.c.cfg.Logger.Debug("Error in DNS random node sync", "tree", ct.loc.domain, "err", err)
 			continue
@@ -291,17 +307,15 @@ func (it *randomIterator) nextNode() *enode.Node {
 }
 
 // pickTree returns a random tree to sync from.
+// pickTree 返回一个随机树进行同步。
 func (it *randomIterator) pickTree() *clientTree {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 
-	// First check if iterator was closed.
-	// Need to do this here to avoid nil map access in rebuildTrees.
 	if it.trees == nil {
 		return nil
 	}
 
-	// Rebuild the trees map if any links have changed.
 	if it.lc.changed {
 		it.rebuildTrees()
 		it.lc.changed = false
@@ -311,29 +325,23 @@ func (it *randomIterator) pickTree() *clientTree {
 		canSync, trees := it.syncableTrees()
 		switch {
 		case canSync:
-			// Pick a random tree.
 			return trees[rand.Intn(len(trees))]
 		case len(trees) > 0:
-			// No sync action can be performed on any tree right now. The only meaningful
-			// thing to do is waiting for any root record to get updated.
 			if !it.waitForRootUpdates(trees) {
-				// Iterator was closed while waiting.
 				return nil
 			}
 		default:
-			// There are no trees left, the iterator was closed.
 			return nil
 		}
 	}
 }
 
 // syncableTrees finds trees on which any meaningful sync action can be performed.
+// syncableTrees 找到可以执行有意义同步操作的树。
 func (it *randomIterator) syncableTrees() (canSync bool, trees []*clientTree) {
-	// Resize tree lists.
 	it.syncableList = it.syncableList[:0]
 	it.disabledList = it.disabledList[:0]
 
-	// Partition them into the two lists.
 	for _, ct := range it.trees {
 		if ct.canSyncRandom() {
 			it.syncableList = append(it.syncableList, ct)
@@ -348,6 +356,7 @@ func (it *randomIterator) syncableTrees() (canSync bool, trees []*clientTree) {
 }
 
 // waitForRootUpdates waits for the closest scheduled root check time on the given trees.
+// waitForRootUpdates 等待给定树上最近的计划根检查时间。
 func (it *randomIterator) waitForRootUpdates(trees []*clientTree) bool {
 	var minTree *clientTree
 	var nextCheck mclock.AbsTime
@@ -367,19 +376,18 @@ func (it *randomIterator) waitForRootUpdates(trees []*clientTree) bool {
 	case <-timeout.C():
 		return true
 	case <-it.ctx.Done():
-		return false // Iterator was closed.
+		return false
 	}
 }
 
 // rebuildTrees rebuilds the 'trees' map.
+// rebuildTrees 重建 'trees' 映射。
 func (it *randomIterator) rebuildTrees() {
-	// Delete removed trees.
 	for loc := range it.trees {
 		if !it.lc.isReferenced(loc) {
 			delete(it.trees, loc)
 		}
 	}
-	// Add new trees.
 	for loc := range it.lc.backrefs {
 		if it.trees[loc] == nil {
 			link, _ := parseLink(linkPrefix + loc)
