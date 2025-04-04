@@ -31,11 +31,20 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 )
 
+// ENR（Ethereum Node Records） 是以太坊节点发现协议（Discovery v4/v5）的一部分，基于 EIP-778 定义，用于存储节点的元数据（如 IP、端口、公钥等）。
+//
+// TCP 端口用于以太坊的 P2P 通信（如交易和区块同步），UDP 端口用于节点发现协议。
+//
+// 签名机制确保节点信息的可信性，防止伪造。
+
 var (
+	// incompleteNodeURL is a regular expression to match incomplete node URLs
+	// incompleteNodeURL 是一个正则表达式，用于匹配不完整的节点 URL
 	incompleteNodeURL = regexp.MustCompile("(?i)^(?:enode://)?([0-9a-f]+)$")
 )
 
 // MustParseV4 parses a node URL. It panics if the URL is not valid.
+// MustParseV4 解析一个节点 URL。如果 URL 无效，它会引发 panic。
 func MustParseV4(rawurl string) *Node {
 	n, err := ParseV4(rawurl)
 	if err != nil {
@@ -68,6 +77,27 @@ func MustParseV4(rawurl string) *Node {
 // and UDP discovery port 30301.
 //
 //	enode://<hex node id>@10.3.58.6:30303?discport=30301
+//
+// ParseV4 解析一个节点 URL。
+//
+// 节点 URL 有两种基本形式：
+//   - 不完整节点，仅包含公钥（节点 ID）
+//   - 完整节点，包含公钥和 IP/端口信息
+//
+// 对于不完整节点，其标识符必须如下所示：
+//
+//	enode://<十六进制节点 ID>
+//	<十六进制节点 ID>
+//
+// 对于完整节点，节点 ID 编码在 URL 的用户名部分，与主机通过 @ 符号分隔。
+// 主机名只能以 IP 地址或 DNS 域名形式给出。
+// 主机名部分的端口是 TCP 监听端口。如果 TCP 和 UDP（发现）端口不同，
+// UDP 端口通过查询参数 "discport" 指定。
+//
+// 在以下示例中，节点 URL 描述了一个节点，其 IP 地址为 10.3.58.6，
+// TCP 监听端口为 30303，UDP 发现端口为 30301。
+//
+//	enode://<十六进制节点 ID>@10.3.58.6:30303?discport=30301
 func ParseV4(rawurl string) (*Node, error) {
 	if m := incompleteNodeURL.FindStringSubmatch(rawurl); m != nil {
 		id, err := parsePubkey(m[1])
@@ -81,6 +111,7 @@ func ParseV4(rawurl string) (*Node, error) {
 
 // NewV4 creates a node from discovery v4 node information. The record
 // contained in the node has a zero-length signature.
+// NewV4 从 discovery v4 节点信息创建一个节点。节点中包含的记录具有零长度签名。
 func NewV4(pubkey *ecdsa.PublicKey, ip net.IP, tcp, udp int) *Node {
 	var r enr.Record
 	if len(ip) > 0 {
@@ -100,7 +131,19 @@ func NewV4(pubkey *ecdsa.PublicKey, ip net.IP, tcp, udp int) *Node {
 	return n
 }
 
+// Discovery v4 协议：
+// 以太坊使用基于 UDP 的节点发现协议（EIP-868 和 EIP-778），通过 Kademlia DHT 算法定位网络中的节点。
+//
+// enode URL 是节点发现的入口，包含足够信息以建立连接。
+//
+// secp256k1 公钥：
+// 以太坊的地址和节点 ID 都依赖于 secp256k1 椭圆曲线，PubkeyToIDV4 使用 Keccak256 哈希从公钥派生节点 ID。
+//
+// ENR（Ethereum Node Records）：
+// ENR 是以太坊对传统节点记录的扩展，支持动态元数据和签名验证。
+
 // isNewV4 returns true for nodes created by NewV4.
+// isNewV4 对于由 NewV4 创建的节点返回 true。
 func isNewV4(n *Node) bool {
 	var k s256raw
 	return n.r.IdentityScheme() == "" && n.r.Load(&k) == nil && len(n.r.Signature()) == 0
@@ -119,6 +162,7 @@ func parseComplete(rawurl string) (*Node, error) {
 		return nil, errors.New("invalid URL scheme, want \"enode\"")
 	}
 	// Parse the Node ID from the user portion.
+	// 从用户部分解析节点 ID。
 	if u.User == nil {
 		return nil, errors.New("does not contain node ID")
 	}
@@ -127,6 +171,7 @@ func parseComplete(rawurl string) (*Node, error) {
 	}
 
 	// Parse the IP and ports.
+	// 解析 IP 和端口。
 	ip := net.ParseIP(u.Hostname())
 	if tcpPort, err = strconv.ParseUint(u.Port(), 10, 16); err != nil {
 		return nil, errors.New("invalid port")
@@ -141,6 +186,7 @@ func parseComplete(rawurl string) (*Node, error) {
 	}
 
 	// Create the node.
+	// 创建节点。
 	node := NewV4(id, ip, int(tcpPort), int(udpPort))
 	if ip == nil && u.Hostname() != "" {
 		node = node.WithHostname(u.Hostname())
@@ -149,6 +195,7 @@ func parseComplete(rawurl string) (*Node, error) {
 }
 
 // parsePubkey parses a hex-encoded secp256k1 public key.
+// parsePubkey 解析一个十六进制编码的 secp256k1 公钥。
 func parsePubkey(in string) (*ecdsa.PublicKey, error) {
 	b, err := hex.DecodeString(in)
 	if err != nil {
@@ -177,6 +224,7 @@ func (n *Node) URLv4() string {
 	u := url.URL{Scheme: "enode"}
 	if n.Hostname() != "" {
 		// For nodes with a DNS name: include DNS name, TCP port, and optional UDP port
+		// 对于具有 DNS 名称的节点：包括 DNS 名称、TCP 端口和可选的 UDP 端口
 		u.User = url.User(nodeid)
 		u.Host = fmt.Sprintf("%s:%d", n.Hostname(), n.TCP())
 		if n.UDP() != n.TCP() {
@@ -184,6 +232,7 @@ func (n *Node) URLv4() string {
 		}
 	} else if n.ip.IsValid() {
 		// For IP-based nodes: include IP address, TCP port, and optional UDP port
+		// 对于基于 IP 的节点：包括 IP 地址、TCP 端口和可选的 UDP 端口
 		addr := net.TCPAddr{IP: n.IP(), Port: n.TCP()}
 		u.User = url.User(nodeid)
 		u.Host = addr.String()
@@ -197,6 +246,7 @@ func (n *Node) URLv4() string {
 }
 
 // PubkeyToIDV4 derives the v4 node address from the given public key.
+// PubkeyToIDV4 从给定的公钥派生 v4 节点地址。
 func PubkeyToIDV4(key *ecdsa.PublicKey) ID {
 	e := make([]byte, 64)
 	math.ReadBits(key.X, e[:len(e)/2])
