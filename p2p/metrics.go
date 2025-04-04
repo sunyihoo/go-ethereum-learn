@@ -25,14 +25,24 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
+// P2P 网络在以太坊中的作用
+// 以太坊使用 P2P 网络实现节点间的数据同步和通信（如区块、交易传播）。监控 peer 数量和流量对于确保网络健康至关重要。
+// RLPx 协议
+// 以太坊的 P2P 通信基于 RLPx 协议，它包括加密握手（dialEncHandshakeError）和协议握手（dialProtoHandshakeError）。
+// 加密握手使用 ECIES（椭圆曲线集成加密方案）确保通信安全。
+// 协议握手协商具体的子协议（如 ETH 协议）。
+
 const (
 	// HandleHistName is the prefix of the per-packet serving time histograms.
+	// HandleHistName 是每个数据包服务时间直方图的前缀。
 	HandleHistName = "p2p/handle"
 
 	// ingressMeterName is the prefix of the per-packet inbound metrics.
+	// ingressMeterName 是每个数据包入站度量的前缀。
 	ingressMeterName = "p2p/ingress"
 
 	// egressMeterName is the prefix of the per-packet outbound metrics.
+	// egressMeterName 是每个数据包出站度量的前缀。
 	egressMeterName = "p2p/egress"
 )
 
@@ -45,6 +55,7 @@ var (
 	egressTrafficMeter  = metrics.NewRegisteredMeter("p2p/egress", nil)
 
 	// general ingress/egress connection meters
+	// 通用入站/出站连接度量
 	serveMeter          = metrics.NewRegisteredMeter("p2p/serves", nil)
 	serveSuccessMeter   = metrics.NewRegisteredMeter("p2p/serves/success", nil)
 	dialMeter           = metrics.NewRegisteredMeter("p2p/dials", nil)
@@ -52,6 +63,7 @@ var (
 	dialConnectionError = metrics.NewRegisteredMeter("p2p/dials/error/connection", nil)
 
 	// handshake error meters
+	// 握手错误度量
 	dialTooManyPeers        = metrics.NewRegisteredMeter("p2p/dials/error/saturated", nil)
 	dialAlreadyConnected    = metrics.NewRegisteredMeter("p2p/dials/error/known", nil)
 	dialSelf                = metrics.NewRegisteredMeter("p2p/dials/error/self", nil)
@@ -63,6 +75,7 @@ var (
 
 // markDialError matches errors that occur while setting up a dial connection
 // to the corresponding meter.
+// markDialError 将在设置拨号连接时发生的错误与相应的度量器匹配。
 func markDialError(err error) {
 	if !metrics.Enabled() {
 		return
@@ -90,6 +103,7 @@ func markDialError(err error) {
 
 // meteredConn is a wrapper around a net.Conn that meters both the
 // inbound and outbound network traffic.
+// meteredConn 是 net.Conn 的包装器，用于度量入站和出站网络流量。
 type meteredConn struct {
 	net.Conn
 }
@@ -97,6 +111,8 @@ type meteredConn struct {
 // newMeteredConn creates a new metered connection, bumps the ingress or egress
 // connection meter and also increases the metered peer count. If the metrics
 // system is disabled, function returns the original connection.
+// newMeteredConn 创建一个新的 metered 连接，增加入站或出站连接度量，并增加 metered peer 计数。
+// 如果度量系统被禁用，函数返回原始连接。
 func newMeteredConn(conn net.Conn) net.Conn {
 	if !metrics.Enabled() {
 		return conn
@@ -106,6 +122,7 @@ func newMeteredConn(conn net.Conn) net.Conn {
 
 // Read delegates a network read to the underlying connection, bumping the common
 // and the peer ingress traffic meters along the way.
+// Read 将网络读取委托给底层连接，并在过程中增加通用和 peer 入站流量度量。
 func (c *meteredConn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
 	ingressTrafficMeter.Mark(int64(n))
@@ -114,6 +131,7 @@ func (c *meteredConn) Read(b []byte) (n int, err error) {
 
 // Write delegates a network write to the underlying connection, bumping the common
 // and the peer egress traffic meters along the way.
+// Write 将网络写入委托给底层连接，并在过程中增加通用和 peer 出站流量度量。
 func (c *meteredConn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
 	egressTrafficMeter.Mark(int64(n))

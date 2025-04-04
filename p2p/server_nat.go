@@ -26,40 +26,53 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 )
 
+// 节点发现：以太坊使用 UDP 协议（基于 discv4 或 discv5，EIP-868）发现对等节点，需映射 UDP 端口。
+//
+// P2P 通信：TCP 端口用于区块同步和交易传播，映射确保节点可接受外部连接。
+//
+// ENR（EIP-778）：端口和 IP 信息存储在 ENR 中，供其他节点查询。
+
 const (
-	portMapDuration        = 10 * time.Minute
-	portMapRefreshInterval = 8 * time.Minute
-	portMapRetryInterval   = 5 * time.Minute
-	extipRetryInterval     = 2 * time.Minute
+	portMapDuration        = 10 * time.Minute // Port mapping duration / 端口映射持续时间
+	portMapRefreshInterval = 8 * time.Minute  // Port mapping refresh interval / 端口映射刷新间隔
+	portMapRetryInterval   = 5 * time.Minute  // Port mapping retry interval / 端口映射重试间隔
+	extipRetryInterval     = 2 * time.Minute  // External IP retry interval / 外部 IP 重试间隔
 )
 
 type portMapping struct {
-	protocol string
-	name     string
-	port     int
+	protocol string // Protocol type (TCP/UDP) / 协议类型（TCP/UDP）
+	name     string // Mapping name / 映射名称
+	port     int    // Internal port / 内部端口
 
 	// for use by the portMappingLoop goroutine:
-	extPort  int // the mapped port returned by the NAT interface
-	nextTime mclock.AbsTime
+	// 供 portMappingLoop goroutine 使用：
+	extPort  int            // the mapped port returned by the NAT interface / NAT 接口返回的映射端口
+	nextTime mclock.AbsTime // Next scheduled time for refresh or retry / 下次刷新或重试的计划时间
 }
 
 // setupPortMapping starts the port mapping loop if necessary.
 // Note: this needs to be called after the LocalNode instance has been set on the server.
+// setupPortMapping 在必要时启动端口映射循环。
+// 注意：这需要在服务器上设置 LocalNode 实例后调用。
 func (srv *Server) setupPortMapping() {
 	// portMappingRegister will receive up to two values: one for the TCP port if
 	// listening is enabled, and one more for enabling UDP port mapping if discovery is
 	// enabled. We make it buffered to avoid blocking setup while a mapping request is in
 	// progress.
+	// portMappingRegister 将接收最多两个值：如果启用了监听，则为 TCP 端口一个值；
+	// 如果启用了发现，则为 UDP 端口映射再一个值。我们使其带缓冲以避免在映射请求进行时阻塞设置。
 	srv.portMappingRegister = make(chan *portMapping, 2)
 
 	switch srv.NAT.(type) {
 	case nil:
 		// No NAT interface configured.
+		// 未配置 NAT 接口。
 		srv.loopWG.Add(1)
 		go srv.consumePortMappingRequests()
 
 	case nat.ExtIP:
 		// ExtIP doesn't block, set the IP right away.
+		// ExtIP 不会阻塞，立即设置 IP。
 		ip, _ := srv.NAT.ExternalIP()
 		srv.localnode.SetStaticIP(ip)
 		srv.loopWG.Add(1)
@@ -83,18 +96,21 @@ func (srv *Server) consumePortMappingRequests() {
 }
 
 // portMappingLoop manages port mappings for UDP and TCP.
+// portMappingLoop 管理 UDP 和 TCP 的端口映射。
 func (srv *Server) portMappingLoop() {
 	defer srv.loopWG.Done()
 
 	newLogger := func(p string, e int, i int) log.Logger {
+		// Create a new logger with protocol, external port, and internal port
+		// 创建一个带有协议、外部端口和内部端口的新日志记录器
 		return log.New("proto", p, "extport", e, "intport", i, "interface", srv.NAT)
 	}
 
 	var (
-		mappings  = make(map[string]*portMapping, 2)
-		refresh   = mclock.NewAlarm(srv.clock)
-		extip     = mclock.NewAlarm(srv.clock)
-		lastExtIP net.IP
+		mappings  = make(map[string]*portMapping, 2) // Store mappings for TCP and UDP / 存储 TCP 和 UDP 的映射
+		refresh   = mclock.NewAlarm(srv.clock)       // Alarm for refreshing mappings / 用于刷新映射的闹钟
+		extip     = mclock.NewAlarm(srv.clock)       // Alarm for checking external IP / 用于检查外部 IP 的闹钟
+		lastExtIP net.IP                             // Last known external IP / 上次已知的外部 IP
 	)
 	extip.Schedule(srv.clock.Now())
 	defer func() {
@@ -103,7 +119,7 @@ func (srv *Server) portMappingLoop() {
 		for _, m := range mappings {
 			if m.extPort != 0 {
 				log := newLogger(m.protocol, m.extPort, m.port)
-				log.Debug("Deleting port mapping")
+				log.Debug("Deleting port mapping") // 删除端口映射
 				srv.NAT.DeleteMapping(m.protocol, m.extPort, m.port)
 			}
 		}
@@ -111,6 +127,7 @@ func (srv *Server) portMappingLoop() {
 
 	for {
 		// Schedule refresh of existing mappings.
+		// 安排现有映射的刷新。
 		for _, m := range mappings {
 			refresh.Schedule(m.nextTime)
 		}
@@ -120,26 +137,30 @@ func (srv *Server) portMappingLoop() {
 			return
 
 		case <-extip.C():
+			// Check and update external IP periodically
+			// 定期检查并更新外部 IP
 			extip.Schedule(srv.clock.Now().Add(extipRetryInterval))
 			ip, err := srv.NAT.ExternalIP()
 			if err != nil {
-				log.Debug("Couldn't get external IP", "err", err, "interface", srv.NAT)
+				log.Debug("Couldn't get external IP", "err", err, "interface", srv.NAT) // 无法获取外部 IP
 			} else if !ip.Equal(lastExtIP) {
-				log.Debug("External IP changed", "ip", ip, "interface", srv.NAT)
+				log.Debug("External IP changed", "ip", ip, "interface", srv.NAT) // 外部 IP 已更改
 			} else {
 				continue
 			}
 			// Here, we either failed to get the external IP, or it has changed.
+			// 这里，要么无法获取外部 IP，要么它已更改。
 			lastExtIP = ip
 			srv.localnode.SetStaticIP(ip)
 			// Ensure port mappings are refreshed in case we have moved to a new network.
+			// 确保端口映射在网络更改时刷新。
 			for _, m := range mappings {
 				m.nextTime = srv.clock.Now()
 			}
 
 		case m := <-srv.portMappingRegister:
 			if m.protocol != "TCP" && m.protocol != "UDP" {
-				panic("unknown NAT protocol name: " + m.protocol)
+				panic("unknown NAT protocol name: " + m.protocol) // 未知的 NAT 协议名称
 			}
 			mappings[m.protocol] = m
 			m.nextTime = srv.clock.Now()
@@ -156,25 +177,27 @@ func (srv *Server) portMappingLoop() {
 				}
 				log := newLogger(m.protocol, external, m.port)
 
-				log.Trace("Attempting port mapping")
+				log.Trace("Attempting port mapping") // 尝试端口映射
 				p, err := srv.NAT.AddMapping(m.protocol, external, m.port, m.name, portMapDuration)
 				if err != nil {
-					log.Debug("Couldn't add port mapping", "err", err)
+					log.Debug("Couldn't add port mapping", "err", err) // 无法添加端口映射
 					m.extPort = 0
 					m.nextTime = srv.clock.Now().Add(portMapRetryInterval)
 					continue
 				}
 				// It was mapped!
+				// 映射成功！
 				m.extPort = int(p)
 				m.nextTime = srv.clock.Now().Add(portMapRefreshInterval)
 				if external != m.extPort {
 					log = newLogger(m.protocol, m.extPort, m.port)
-					log.Info("NAT mapped alternative port")
+					log.Info("NAT mapped alternative port") // NAT 映射了替代端口
 				} else {
-					log.Info("NAT mapped port")
+					log.Info("NAT mapped port") // NAT 映射了端口
 				}
 
 				// Update port in local ENR.
+				// 更新本地 ENR 中的端口。
 				switch m.protocol {
 				case "TCP":
 					srv.localnode.Set(enr.TCP(m.extPort))
