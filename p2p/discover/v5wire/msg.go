@@ -27,100 +27,139 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+// Discovery v5：EIP-1459 定义的协议，改进自 v4，增加了加密会话和隐私保护。
+// Kademlia DHT：Findnode/Nodes 基于 Kademlia 算法，通过距离查询构建节点路由表。
+// ENR：EIP-778 定义的节点记录，携带节点元数据，ENRSeq 用于版本控制。
+
+// Discovery v5 协议使用这些方法统一处理不同类型的消息，确保协议的扩展性和一致性。
+// 请求 ID 是 P2P 协议中的常见设计，用于异步通信中跟踪请求-响应对。
+
 // Packet is implemented by all message types.
+// Packet 由所有消息类型实现。
 type Packet interface {
-	Name() string        // Name returns a string corresponding to the message type.
-	Kind() byte          // Kind returns the message type.
-	RequestID() []byte   // Returns the request ID.
+	Name() string // Name returns a string corresponding to the message type.
+	// Name 返回与消息类型对应的字符串。
+	Kind() byte // Kind returns the message type.
+	// Kind 返回消息类型。
+	RequestID() []byte // Returns the request ID.
+	// RequestID 返回请求 ID。
 	SetRequestID([]byte) // Sets the request ID.
+	// SetRequestID 设置请求 ID。
 
 	// AppendLogInfo returns its argument 'ctx' with additional fields
 	// appended for logging purposes.
+	// AppendLogInfo 返回其参数 'ctx'，并附加用于日志记录的额外字段。
 	AppendLogInfo(ctx []interface{}) []interface{}
 }
 
-// Message types.
-const (
-	PingMsg byte = iota + 1
-	PongMsg
-	FindnodeMsg
-	NodesMsg
-	TalkRequestMsg
-	TalkResponseMsg
-	RequestTicketMsg
-	TicketMsg
+// 这些消息类型对应 Discovery v5 协议（EIP-1459）定义的通信原语，用于节点发现和应用层交互。
+// Ping/Pong 用于存活检测，Findnode/Nodes 用于 Kademlia 风格的节点查询。
 
-	UnknownPacket   = byte(255) // any non-decryptable packet
-	WhoareyouPacket = byte(254) // the WHOAREYOU packet
+// Message types.
+// 消息类型。
+const (
+	PingMsg          byte = iota + 1 // PING 消息，从 1 开始计数
+	PongMsg                          // PONG 消息
+	FindnodeMsg                      // FINDNODE 消息
+	NodesMsg                         // NODES 消息
+	TalkRequestMsg                   // TALKREQ 消息
+	TalkResponseMsg                  // TALKRESP 消息
+	RequestTicketMsg                 // REQUESTTICKET 消息
+	TicketMsg                        // TICKET 消息
+
+	UnknownPacket   = byte(255) // any non-decryptable packet // 任何无法解密的数据包
+	WhoareyouPacket = byte(254) // the WHOAREYOU packet // WHOAREYOU 数据包
 )
 
 // Protocol messages.
+// 协议消息。
 type (
 	// Unknown represents any packet that can't be decrypted.
+	// Unknown 表示任何无法解密的数据包。
 	Unknown struct {
-		Nonce Nonce
+		Nonce Nonce // 请求的随机数
 	}
 
+	// Whoareyou 是 Discovery v5 握手过程的核心，用于在建立加密会话前验证对方身份。
+	// IDNonce 和签名机制基于 Secp256k1 曲线，符合以太坊的加密标准。
+
 	// WHOAREYOU contains the handshake challenge.
+	// WHOAREYOU 包含握手挑战。
 	Whoareyou struct {
-		ChallengeData []byte   // Encoded challenge
-		Nonce         Nonce    // Nonce of request packet
-		IDNonce       [16]byte // Identity proof data
-		RecordSeq     uint64   // ENR sequence number of recipient
+		ChallengeData []byte   // Encoded challenge // 编码的挑战数据 编码后的挑战数据，用于验证握手响应。
+		Nonce         Nonce    // Nonce of request packet // 请求数据包的随机数 请求数据包的随机数，用于防止重放攻击。
+		IDNonce       [16]byte // Identity proof data // 身份证明数据 身份证明数据，要求对方签名以验证身份。
+		RecordSeq     uint64   // ENR sequence number of recipient // 接收者的 ENR 序列号 接收者的 ENR 序列号，用于检查是否需要更新节点记录。
 
 		// Node is the locally known node record of recipient.
 		// This must be set by the caller of Encode.
+		// Node 是接收者的本地已知节点记录。
+		// 这必须由 Encode 的调用者设置。
 		Node *enode.Node
 
-		sent mclock.AbsTime // for handshake GC.
+		sent mclock.AbsTime // for handshake GC. // 用于握手垃圾回收的时间戳 发送时间，用于握手超时清理。
 	}
 
 	// PING is sent during liveness checks.
+	// PING 在存活检查期间发送。
 	Ping struct {
-		ReqID  []byte
-		ENRSeq uint64
+		ReqID  []byte // 请求 ID
+		ENRSeq uint64 // ENR 序列号
 	}
 
 	// PONG is the reply to PING.
+	// PONG 是对 PING 的回复。
 	Pong struct {
-		ReqID  []byte
-		ENRSeq uint64
+		ReqID  []byte // 请求 ID
+		ENRSeq uint64 // ENR 序列号
 		ToIP   net.IP // These fields should mirror the UDP envelope address of the ping
+		// 这些字段应反映 PING 数据包的 UDP 信封地址
 		ToPort uint16 // packet, which provides a way to discover the external address (after NAT).
+		// 数据包，提供了一种发现外部地址（经过 NAT 后）的方法。
 	}
 
 	// FINDNODE is a query for nodes in the given bucket.
+	// FINDNODE 是对给定桶中节点的查询。
 	Findnode struct {
-		ReqID     []byte
-		Distances []uint
+		ReqID     []byte // 请求 ID
+		Distances []uint // 距离列表
 
 		// OpID is for debugging purposes and is not part of the packet encoding.
 		// It identifies the 'operation' on behalf of which the request was sent.
-		OpID uint64 `rlp:"-"`
+		// OpID 用于调试目的，不包含在数据包编码中。
+		// 它标识发送请求所代表的操作。
+		OpID uint64 `rlp:"-"` // RLP 编码时忽略
 	}
 
 	// NODES is a response to FINDNODE.
+	// NODES 是对 FINDNODE 的响应。
 	Nodes struct {
-		ReqID     []byte
-		RespCount uint8 // total number of responses to the request
-		Nodes     []*enr.Record
+		ReqID     []byte        // 请求 ID
+		RespCount uint8         // 响应的总数
+		Nodes     []*enr.Record // 节点记录列表
 	}
 
 	// TALKREQ is an application-level request.
+	// TALKREQ 是应用级请求。
 	TalkRequest struct {
-		ReqID    []byte
-		Protocol string
-		Message  []byte
+		ReqID    []byte // 请求 ID
+		Protocol string // 协议名称
+		Message  []byte // 消息内容
 	}
 
 	// TALKRESP is the reply to TALKREQ.
+	// TALKRESP 是对 TALKREQ 的回复。
 	TalkResponse struct {
-		ReqID   []byte
-		Message []byte
+		ReqID   []byte // 请求 ID
+		Message []byte // 消息内容
 	}
 )
 
+// RLP 是以太坊的标准序列化格式，广泛用于协议消息和区块链数据。
+// 8 字节的 RequestID 限制是协议设计的一部分，确保消息头部的紧凑性。
+
 // DecodeMessage decodes the message body of a packet.
+// DecodeMessage 解码数据包的消息体。
 func DecodeMessage(ptype byte, body []byte) (Packet, error) {
 	var dec Packet
 	switch ptype {
