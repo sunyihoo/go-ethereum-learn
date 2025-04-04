@@ -22,21 +22,45 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// The DAO 事件
+// The DAO：2016 年，The DAO（Decentralized Autonomous Organization）是以太坊上一个众筹智能合约，筹集了约 1.5 亿美元的以太币（ETH）。
+// 然而，由于代码漏洞，黑客利用“重入攻击”（reentrancy attack）窃取了约 360 万 ETH。
+// 硬分叉决策：为了挽回损失，以太坊社区决定在区块 1,920,000 进行硬分叉，将被盗资金转移到一个退款合约。这导致了以太坊（ETH）和以太坊经典（ETC）的分裂，ETC 坚持未分叉的原始链。
+// 技术实现：
+// 分叉点区块的 extraData 被设置为 "dao-hard-fork"，以明确标记支持分叉的链。
+// 受影响的账户（DAODrainList）余额被清空并转移到退款合约（DAORefundContract）。
+
+// 硬分叉通过修改协议规则创建新链，extraData 的设置是一种显式信号，确保节点在分叉点选择正确的链，避免同步到非分叉链（ETC）。
+
 // DAOForkBlockExtra is the block header extra-data field to set for the DAO fork
 // point and a number of consecutive blocks to allow fast/light syncers to correctly
 // pick the side they want  ("dao-hard-fork").
+// DAOForkBlockExtra 是 DAO 分叉点及随后若干连续区块的区块头额外数据字段，用于设置 "dao-hard-fork"，
+// 以便快速/轻量同步客户端能够正确选择他们想要的分叉侧。
 var DAOForkBlockExtra = common.FromHex("0x64616f2d686172642d666f726b")
+
+// 将十六进制字符串 "0x64616f2d686172642d666f726b" 转换为字节数组，表示 "dao-hard-fork"
 
 // DAOForkExtraRange is the number of consecutive blocks from the DAO fork point
 // to override the extra-data in to prevent no-fork attacks.
+// DAOForkExtraRange 是从 DAO 分叉点开始的连续区块数，在这些区块中覆盖额外数据，以防止非分叉攻击。
+// 设置为 10，表示从分叉点开始的 10 个连续区块
+//
+// 防止非分叉攻击：如果没有这个范围，攻击者可能在分叉点后立即生成一个不含 "dao-hard-fork" 的区块，诱导客户端同步到非分叉链。连续 10 个区块的强制标记增加了攻击难度。
 var DAOForkExtraRange = big.NewInt(10)
 
 // DAORefundContract is the address of the refund contract to send DAO balances to.
+// DAORefundContract 是退款合约的地址，用于将 DAO 的余额发送到该地址。
+// DAO 退款合约地址，十六进制表示
+// 退款合约是 DAO 分叉的核心组件，体现了以太坊通过智能合约解决链上问题的能力。
+// 地址 0xbf4ed7b27f1d666546e30d74d50d173d20bca754 是历史记录中实际使用的合约地址。
 var DAORefundContract = common.HexToAddress("0xbf4ed7b27f1d666546e30d74d50d173d20bca754")
 
 // DAODrainList is the list of accounts whose full balances will be moved into a
 // refund contract at the beginning of the dao-fork block.
+// DAODrainList 是 DAO 分叉区块开始时，其全部余额将被转移到退款合约的账户列表。
 func DAODrainList() []common.Address {
+	// 返回一个包含 115 个账户地址的列表，这些账户的余额将在 DAO 分叉时转移到退款合约
 	return []common.Address{
 		common.HexToAddress("0xd4fe7bc31cedb7bfb8a345f31e668033056b2728"),
 		common.HexToAddress("0xb3fb0e5aba0e20e5c49d252dfd30e102b171a425"),

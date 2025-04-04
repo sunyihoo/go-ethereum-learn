@@ -20,8 +20,13 @@ package params
 // Example: To get the wei value of an amount in 'gwei', use
 //
 //	new(big.Int).Mul(value, big.NewInt(params.GWei))
+//
+// 这些是以太币单位的乘数。
+// 示例：要获取以 'gwei' 为单位的数量的 wei 值，使用
+//
+//	new(big.Int).Mul(value, big.NewInt(params.GWei))
 const (
-	Wei   = 1
-	GWei  = 1e9
-	Ether = 1e18
+	Wei   = 1    // Wei 是以太坊的最小单位，值为 1
+	GWei  = 1e9  // GWei 是 10亿 Wei，即 1,000,000,000 Wei
+	Ether = 1e18 // Ether 是 1万亿亿 Wei，即 1,000,000,000,000,000,000 Wei
 )
