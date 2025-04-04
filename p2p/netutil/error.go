@@ -16,7 +16,12 @@
 
 package netutil
 
+// 在以太坊的 P2P 网络中，临时错误（如网络拥塞、连接中断）是常见的，客户端（如 go-ethereum）需要区分临时错误和永久错误以决定是否重试。
+//
+// isPacketTooBig  UDP 数据包大小限制相关。以太坊的节点发现协议（Discovery v4/v5）使用 UDP，数据包大小通常受限于 MTU（最大传输单元，约 1280 字节）。
+
 // IsTemporaryError checks whether the given error should be considered temporary.
+// IsTemporaryError 检查给定的错误是否应视为临时的。
 func IsTemporaryError(err error) bool {
 	tempErr, ok := err.(interface {
 		Temporary() bool
@@ -25,6 +30,7 @@ func IsTemporaryError(err error) bool {
 }
 
 // IsTimeout checks whether the given error is a timeout.
+// IsTimeout 检查给定的错误是否是超时。
 func IsTimeout(err error) bool {
 	timeoutErr, ok := err.(interface {
 		Timeout() bool
