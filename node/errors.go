@@ -24,29 +24,31 @@ import (
 )
 
 var (
-	ErrDatadirUsed    = errors.New("datadir already used by another process")
-	ErrNodeStopped    = errors.New("node not started")
-	ErrNodeRunning    = errors.New("node already running")
-	ErrServiceUnknown = errors.New("unknown service")
+	ErrDatadirUsed    = errors.New("datadir already used by another process") // 数据目录已被其他进程使用
+	ErrNodeStopped    = errors.New("node not started")                        // 节点未启动
+	ErrNodeRunning    = errors.New("node already running")                    // 节点已在运行
+	ErrServiceUnknown = errors.New("unknown service")                         // 未知服务
 
-	datadirInUseErrnos = map[uint]bool{11: true, 32: true, 35: true}
+	datadirInUseErrnos = map[uint]bool{11: true, 32: true, 35: true} // 定义可能的错误码映射表，用于检测数据目录是否被占用
 )
 
 func convertFileLockError(err error) error {
 	if errno, ok := err.(syscall.Errno); ok && datadirInUseErrnos[uint(errno)] {
-		return ErrDatadirUsed
+		return ErrDatadirUsed // 如果错误码匹配，则返回数据目录被占用的错误
 	}
-	return err
+	return err // 否则返回原始错误
 }
 
 // StopError is returned if a Node fails to stop either any of its registered
 // services or itself.
+// StopError 是在节点无法停止其注册的服务或自身时返回的错误。
 type StopError struct {
-	Server   error
-	Services map[reflect.Type]error
+	Server   error                  // 节点本身的停止错误
+	Services map[reflect.Type]error // 每个服务的停止错误，按服务类型分类
 }
 
 // Error generates a textual representation of the stop error.
+// Error 方法生成停止错误的文本表示。
 func (e *StopError) Error() string {
-	return fmt.Sprintf("server: %v, services: %v", e.Server, e.Services)
+	return fmt.Sprintf("server: %v, services: %v", e.Server, e.Services) // 格式化输出节点和服务的错误信息
 }
