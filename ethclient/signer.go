@@ -27,6 +27,7 @@ import (
 // senderFromServer is a types.Signer that remembers the sender address returned by the RPC
 // server. It is stored in the transaction's sender address cache to avoid an additional
 // request in TransactionSender.
+// senderFromServer 是一个 types.Signer，它记住 RPC 服务器返回的发送者地址。它存储在交易的发送者地址缓存中，以避免在 TransactionSender 中进行额外的请求。
 type senderFromServer struct {
 	addr      common.Address
 	blockhash common.Hash
@@ -36,6 +37,7 @@ var errNotCached = errors.New("sender not cached")
 
 func setSenderFromServer(tx *types.Transaction, addr common.Address, block common.Hash) {
 	// Use types.Sender for side-effect to store our signer into the cache.
+	// 使用 types.Sender 的副作用将我们的签名者存储到缓存中。
 	types.Sender(&senderFromServer{addr, block}, tx)
 }
 
