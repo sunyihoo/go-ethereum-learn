@@ -26,6 +26,7 @@ import (
 )
 
 // HistoryStats wraps the history inspection statistics.
+
 type HistoryStats struct {
 	Start   uint64   // Block number of the first queried history
 	End     uint64   // Block number of the last queried history
