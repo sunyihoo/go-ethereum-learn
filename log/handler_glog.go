@@ -31,25 +31,46 @@ import (
 )
 
 // errVmoduleSyntax is returned when a user vmodule pattern is invalid.
+// errVmoduleSyntax 是一个错误变量，当用户输入的 vmodule 格式不正确时返回。
 var errVmoduleSyntax = errors.New("expect comma-separated list of filename=N")
+
+// Handle 实现 slog.Handler 接口，过滤日志记录并通过全局、局部或回溯过滤器决定是否输出。
+// 该方法的核心逻辑是：
+// 1. 首先检查全局日志级别是否允许输出。
+// 2. 如果未命中全局规则，则尝试从调用点缓存中查找匹配的日志级别。
+// 3. 如果缓存未命中，则通过正则表达式匹配调用点文件名，动态计算日志级别。
+// 4. 最终决定是否输出日志记录。
 
 // GlogHandler is a log handler that mimics the filtering features of Google's
 // glog logger: setting global log levels; overriding with callsite pattern
 // matches; and requesting backtraces at certain positions.
 type GlogHandler struct {
 	origin slog.Handler // The origin handler this wraps
+	// origin 是被包装的基础日志处理器，负责最终的日志输出。
 
-	level    atomic.Int32 // Current log level, atomically accessible
-	override atomic.Bool  // Flag whether overrides are used, atomically accessible
+	level atomic.Int32 // Current log level, atomically accessible
+	// level 当前的日志级别，使用原子操作访问，确保线程安全。
 
-	patterns  []pattern              // Current list of patterns to override with
+	override atomic.Bool // Flag whether overrides are used, atomically accessible
+	// override 标记是否启用了覆盖规则（vmodule 规则），使用原子操作访问。
+
+	patterns []pattern // Current list of patterns to override with
+	// patterns 当前的覆盖规则列表，用于根据文件名匹配动态调整日志级别。
+
 	siteCache map[uintptr]slog.Level // Cache of callsite pattern evaluations
-	location  string                 // file:line location where to do a stackdump at
-	lock      sync.RWMutex           // Lock protecting the override pattern list
+	// siteCache 调用点模式评估缓存，避免重复计算匹配结果。
+
+	location string // file:line location where to do a stackdump at
+	// location 文件名和行号位置，用于触发堆栈转储。
+
+	lock sync.RWMutex // Lock protecting the override pattern list
+	// lock 保护覆盖规则列表的读写锁，确保并发安全。
 }
 
 // NewGlogHandler creates a new log handler with filtering functionality similar
 // to Google's glog logger. The returned handler implements Handler.
+// NewGlogHandler 创建一个新的日志处理器，功能类似于 Google 的 glog 日志库。
+// 该函数返回一个实现了 slog.Handler 接口的 GlogHandler 实例。
 func NewGlogHandler(h slog.Handler) *GlogHandler {
 	return &GlogHandler{
 		origin: h,
@@ -59,12 +80,17 @@ func NewGlogHandler(h slog.Handler) *GlogHandler {
 // pattern contains a filter for the Vmodule option, holding a verbosity level
 // and a file pattern to match.
 type pattern struct {
-	pattern *regexp.Regexp
-	level   slog.Level
+	pattern *regexp.Regexp // 正则表达式模式，用于匹配文件路径。
+	// pattern 存储正则表达式，用于匹配文件名或路径。
+
+	level slog.Level // 对应的日志级别。
+	// level 表示匹配成功时应用的日志级别。
 }
 
 // Verbosity sets the glog verbosity ceiling. The verbosity of individual packages
 // and source files can be raised using Vmodule.
+// Verbosity 设置全局日志级别的上限。
+// 通过该方法可以动态调整全局日志级别，影响所有未被覆盖规则匹配的日志记录。
 func (h *GlogHandler) Verbosity(level slog.Level) {
 	h.level.Store(int32(level))
 }
@@ -139,8 +165,17 @@ func (h *GlogHandler) Vmodule(ruleset string) error {
 	return nil
 }
 
+// Vmodule 设置基于文件名的动态日志级别规则。
+// 该方法解析用户提供的规则字符串（如 "file.go=3"），并将其转换为正则表达式和日志级别的映射。
+// 重要解释：
+// 1. 规则格式为 "pattern=N"，其中 pattern 是文件名或路径模式，N 是日志级别。
+// 2. 使用正则表达式将 pattern 转换为可匹配的规则。
+// 3. 将解析后的规则存储在 `patterns` 列表中，并清空调用点缓存 `siteCache`。
+
 // Enabled implements slog.Handler, reporting whether the handler handles records
 // at the given level.
+// Enabled 实现 slog.Handler 接口，判断是否处理指定级别的日志记录。
+// 如果未启用覆盖规则且日志级别高于配置值，则直接跳过日志。
 func (h *GlogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 	// fast-track skipping logging if override not enabled and the provided verbosity is above configured
 	return h.override.Load() || slog.Level(h.level.Load()) <= lvl
@@ -148,6 +183,8 @@ func (h *GlogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 
 // WithAttrs implements slog.Handler, returning a new Handler whose attributes
 // consist of both the receiver's attributes and the arguments.
+// WithAttrs 实现 slog.Handler 接口，返回一个新的处理器实例，包含当前属性和新增属性。
+// 该方法用于扩展日志处理器的上下文信息。
 func (h *GlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	h.lock.RLock()
 	siteCache := maps.Clone(h.siteCache)
@@ -172,6 +209,9 @@ func (h *GlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 // group appended to the receiver's existing groups.
 //
 // Note, this function is not implemented.
+//
+// WithGroup 实现 slog.Handler 接口，但未实现。
+// 该方法用于分组日志记录，目前抛出异常。
 func (h *GlogHandler) WithGroup(name string) slog.Handler {
 	panic("not implemented")
 }
