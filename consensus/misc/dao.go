@@ -30,10 +30,12 @@ import (
 var (
 	// ErrBadProDAOExtra is returned if a header doesn't support the DAO fork on a
 	// pro-fork client.
+	// 如果区块头在支持 DAO 分叉的客户端上未提供正确的分叉特定 extra-data，则返回此错误。
 	ErrBadProDAOExtra = errors.New("bad DAO pro-fork extra-data")
 
 	// ErrBadNoDAOExtra is returned if a header does support the DAO fork on a no-
 	// fork client.
+	// 如果区块头在不支持 DAO 分叉的客户端上提供了分叉特定 extra-data，则返回此错误。
 	ErrBadNoDAOExtra = errors.New("bad DAO no-fork extra-data")
 )
 
@@ -46,6 +48,8 @@ var (
 //     with the fork specific extra-data set.
 //   - if the node is pro-fork, require blocks in the specific range to have the
 //     unique extra-data set.
+//   - 如果节点是 no-fork（不支持分叉），则拒绝 [fork, fork+10) 范围内包含分叉特定 extra-data 的区块。
+//   - 如果节点是 pro-fork（支持分叉），则要求该范围内的区块必须包含分叉特定 extra-data。
 func VerifyDAOHeaderExtraData(config *params.ChainConfig, header *types.Header) error {
 	// Short circuit validation if the node doesn't care about the DAO fork
 	if config.DAOForkBlock == nil {
@@ -58,10 +62,12 @@ func VerifyDAOHeaderExtraData(config *params.ChainConfig, header *types.Header) 
 	}
 	// Depending on whether we support or oppose the fork, validate the extra-data contents
 	if config.DAOForkSupport {
+		// 支持分叉：要求 extra-data 必须匹配分叉特定值。
 		if !bytes.Equal(header.Extra, params.DAOForkBlockExtra) {
 			return ErrBadProDAOExtra
 		}
 	} else {
+		// 不支持分叉：禁止 extra-data 匹配分叉特定值。
 		if bytes.Equal(header.Extra, params.DAOForkBlockExtra) {
 			return ErrBadNoDAOExtra
 		}
@@ -73,6 +79,7 @@ func VerifyDAOHeaderExtraData(config *params.ChainConfig, header *types.Header) 
 // ApplyDAOHardFork modifies the state database according to the DAO hard-fork
 // rules, transferring all balances of a set of DAO accounts to a single refund
 // contract.
+// ApplyDAOHardFork 根据 DAO 硬分叉规则修改状态数据库，将所有 DAO 账户的余额转移到退款合约中。
 func ApplyDAOHardFork(statedb vm.StateDB) {
 	// Retrieve the contract to refund balances into
 	if !statedb.Exist(params.DAORefundContract) {

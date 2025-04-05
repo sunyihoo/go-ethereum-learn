@@ -24,18 +24,26 @@ import (
 
 // VerifyGaslimit verifies the header gas limit according increase/decrease
 // in relation to the parent gas limit.
+// VerifyGaslimit 验证区块头的 Gas Limit 是否相对于父区块的 Gas Limit 在允许的范围内变化。
 func VerifyGaslimit(parentGasLimit, headerGasLimit uint64) error {
 	// Verify that the gas limit remains within allowed bounds
+	// 验证 Gas Limit 是否保持在允许的范围内。
 	diff := int64(parentGasLimit) - int64(headerGasLimit)
 	if diff < 0 {
-		diff *= -1
+		diff *= -1 // 取绝对值，计算父区块与当前区块 Gas Limit 的差值。
 	}
-	limit := parentGasLimit / params.GasLimitBoundDivisor
+	limit := parentGasLimit / params.GasLimitBoundDivisor // 计算允许的最大变化范围。
+
+	// 检查差值是否超过允许的变化范围。
 	if uint64(diff) >= limit {
 		return fmt.Errorf("invalid gas limit: have %d, want %d +-= %d", headerGasLimit, parentGasLimit, limit-1)
 	}
+
+	// 检查当前区块的 Gas Limit 是否低于最小值。
 	if headerGasLimit < params.MinGasLimit {
 		return fmt.Errorf("invalid gas limit below %d", params.MinGasLimit)
 	}
+
+	// 如果通过所有检查，则返回 nil 表示验证成功。
 	return nil
 }
