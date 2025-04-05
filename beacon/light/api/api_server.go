@@ -26,19 +26,27 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// 信标链事件 ：
+// 信标链的头部事件（如新区块、乐观更新和最终性更新）是轻客户端同步和验证的关键。
+// 合并后的架构 ：
+// 在合并后的以太坊中，ApiServer 可用于实现信标链与执行层之间的高效协作。
+
 // ApiServer is a wrapper around BeaconLightApi that implements request.requestServer.
+// ApiServer 是 BeaconLightApi 的包装器，实现了 request.requestServer 接口。
 type ApiServer struct {
-	api           *BeaconLightApi
-	eventCallback func(event request.Event)
-	unsubscribe   func()
+	api           *BeaconLightApi           // 包装的 BeaconLightApi 实例
+	eventCallback func(event request.Event) // 事件回调函数，用于处理接收到的事件
+	unsubscribe   func()                    // 取消订阅函数
 }
 
 // NewApiServer creates a new ApiServer.
+// NewApiServer 创建一个新的 ApiServer 实例。
 func NewApiServer(api *BeaconLightApi) *ApiServer {
 	return &ApiServer{api: api}
 }
 
 // Subscribe implements request.requestServer.
+// Subscribe 实现了 request.requestServer 接口。
 func (s *ApiServer) Subscribe(eventCallback func(event request.Event)) {
 	s.eventCallback = eventCallback
 	listener := HeadEventListener{
@@ -62,6 +70,7 @@ func (s *ApiServer) Subscribe(eventCallback func(event request.Event)) {
 }
 
 // SendRequest implements request.requestServer.
+// SendRequest 实现了 request.requestServer 接口。
 func (s *ApiServer) SendRequest(id request.ID, req request.Request) {
 	go func() {
 		var resp request.Response
@@ -87,6 +96,7 @@ func (s *ApiServer) SendRequest(id request.ID, req request.Request) {
 			log.Debug("Beacon API: requesting finality update")
 			resp, err = s.api.GetFinalityUpdate()
 		default:
+			// 未知请求类型
 		}
 
 		if err != nil {
@@ -101,6 +111,8 @@ func (s *ApiServer) SendRequest(id request.ID, req request.Request) {
 
 // Unsubscribe implements request.requestServer.
 // Note: Unsubscribe should not be called concurrently with Subscribe.
+// Unsubscribe 实现了 request.requestServer 接口。
+// 注意：Unsubscribe 不应与 Subscribe 并发调用。
 func (s *ApiServer) Unsubscribe() {
 	if s.unsubscribe != nil {
 		s.unsubscribe()
@@ -109,6 +121,7 @@ func (s *ApiServer) Unsubscribe() {
 }
 
 // Name implements request.Server
+// Name 实现了 request.Server 接口。
 func (s *ApiServer) Name() string {
 	return s.api.url
 }
