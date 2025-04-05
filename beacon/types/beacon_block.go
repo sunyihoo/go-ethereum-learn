@@ -35,11 +35,13 @@ type blockObject interface {
 }
 
 // BeaconBlock represents a full block in the beacon chain.
+// BeaconBlock 代表信标链中的一个完整区块。
 type BeaconBlock struct {
 	blockObj blockObject
 }
 
 // BlockFromJSON decodes a beacon block from JSON.
+// BlockFromJSON 从 JSON 解码一个信标区块。
 func BlockFromJSON(forkName string, data []byte) (*BeaconBlock, error) {
 	var obj blockObject
 	switch forkName {
@@ -57,6 +59,7 @@ func BlockFromJSON(forkName string, data []byte) (*BeaconBlock, error) {
 }
 
 // NewBeaconBlock wraps a ZRNT block.
+// NewBeaconBlock 封装一个 ZRNT 区块。
 func NewBeaconBlock(obj blockObject) *BeaconBlock {
 	switch obj := obj.(type) {
 	case *capella.BeaconBlock:
@@ -69,6 +72,7 @@ func NewBeaconBlock(obj blockObject) *BeaconBlock {
 }
 
 // Slot returns the slot number of the block.
+// Slot 返回区块的槽位号。
 func (b *BeaconBlock) Slot() uint64 {
 	switch obj := b.blockObj.(type) {
 	case *capella.BeaconBlock:
@@ -81,6 +85,7 @@ func (b *BeaconBlock) Slot() uint64 {
 }
 
 // ExecutionPayload parses and returns the execution payload of the block.
+// ExecutionPayload 解析并返回区块的执行负载。
 func (b *BeaconBlock) ExecutionPayload() (*types.Block, error) {
 	switch obj := b.blockObj.(type) {
 	case *capella.BeaconBlock:
@@ -93,6 +98,7 @@ func (b *BeaconBlock) ExecutionPayload() (*types.Block, error) {
 }
 
 // Header returns the block's header data.
+// Header 返回区块的头部数据。
 func (b *BeaconBlock) Header() Header {
 	switch obj := b.blockObj.(type) {
 	case *capella.BeaconBlock:
@@ -105,6 +111,7 @@ func (b *BeaconBlock) Header() Header {
 }
 
 // Root computes the SSZ root hash of the block.
+// Root 计算区块的 SSZ 根哈希。
 func (b *BeaconBlock) Root() common.Hash {
 	return common.Hash(b.blockObj.HashTreeRoot(configs.Mainnet, tree.GetHashFn()))
 }

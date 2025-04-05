@@ -28,6 +28,14 @@ import (
 	"github.com/protolambda/ztyp/tree"
 )
 
+// 执行层 (Execution Layer): 在合并之前是以太坊的主网，负责处理交易的执行和状态的更新。合并后，它成为信标链的一个“执行引擎”。
+// 信标链 (Beacon Chain): 合并后的以太坊共识层，负责管理验证者、达成共识以及协调执行层。
+// 执行负载 (Execution Payload): 信标链区块中包含的数据，它实际上是来自执行层的区块内容，包括交易、状态根等。
+// 执行头 (Execution Header): 是执行负载的头部信息，包含了关键的元数据，例如 Payload Root 和 Block Hash。信标链主要通过引用执行头来与执行层进行交互和共识。
+// Payload Root: 执行负载的 Merkle 根，用于确保信标链对执行层数据的共识是基于完整且未被篡改的数据。
+// Block Hash: 执行层区块的唯一标识符，信标链需要知道这个哈希来引用特定的执行层区块。
+// 分叉 (Forks): 以太坊协议的升级可能会影响执行头的数据结构，因此代码中需要根据不同的分叉名称来处理不同版本的执行头。
+
 type headerObject interface {
 	HashTreeRoot(hFn tree.HashFn) zrntcommon.Root
 }
@@ -38,6 +46,7 @@ type ExecutionHeader struct {
 
 // ExecutionHeaderFromJSON decodes an execution header from JSON data provided by
 // the beacon chain API.
+// ExecutionHeaderFromJSON 从信标链 API 提供的 JSON 数据中解码一个执行头。
 func ExecutionHeaderFromJSON(forkName string, data []byte) (*ExecutionHeader, error) {
 	var obj headerObject
 	switch forkName {
@@ -54,6 +63,8 @@ func ExecutionHeaderFromJSON(forkName string, data []byte) (*ExecutionHeader, er
 	return &ExecutionHeader{obj: obj}, nil
 }
 
+// NewExecutionHeader creates a new ExecutionHeader from a headerObject.
+// NewExecutionHeader 从一个 headerObject 创建一个新的 ExecutionHeader。
 func NewExecutionHeader(obj headerObject) *ExecutionHeader {
 	switch obj.(type) {
 	case *capella.ExecutionPayloadHeader:
@@ -64,10 +75,14 @@ func NewExecutionHeader(obj headerObject) *ExecutionHeader {
 	return &ExecutionHeader{obj: obj}
 }
 
+// PayloadRoot returns the Merkle root of the execution payload.
+// PayloadRoot 返回执行负载的 Merkle 根。
 func (eh *ExecutionHeader) PayloadRoot() merkle.Value {
 	return merkle.Value(eh.obj.HashTreeRoot(tree.GetHashFn()))
 }
 
+// BlockHash returns the block hash of the execution layer block.
+// BlockHash 返回执行层区块的哈希值。
 func (eh *ExecutionHeader) BlockHash() common.Hash {
 	switch obj := eh.obj.(type) {
 	case *capella.ExecutionPayloadHeader:
