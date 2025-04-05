@@ -33,30 +33,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// 分叉机制 ：以太坊信标链通过分叉机制实现协议升级（如 Altair、Bellatrix 和 Capella），每个分叉都有独立的版本号和激活纪元。
+// 签名域隔离 ：通过签名域的隔离，避免不同分叉之间的签名冲突，确保网络的安全性和稳定性。
 // syncCommitteeDomain specifies the signatures specific use to avoid clashes
 // across signing different data structures.
+// syncCommitteeDomain 指定签名的具体用途，以避免在签署不同数据结构时发生冲突。
 const syncCommitteeDomain = 7
 
 var knownForks = []string{"GENESIS", "ALTAIR", "BELLATRIX", "CAPELLA", "DENEB"}
 
 // ClientConfig contains beacon light client configuration.
+// ClientConfig 包含信标轻客户端的配置。
 type ClientConfig struct {
 	ChainConfig
-	Apis         []string
-	CustomHeader map[string]string
-	Threshold    int
-	NoFilter     bool
+	Apis         []string          // Beacon API 的 URL 列表
+	CustomHeader map[string]string // 自定义 HTTP 请求头
+	Threshold    int               // 验证阈值
+	NoFilter     bool              // 是否禁用过滤
 }
 
 // ChainConfig contains the beacon chain configuration.
+// ChainConfig 包含信标链的配置。
 type ChainConfig struct {
-	GenesisTime           uint64      // Unix timestamp of slot 0
-	GenesisValidatorsRoot common.Hash // Root hash of the genesis validator set, used for signature domain calculation
-	Forks                 Forks
-	Checkpoint            common.Hash
+	GenesisTime           uint64      //  Unix timestamp of slot 0 第 0 个槽位的时间戳（Unix 时间戳）
+	GenesisValidatorsRoot common.Hash // Root hash of the genesis validator set, used for signature domain calculation 创世验证者集合的根哈希，用于签名域计算
+	Forks                 Forks       // 分叉列表
+	Checkpoint            common.Hash // 检查点哈希
 }
 
 // ForkAtEpoch returns the latest active fork at the given epoch.
+// ForkAtEpoch 返回给定纪元中最新的活跃分叉。
 func (c *ChainConfig) ForkAtEpoch(epoch uint64) Fork {
 	for i := len(c.Forks) - 1; i >= 0; i-- {
 		if c.Forks[i].Epoch <= epoch {
@@ -67,10 +73,11 @@ func (c *ChainConfig) ForkAtEpoch(epoch uint64) Fork {
 }
 
 // AddFork adds a new item to the list of forks.
+// AddFork 向分叉列表中添加一个新的分叉。
 func (c *ChainConfig) AddFork(name string, epoch uint64, version []byte) *ChainConfig {
 	knownIndex := slices.Index(knownForks, name)
 	if knownIndex == -1 {
-		knownIndex = math.MaxInt // assume that the unknown fork happens after the known ones
+		knownIndex = math.MaxInt // assume that the unknown fork happens after the known ones 假设未知分叉发生在已知分叉之后
 		if epoch != math.MaxUint64 {
 			log.Warn("Unknown fork in config.yaml", "fork name", name, "known forks", knownForks)
 		}
@@ -89,6 +96,7 @@ func (c *ChainConfig) AddFork(name string, epoch uint64, version []byte) *ChainC
 
 // LoadForks parses the beacon chain configuration file (config.yaml) and extracts
 // the list of forks.
+// LoadForks 解析信标链配置文件（config.yaml）并提取分叉列表。
 func (c *ChainConfig) LoadForks(path string) error {
 	file, err := os.ReadFile(path)
 	if err != nil {
@@ -138,25 +146,32 @@ func (c *ChainConfig) LoadForks(path string) error {
 
 // Fork describes a single beacon chain fork and also stores the calculated
 // signature domain used after this fork.
+// Fork 描述了一个信标链分叉，并存储该分叉后的签名域。
 type Fork struct {
 	// Name of the fork in the chain config (config.yaml) file
+	// 分叉名称（在 config.yaml 文件中）
 	Name string
 
 	// Epoch when given fork version is activated
+	// 激活该分叉版本的纪元
 	Epoch uint64
 
 	// Fork version, see https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/beacon-chain.md#custom-types
+	// 分叉版本
 	Version []byte
 
 	// index in list of known forks or MaxInt if unknown
+	// 已知分叉列表中的索引，或为 MaxInt（如果未知）
 	knownIndex int
 
 	// calculated by computeDomain, based on fork version and genesis validators root
+	// 根据分叉版本和创世验证者根哈希计算的签名域
 	domain merkle.Value
 }
 
 // computeDomain returns the signature domain based on the given fork version
 // and genesis validator set root.
+// computeDomain 根据给定的分叉版本和创世验证者集合根哈希返回签名域。
 func (f *Fork) computeDomain(genesisValidatorsRoot common.Hash) {
 	var (
 		hasher        = sha256.New()
@@ -173,10 +188,12 @@ func (f *Fork) computeDomain(genesisValidatorsRoot common.Hash) {
 }
 
 // Forks is the list of all beacon chain forks in the chain configuration.
+// Forks 是信标链配置中所有分叉的列表。
 type Forks []*Fork
 
 // domain returns the signature domain for the given epoch (assumes that domains
 // have already been calculated).
+// domain 返回给定纪元的签名域（假设签名域已经计算过）。
 func (f Forks) domain(epoch uint64) (merkle.Value, error) {
 	for i := len(f) - 1; i >= 0; i-- {
 		if epoch >= f[i].Epoch {
@@ -187,6 +204,7 @@ func (f Forks) domain(epoch uint64) (merkle.Value, error) {
 }
 
 // SigningRoot calculates the signing root of the given header.
+// SigningRoot 计算给定头部的签名根。
 func (f Forks) SigningRoot(epoch uint64, root common.Hash) (common.Hash, error) {
 	domain, err := f.domain(epoch)
 	if err != nil {
