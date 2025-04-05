@@ -27,19 +27,30 @@ const (
 	// frontierDurationLimit is for Frontier:
 	// The decision boundary on the blocktime duration used to determine
 	// whether difficulty should go up or down.
+	// frontierDurationLimit 用于 Frontier：
+	// 决定区块时间间隔的边界，用于判断难度是否应上升或下降。
 	frontierDurationLimit = 13
+
 	// minimumDifficulty The minimum that the difficulty may ever be.
+	// minimumDifficulty 难度的最小值。
 	minimumDifficulty = 131072
+
 	// expDiffPeriod is the exponential difficulty period
+	// expDiffPeriod 是指数难度周期。
 	expDiffPeriodUint = 100000
+
 	// difficultyBoundDivisorBitShift is the bound divisor of the difficulty (2048),
 	// This constant is the right-shifts to use for the division.
+	// difficultyBoundDivisorBitShift 是难度的边界除数（2048），
+	// 此常量是用于除法操作的右移位数。
 	difficultyBoundDivisor = 11
 )
 
 // CalcDifficultyFrontierU256 is the difficulty adjustment algorithm. It returns the
 // difficulty that a new block should have when created at time given the parent
 // block's time and difficulty. The calculation uses the Frontier rules.
+// CalcDifficultyFrontierU256 是难度调整算法。它返回在给定父区块时间和难度的情况下，
+// 新区块在指定时间创建时应有的难度。该计算使用 Frontier 规则。
 func CalcDifficultyFrontierU256(time uint64, parent *types.Header) *big.Int {
 	/*
 		Algorithm
@@ -79,6 +90,8 @@ func CalcDifficultyFrontierU256(time uint64, parent *types.Header) *big.Int {
 // CalcDifficultyHomesteadU256 is the difficulty adjustment algorithm. It returns
 // the difficulty that a new block should have when created at time given the
 // parent block's time and difficulty. The calculation uses the Homestead rules.
+// CalcDifficultyHomesteadU256 是难度调整算法。它返回在给定父区块时间和难度的情况下，
+// 新区块在指定时间创建时应有的难度。该计算使用 Homestead 规则。
 func CalcDifficultyHomesteadU256(time uint64, parent *types.Header) *big.Int {
 	/*
 		https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2.md
@@ -131,9 +144,12 @@ func CalcDifficultyHomesteadU256(time uint64, parent *types.Header) *big.Int {
 // MakeDifficultyCalculatorU256 creates a difficultyCalculator with the given bomb-delay.
 // the difficulty is calculated with Byzantium rules, which differs from Homestead in
 // how uncles affect the calculation
+// MakeDifficultyCalculatorU256 创建一个带有给定难度炸弹延迟的难度计算器。
+// 该难度按照拜占庭规则计算，与 Homestead 的区别在于叔块如何影响计算。
 func MakeDifficultyCalculatorU256(bombDelay *big.Int) func(time uint64, parent *types.Header) *big.Int {
 	// Note, the calculations below looks at the parent number, which is 1 below
 	// the block number. Thus we remove one from the delay given
+	// 注意，以下计算查看的是父区块号，比当前区块号小 1。因此我们从给定延迟中减去 1。
 	bombDelayFromParent := bombDelay.Uint64() - 1
 	return func(time uint64, parent *types.Header) *big.Int {
 		/*
