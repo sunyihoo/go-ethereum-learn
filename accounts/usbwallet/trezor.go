@@ -39,28 +39,42 @@ import (
 // ErrTrezorPINNeeded is returned if opening the trezor requires a PIN code. In
 // this case, the calling application should display a pinpad and send back the
 // encoded passphrase.
+// ErrTrezorPINNeeded 在打开 Trezor 时需要 PIN 码时返回。
+// 在这种情况下，调用应用程序应显示一个 PIN 键盘并返回编码后的密码。
 var ErrTrezorPINNeeded = errors.New("trezor: pin needed")
 
 // ErrTrezorPassphraseNeeded is returned if opening the trezor requires a passphrase
+// ErrTrezorPassphraseNeeded 在打开 Trezor 时需要 passphrase 时返回
 var ErrTrezorPassphraseNeeded = errors.New("trezor: passphrase needed")
 
 // errTrezorReplyInvalidHeader is the error message returned by a Trezor data exchange
 // if the device replies with a mismatching header. This usually means the device
 // is in browser mode.
+// errTrezorReplyInvalidHeader 是 Trezor 数据交换返回的错误消息，
+// 如果设备回复的头部不匹配。通常这意味着设备处于浏览器模式。
 var errTrezorReplyInvalidHeader = errors.New("trezor: invalid reply header")
 
 // trezorDriver implements the communication with a Trezor hardware wallet.
+// trezorDriver 实现了与 Trezor 硬件钱包的通信。
 type trezorDriver struct {
-	device         io.ReadWriter // USB device connection to communicate through
-	version        [3]uint32     // Current version of the Trezor firmware
-	label          string        // Current textual label of the Trezor device
-	pinwait        bool          // Flags whether the device is waiting for PIN entry
-	passphrasewait bool          // Flags whether the device is waiting for passphrase entry
-	failure        error         // Any failure that would make the device unusable
-	log            log.Logger    // Contextual logger to tag the trezor with its id
+	device io.ReadWriter // USB device connection to communicate through
+	// 用于通信的 USB 设备连接
+	version [3]uint32 // Current version of the Trezor firmware
+	// Trezor 固件的当前版本
+	label string // Current textual label of the Trezor device
+	// Trezor 设备的当前文本标签
+	pinwait bool // Flags whether the device is waiting for PIN entry
+	// 标记设备是否正在等待 PIN 输入
+	passphrasewait bool // Flags whether the device is waiting for passphrase entry
+	// 标记设备是否正在等待 passphrase 输入
+	failure error // Any failure that would make the device unusable
+	// 任何使设备不可用的故障
+	log log.Logger // Contextual logger to tag the trezor with its id
+	// 上下文记录器，用于标记 Trezor 的 ID
 }
 
 // newTrezorDriver creates a new instance of a Trezor USB protocol driver.
+// newTrezorDriver 创建一个新的 Trezor USB 协议驱动实例。
 func newTrezorDriver(logger log.Logger) driver {
 	return &trezorDriver{
 		log: logger,
@@ -69,6 +83,7 @@ func newTrezorDriver(logger log.Logger) driver {
 
 // Status implements accounts.Wallet, always whether the Trezor is opened, closed
 // or whether the Ethereum app was not started on it.
+// Status 实现了 accounts.Wallet，始终返回 Trezor 是打开、关闭还是以太坊应用程序未启动。
 func (w *trezorDriver) Status() (string, error) {
 	if w.failure != nil {
 		return fmt.Sprintf("Failed: %v", w.failure), w.failure
@@ -93,16 +108,27 @@ func (w *trezorDriver) Status() (string, error) {
 //     number of the user (shuffled according to the pinpad displayed).
 //   - If needed the device will ask for passphrase which will require calling
 //     open again with the actual passphrase (3rd phase)
+//
+// Open 实现了 usbwallet.driver，尝试初始化与 Trezor 硬件钱包的连接。
+// 初始化 Trezor 是一个两阶段或三阶段操作：
+//   - 第一阶段是初始化连接并读取钱包的功能。如果提供的 passphrase 为空，则调用此阶段。
+//     设备将显示 PIN 键盘，并返回适当的错误以通知用户需要第二阶段打开。
+//   - 第二阶段是解锁对 Trezor 的访问，用户实际提供一个映射键盘到 PIN 号码的 passphrase
+//     （根据显示的 PIN 键盘打乱顺序）。
+//   - 如果需要，设备会要求 passphrase，这需要再次调用 open 并提供实际的 passphrase（第 3 阶段）
 func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 	w.device, w.failure = device, nil
 
 	// If phase 1 is requested, init the connection and wait for user callback
+	// 如果请求第一阶段，初始化连接并等待用户回调
 	if passphrase == "" && !w.passphrasewait {
 		// If we're already waiting for a PIN entry, insta-return
+		// 如果已经在等待 PIN 输入，立即返回
 		if w.pinwait {
 			return ErrTrezorPINNeeded
 		}
 		// Initialize a connection to the device
+		// 初始化与设备的连接
 		features := new(trezor.Features)
 		if _, err := w.trezorExchange(&trezor.Initialize{}, features); err != nil {
 			return err
@@ -111,6 +137,7 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 		w.label = features.GetLabel()
 
 		// Do a manual ping, forcing the device to ask for its PIN and Passphrase
+		// 手动执行 ping，强制设备请求其 PIN 和 Passphrase
 		askPin := true
 		askPassphrase := true
 		res, err := w.trezorExchange(&trezor.Ping{PinProtection: &askPin, PassphraseProtection: &askPassphrase}, new(trezor.PinMatrixRequest), new(trezor.PassphraseRequest), new(trezor.Success))
@@ -118,6 +145,7 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 			return err
 		}
 		// Only return the PIN request if the device wasn't unlocked until now
+		// 仅当设备至今未解锁时返回 PIN 请求
 		switch res {
 		case 0:
 			w.pinwait = true
@@ -128,9 +156,11 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 			return ErrTrezorPassphraseNeeded
 		case 2:
 			return nil // responded with trezor.Success
+			// 以 trezor.Success 响应
 		}
 	}
 	// Phase 2 requested with actual PIN entry
+	// 请求第二阶段，实际输入 PIN
 	if w.pinwait {
 		w.pinwait = false
 		res, err := w.trezorExchange(&trezor.PinMatrixAck{Pin: &passphrase}, new(trezor.Success), new(trezor.PassphraseRequest))
@@ -155,6 +185,7 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 
 // Close implements usbwallet.driver, cleaning up and metadata maintained within
 // the Trezor driver.
+// Close 实现了 usbwallet.driver，清理 Trezor 驱动程序中维护的元数据。
 func (w *trezorDriver) Close() error {
 	w.version, w.label, w.pinwait = [3]uint32{}, "", false
 	return nil
@@ -162,6 +193,7 @@ func (w *trezorDriver) Close() error {
 
 // Heartbeat implements usbwallet.driver, performing a sanity check against the
 // Trezor to see if it's still online.
+// Heartbeat 实现了 usbwallet.driver，对 Trezor 执行健康检查以查看它是否仍然在线。
 func (w *trezorDriver) Heartbeat() error {
 	if _, err := w.trezorExchange(&trezor.Ping{}, new(trezor.Success)); err != nil {
 		w.failure = err
@@ -172,12 +204,14 @@ func (w *trezorDriver) Heartbeat() error {
 
 // Derive implements usbwallet.driver, sending a derivation request to the Trezor
 // and returning the Ethereum address located on that derivation path.
+// Derive 实现了 usbwallet.driver，向 Trezor 发送派生请求并返回位于该派生路径的以太坊地址。
 func (w *trezorDriver) Derive(path accounts.DerivationPath) (common.Address, error) {
 	return w.trezorDerive(path)
 }
 
 // SignTx implements usbwallet.driver, sending the transaction to the Trezor and
 // waiting for the user to confirm or deny the transaction.
+// SignTx 实现了 usbwallet.driver，将交易发送到 Trezor 并等待用户确认或拒绝交易。
 func (w *trezorDriver) SignTx(path accounts.DerivationPath, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error) {
 	if w.device == nil {
 		return common.Address{}, nil, accounts.ErrWalletClosed
@@ -191,24 +225,30 @@ func (w *trezorDriver) SignTypedMessage(path accounts.DerivationPath, domainHash
 
 // trezorDerive sends a derivation request to the Trezor device and returns the
 // Ethereum address located on that path.
+// trezorDerive 向 Trezor 设备发送派生请求并返回位于该路径的以太坊地址。
 func (w *trezorDriver) trezorDerive(derivationPath []uint32) (common.Address, error) {
 	address := new(trezor.EthereumAddress)
 	if _, err := w.trezorExchange(&trezor.EthereumGetAddress{AddressN: derivationPath}, address); err != nil {
 		return common.Address{}, err
 	}
 	if addr := address.GetAddressBin(); len(addr) > 0 { // Older firmwares use binary formats
+		// 旧固件使用二进制格式
 		return common.BytesToAddress(addr), nil
 	}
 	if addr := address.GetAddressHex(); len(addr) > 0 { // Newer firmwares use hexadecimal formats
+		// 新固件使用十六进制格式
 		return common.HexToAddress(addr), nil
 	}
 	return common.Address{}, errors.New("missing derived address")
+	// 缺少派生地址
 }
 
 // trezorSign sends the transaction to the Trezor wallet, and waits for the user
 // to confirm or deny the transaction.
+// trezorSign 将交易发送到 Trezor 钱包，并等待用户确认或拒绝交易。
 func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error) {
 	// Create the transaction initiation message
+	// 创建交易初始化消息
 	data := tx.Data()
 	length := uint32(len(data))
 
@@ -222,20 +262,26 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 	}
 	if to := tx.To(); to != nil {
 		// Non contract deploy, set recipient explicitly
+		// 非合约部署，明确设置接收者
 		hex := to.Hex()
-		request.ToHex = &hex     // Newer firmwares (old will ignore)
+		request.ToHex = &hex // Newer firmwares (old will ignore)
+		// 新固件（旧的会忽略）
 		request.ToBin = (*to)[:] // Older firmwares (new will ignore)
+		// 旧固件（新的会忽略）
 	}
 	if length > 1024 { // Send the data chunked if that was requested
+		// 如果请求分块发送数据
 		request.DataInitialChunk, data = data[:1024], data[1024:]
 	} else {
 		request.DataInitialChunk, data = data, nil
 	}
 	if chainID != nil { // EIP-155 transaction, set chain ID explicitly (only 32 bit is supported!?)
+		// EIP-155 交易，明确设置链 ID（仅支持 32 位！）
 		id := uint32(chainID.Int64())
 		request.ChainId = &id
 	}
 	// Send the initiation message and stream content until a signature is returned
+	// 发送初始化消息并流式传输内容，直到返回签名
 	response := new(trezor.EthereumTxRequest)
 	if _, err := w.trezorExchange(request, response); err != nil {
 		return common.Address{}, nil, err
@@ -249,22 +295,27 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 		}
 	}
 	// Extract the Ethereum signature and do a sanity validation
+	// 提取以太坊签名并进行健全性验证
 	if len(response.GetSignatureR()) == 0 || len(response.GetSignatureS()) == 0 || response.GetSignatureV() == 0 {
 		return common.Address{}, nil, errors.New("reply lacks signature")
+		// 回复缺少签名
 	}
 	signature := append(append(response.GetSignatureR(), response.GetSignatureS()...), byte(response.GetSignatureV()))
 
 	// Create the correct signer and signature transform based on the chain ID
+	// 根据链 ID 创建正确的签名者和签名转换
 	var signer types.Signer
 	if chainID == nil {
 		signer = new(types.HomesteadSigner)
 	} else {
 		// Trezor backend does not support typed transactions yet.
+		// Trezor 后端尚不支持类型化交易。
 		signer = types.NewEIP155Signer(chainID)
 		signature[64] -= byte(chainID.Uint64()*2 + 35)
 	}
 
 	// Inject the final signature into the transaction and sanity check the sender
+	// 将最终签名注入交易并对发送者进行健全性检查
 	signed, err := tx.WithSignature(signer, signature)
 	if err != nil {
 		return common.Address{}, nil, err
@@ -279,8 +330,11 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 // trezorExchange performs a data exchange with the Trezor wallet, sending it a
 // message and retrieving the response. If multiple responses are possible, the
 // method will also return the index of the destination object used.
+// trezorExchange 执行与 Trezor 钱包的数据交换，向其发送消息并检索响应。
+// 如果可能有多个响应，该方法还将返回使用的目标对象的索引。
 func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Message) (int, error) {
 	// Construct the original message payload to chunk up
+	// 构造原始消息负载以进行分块
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return 0, err
@@ -292,11 +346,14 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 	copy(payload[8:], data)
 
 	// Stream all the chunks to the device
+	// 将所有块流式传输到设备
 	chunk := make([]byte, 64)
 	chunk[0] = 0x3f // Report ID magic number
+	// 报告 ID 魔法数字
 
 	for len(payload) > 0 {
 		// Construct the new message to stream, padding with zeroes if needed
+		// 构造要流式传输的新消息，如有需要用零填充
 		if len(payload) > 63 {
 			copy(chunk[1:], payload[:63])
 			payload = payload[63:]
@@ -306,28 +363,35 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 			payload = nil
 		}
 		// Send over to the device
+		// 发送到设备
 		w.log.Trace("Data chunk sent to the Trezor", "chunk", hexutil.Bytes(chunk))
+		// 数据块已发送到 Trezor
 		if _, err := w.device.Write(chunk); err != nil {
 			return 0, err
 		}
 	}
 	// Stream the reply back from the wallet in 64 byte chunks
+	// 将回复从钱包以 64 字节块流式传输回来
 	var (
 		kind  uint16
 		reply []byte
 	)
 	for {
 		// Read the next chunk from the Trezor wallet
+		// 从 Trezor 钱包读取下一个块
 		if _, err := io.ReadFull(w.device, chunk); err != nil {
 			return 0, err
 		}
 		w.log.Trace("Data chunk received from the Trezor", "chunk", hexutil.Bytes(chunk))
+		// 从 Trezor 接收到数据块
 
 		// Make sure the transport header matches
+		// 确保传输头部匹配
 		if chunk[0] != 0x3f || (len(reply) == 0 && (chunk[1] != 0x23 || chunk[2] != 0x23)) {
 			return 0, errTrezorReplyInvalidHeader
 		}
 		// If it's the first chunk, retrieve the reply message type and total message length
+		// 如果是第一个块，检索回复消息类型和总消息长度
 		var payload []byte
 
 		if len(reply) == 0 {
@@ -338,6 +402,7 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 			payload = chunk[1:]
 		}
 		// Append to the reply and stop when filled up
+		// 追加到回复并在填满时停止
 		if left := cap(reply) - len(reply); left > len(payload) {
 			reply = append(reply, payload...)
 		} else {
@@ -346,8 +411,10 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 		}
 	}
 	// Try to parse the reply into the requested reply message
+	// 尝试将回复解析为请求的回复消息
 	if kind == uint16(trezor.MessageType_MessageType_Failure) {
 		// Trezor returned a failure, extract and return the message
+		// Trezor 返回失败，提取并返回消息
 		failure := new(trezor.Failure)
 		if err := proto.Unmarshal(reply, failure); err != nil {
 			return 0, err
@@ -356,6 +423,7 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 	}
 	if kind == uint16(trezor.MessageType_MessageType_ButtonRequest) {
 		// Trezor is waiting for user confirmation, ack and wait for the next message
+		// Trezor 正在等待用户确认，确认并等待下一条消息
 		return w.trezorExchange(&trezor.ButtonAck{}, results...)
 	}
 	for i, res := range results {
@@ -368,4 +436,5 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 		expected[i] = trezor.Name(trezor.Type(res))
 	}
 	return 0, fmt.Errorf("trezor: expected reply types %s, got %s", expected, trezor.Name(kind))
+	// trezor: 预期回复类型 %s，得到 %s
 }
