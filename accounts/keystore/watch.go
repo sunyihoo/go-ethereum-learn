@@ -28,11 +28,15 @@ import (
 )
 
 type watcher struct {
-	ac       *accountCache
-	running  bool // set to true when runloop begins
-	runEnded bool // set to true when runloop ends
-	starting bool // set to true prior to runloop starting
-	quit     chan struct{}
+	ac      *accountCache // 关联的账户缓存
+	running bool          // 当运行循环开始时设置为 true
+	// 当运行循环开始时设置为 true
+	runEnded bool // 当运行循环结束时设置为 true
+	// 当运行循环结束时设置为 true
+	starting bool // 在运行循环启动前设置为 true
+	// 在运行循环启动前设置为 true
+	quit chan struct{} // 用于退出信号的通道
+	// 用于退出信号的通道
 }
 
 func newWatcher(ac *accountCache) *watcher {
@@ -43,11 +47,15 @@ func newWatcher(ac *accountCache) *watcher {
 }
 
 // enabled returns false on systems not supported.
+// enabled 在不支持的系统上返回 false。
 func (*watcher) enabled() bool { return true }
 
 // starts the watcher loop in the background.
 // Start a watcher in the background if that's not already in progress.
 // The caller must hold w.ac.mu.
+// 在后台启动观察者循环。
+// 如果观察者尚未在进行中，则在后台启动一个观察者。
+// 调用者必须持有 w.ac.mu。
 func (w *watcher) start() {
 	if w.starting || w.running {
 		return
@@ -71,21 +79,26 @@ func (w *watcher) loop() {
 	logger := log.New("path", w.ac.keydir)
 
 	// Create new watcher.
+	// 创建新的观察者。
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Error("Failed to start filesystem watcher", "err", err)
+		// 无法启动文件系统观察者
 		return
 	}
 	defer watcher.Close()
 	if err := watcher.Add(w.ac.keydir); err != nil {
 		if !os.IsNotExist(err) {
 			logger.Warn("Failed to watch keystore folder", "err", err)
+			// 无法观察密钥存储文件夹
 		}
 		return
 	}
 
 	logger.Trace("Started watching keystore folder", "folder", w.ac.keydir)
+	// 开始观察密钥存储文件夹
 	defer logger.Trace("Stopped watching keystore folder")
+	// 停止观察密钥存储文件夹
 
 	w.ac.mu.Lock()
 	w.running = true
@@ -94,12 +107,15 @@ func (w *watcher) loop() {
 	// Wait for file system events and reload.
 	// When an event occurs, the reload call is delayed a bit so that
 	// multiple events arriving quickly only cause a single reload.
+	// 等待文件系统事件并重新加载。
+	// 当事件发生时，重新加载调用会延迟一点，以便快速到达的多个事件只触发一次重新加载。
 	var (
-		debounceDuration = 500 * time.Millisecond
-		rescanTriggered  = false
-		debounce         = time.NewTimer(0)
+		debounceDuration = 500 * time.Millisecond // 防抖动持续时间
+		rescanTriggered  = false                  // 是否已触发重新扫描
+		debounce         = time.NewTimer(0)       // 防抖动定时器
 	)
 	// Ignore initial trigger
+	// 忽略初始触发
 	if !debounce.Stop() {
 		<-debounce.C
 	}
@@ -113,6 +129,7 @@ func (w *watcher) loop() {
 				return
 			}
 			// Trigger the scan (with delay), if not already triggered
+			// 如果尚未触发，则触发扫描（带延迟）
 			if !rescanTriggered {
 				debounce.Reset(debounceDuration)
 				rescanTriggered = true
@@ -121,11 +138,15 @@ func (w *watcher) loop() {
 			// would be possible to refresh individual affected files instead
 			// of scheduling a full rescan. For most cases though, the
 			// full rescan is quick and obviously simplest.
+			// fsnotify 库确实提供了更细粒度的事件信息，
+			// 可以刷新单个受影响的文件，而不是安排完全重新扫描。
+			// 但在大多数情况下，完全重新扫描很快且显然是最简单的。
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
 			log.Info("Filesystem watcher error", "err", err)
+			// 文件系统观察者错误
 		case <-debounce.C:
 			w.ac.scanAccounts()
 			rescanTriggered = false
