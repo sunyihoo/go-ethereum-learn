@@ -33,13 +33,15 @@ import (
 
 // bridge is a collection of JavaScript utility methods to bride the .js runtime
 // environment and the Go RPC connection backing the remote method calls.
+// bridge 是一组 JavaScript 工具方法的集合，用于桥接 JavaScript 运行时环境和底层的 Go RPC 连接。
 type bridge struct {
-	client   *rpc.Client         // RPC client to execute Ethereum requests through
-	prompter prompt.UserPrompter // Input prompter to allow interactive user feedback
-	printer  io.Writer           // Output writer to serialize any display strings to
+	client   *rpc.Client         // RPC 客户端，用于执行以太坊请求。
+	prompter prompt.UserPrompter // 输入提示器，允许交互式用户反馈。
+	printer  io.Writer           // 输出写入器，用于序列化显示字符串。
 }
 
 // newBridge creates a new JavaScript wrapper around an RPC client.
+// newBridge 创建一个围绕 RPC 客户端的新 JavaScript 包装器。
 func newBridge(client *rpc.Client, prompter prompt.UserPrompter, printer io.Writer) *bridge {
 	return &bridge{
 		client:   client,
@@ -49,6 +51,7 @@ func newBridge(client *rpc.Client, prompter prompt.UserPrompter, printer io.Writ
 }
 
 // Sleep will block the console for the specified number of seconds.
+// Sleep 将阻塞控制台指定的秒数。
 func (b *bridge) Sleep(call jsre.Call) (goja.Value, error) {
 	if nArgs := len(call.Arguments); nArgs < 1 {
 		return nil, errors.New("usage: sleep(<number of seconds>)")
@@ -58,17 +61,19 @@ func (b *bridge) Sleep(call jsre.Call) (goja.Value, error) {
 		return nil, errors.New("usage: sleep(<number of seconds>)")
 	}
 	sleep := sleepObj.ToFloat()
-	time.Sleep(time.Duration(sleep * float64(time.Second)))
+	time.Sleep(time.Duration(sleep * float64(time.Second))) // 阻塞指定的时间。
 	return call.VM.ToValue(true), nil
 }
 
 // SleepBlocks will block the console for a specified number of new blocks optionally
 // until the given timeout is reached.
+// SleepBlocks 将阻塞控制台，直到生成指定数量的新区块或达到给定的超时时间。
 func (b *bridge) SleepBlocks(call jsre.Call) (goja.Value, error) {
 	// Parse the input parameters for the sleep.
+	// 解析 SleepBlocks 的输入参数。
 	var (
 		blocks = int64(0)
-		sleep  = int64(9999999999999999) // indefinitely
+		sleep  = int64(9999999999999999) // 默认为无限期等待。
 	)
 	nArgs := len(call.Arguments)
 	if nArgs == 0 {
@@ -88,6 +93,7 @@ func (b *bridge) SleepBlocks(call jsre.Call) (goja.Value, error) {
 	}
 
 	// Poll the current block number until either it or a timeout is reached.
+	// 轮询当前区块号，直到达到目标区块数或超时。
 	deadline := time.Now().Add(time.Duration(sleep) * time.Second)
 	var lastNumber hexutil.Uint64
 	if err := b.client.Call(&lastNumber, "eth_blockNumber"); err != nil {
@@ -117,8 +123,10 @@ type jsonrpcCall struct {
 }
 
 // Send implements the web3 provider "send" method.
+// Send 实现了 web3 提供者的 "send" 方法。
 func (b *bridge) Send(call jsre.Call) (goja.Value, error) {
 	// Remarshal the request into a Go value.
+	// 将请求重新编组为 Go 值。
 	reqVal, err := call.Argument(0).ToObject(call.VM).MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -130,7 +138,7 @@ func (b *bridge) Send(call jsre.Call) (goja.Value, error) {
 		reqs   []jsonrpcCall
 		batch  bool
 	)
-	dec.UseNumber() // avoid float64s
+	dec.UseNumber() // avoid float64s 避免使用 float64。
 	if rawReq[0] == '[' {
 		batch = true
 		dec.Decode(&reqs)
@@ -141,6 +149,7 @@ func (b *bridge) Send(call jsre.Call) (goja.Value, error) {
 	}
 
 	// Execute the requests.
+	// 执行请求。
 	var resps []*goja.Object
 	for _, req := range reqs {
 		resp := call.VM.NewObject()
@@ -152,6 +161,7 @@ func (b *bridge) Send(call jsre.Call) (goja.Value, error) {
 			if result == nil {
 				// Special case null because it is decoded as an empty
 				// raw message for some reason.
+				// 特殊处理 null，因为它被解码为空的原始消息。
 				resp.Set("result", goja.Null())
 			} else {
 				JSON := call.VM.Get("JSON").ToObject(call.VM)
@@ -181,6 +191,7 @@ func (b *bridge) Send(call jsre.Call) (goja.Value, error) {
 	}
 	// Return the responses either to the callback (if supplied)
 	// or directly as the return value.
+	// 将响应返回给回调函数（如果提供），或者直接作为返回值。
 	var result goja.Value
 	if batch {
 		result = call.VM.ToValue(resps)
@@ -205,6 +216,7 @@ func setError(resp *goja.Object, code int, msg string, data interface{}) {
 }
 
 // isNumber returns true if input value is a JS number.
+// isNumber 返回 true 如果输入值是 JavaScript 数字。
 func isNumber(v goja.Value) bool {
 	k := v.ExportType().Kind()
 	return k >= reflect.Int && k <= reflect.Float64

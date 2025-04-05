@@ -48,34 +48,52 @@ var (
 )
 
 // HistoryFile is the file within the data directory to store input scrollback.
+// HistoryFile 是数据目录中用于存储输入历史记录的文件名。
 const HistoryFile = "history"
 
 // DefaultPrompt is the default prompt line prefix to use for user input querying.
+// DefaultPrompt 是用于用户输入查询的默认提示符前缀。
 const DefaultPrompt = "> "
 
 // Config is the collection of configurations to fine tune the behavior of the
 // JavaScript console.
+// Config 是用于微调 JavaScript 控制台行为的配置集合。
 type Config struct {
-	DataDir  string              // Data directory to store the console history at
-	DocRoot  string              // Filesystem path from where to load JavaScript files from
-	Client   *rpc.Client         // RPC client to execute Ethereum requests through
-	Prompt   string              // Input prompt prefix string (defaults to DefaultPrompt)
+	DataDir string // Data directory to store the console history at
+	// DataDir 是用于存储控制台历史记录的数据目录路径。
+	DocRoot string // Filesystem path from where to load JavaScript files from
+	// DocRoot 是文件系统路径，用于加载 JavaScript 文件。
+	Client *rpc.Client // RPC client to execute Ethereum requests through
+	// Client 是 RPC 客户端，用于执行以太坊请求。
+	Prompt string // Input prompt prefix string (defaults to DefaultPrompt)
+	// Prompt 是输入提示符前缀字符串（默认为 DefaultPrompt）。
 	Prompter prompt.UserPrompter // Input prompter to allow interactive user feedback (defaults to TerminalPrompter)
-	Printer  io.Writer           // Output writer to serialize any display strings to (defaults to os.Stdout)
-	Preload  []string            // Absolute paths to JavaScript files to preload
+	// Prompter 是输入提示器接口，允许用户交互反馈（默认为 TerminalPrompter）。
+	Printer io.Writer // Output writer to serialize any display strings to (defaults to os.Stdout)
+	// Printer 是输出写入器接口，用于序列化任何要显示的字符串（默认为 os.Stdout）。
+	Preload []string // Absolute paths to JavaScript files to preload
+	// Preload 是要预加载的 JavaScript 文件的绝对路径列表。
 }
 
 // Console is a JavaScript interpreted runtime environment. It is a fully fledged
 // JavaScript console attached to a running node via an external or in-process RPC
 // client.
+// Console 是一个 JavaScript 解释执行的运行时环境。它是一个功能完善的 JavaScript 控制台，通过外部或进程内的 RPC 客户端连接到正在运行的节点。
 type Console struct {
-	client   *rpc.Client         // RPC client to execute Ethereum requests through
-	jsre     *jsre.JSRE          // JavaScript runtime environment running the interpreter
-	prompt   string              // Input prompt prefix string
+	client *rpc.Client // RPC client to execute Ethereum requests through
+	// client 是 RPC 客户端，用于执行以太坊请求。
+	jsre *jsre.JSRE // JavaScript runtime environment running the interpreter
+	// jsre 是运行解释器的 JavaScript 运行时环境。
+	prompt string // Input prompt prefix string
+	// prompt 是输入提示符前缀字符串。
 	prompter prompt.UserPrompter // Input prompter to allow interactive user feedback
-	histPath string              // Absolute path to the console scrollback history
-	history  []string            // Scroll history maintained by the console
-	printer  io.Writer           // Output writer to serialize any display strings to
+	// prompter 是输入提示器接口，允许用户交互反馈。
+	histPath string // Absolute path to the console scrollback history
+	// histPath 是控制台历史记录回滚的绝对路径。
+	history []string // Scroll history maintained by the console
+	// history 是控制台维护的滚动历史记录。
+	printer io.Writer // Output writer to serialize any display strings to
+	// printer 是输出写入器接口，用于序列化任何要显示的字符串。
 
 	interactiveStopped chan struct{}
 	stopInteractiveCh  chan struct{}
@@ -87,8 +105,10 @@ type Console struct {
 
 // New initializes a JavaScript interpreted runtime environment and sets defaults
 // with the config struct.
+// New 函数使用配置结构体初始化一个 JavaScript 解释执行的运行时环境并设置默认值。
 func New(config Config) (*Console, error) {
 	// Handle unset config values gracefully
+	// 优雅地处理未设置的配置值
 	if config.Prompter == nil {
 		config.Prompter = prompt.Stdin
 	}
@@ -100,6 +120,7 @@ func New(config Config) (*Console, error) {
 	}
 
 	// Initialize the console and return
+	// 初始化控制台并返回
 	console := &Console{
 		client:             config.Client,
 		jsre:               jsre.New(config.DocRoot, config.Printer),
@@ -127,10 +148,12 @@ func New(config Config) (*Console, error) {
 
 // init retrieves the available APIs from the remote RPC provider and initializes
 // the console's JavaScript namespaces based on the exposed modules.
+// init 函数从远程 RPC 提供者检索可用的 API，并根据暴露的模块初始化控制台的 JavaScript 命名空间。
 func (c *Console) init(preload []string) error {
 	c.initConsoleObject()
 
 	// Initialize the JavaScript <-> Go RPC bridge.
+	// 初始化 JavaScript 到 Go 的 RPC 桥接。
 	bridge := newBridge(c.client, c.prompter, c.printer)
 	if err := c.initWeb3(bridge); err != nil {
 		return err
@@ -140,11 +163,13 @@ func (c *Console) init(preload []string) error {
 	}
 
 	// Add bridge overrides for web3.js functionality.
+	// 为 web3.js 功能添加桥接覆盖。
 	c.jsre.Do(func(vm *goja.Runtime) {
 		c.initAdmin(vm, bridge)
 	})
 
 	// Preload JavaScript files.
+	// 预加载 JavaScript 文件。
 	for _, path := range preload {
 		if err := c.jsre.Exec(path); err != nil {
 			failure := err.Error()
@@ -156,6 +181,7 @@ func (c *Console) init(preload []string) error {
 	}
 
 	// Configure the input prompter for history and tab completion.
+	// 配置输入提示器以支持历史记录和 Tab 键自动补全。
 	if c.prompter != nil {
 		if content, err := os.ReadFile(c.histPath); err != nil {
 			c.prompter.SetHistory(nil)
@@ -201,12 +227,14 @@ func (c *Console) initWeb3(bridge *bridge) error {
 var defaultAPIs = map[string]string{"eth": "1.0", "net": "1.0", "debug": "1.0"}
 
 // initExtensions loads and registers web3.js extensions.
+// initExtensions 函数加载并注册 web3.js 扩展。
 func (c *Console) initExtensions() error {
 	const methodNotFound = -32601
 	apis, err := c.client.SupportedModules()
 	if err != nil {
 		if rpcErr, ok := err.(rpc.Error); ok && rpcErr.ErrorCode() == methodNotFound {
 			log.Warn("Server does not support method rpc_modules, using default API list.")
+			// 服务端不支持 rpc_modules 方法，使用默认 API 列表。
 			apis = defaultAPIs
 		} else {
 			return err
@@ -214,6 +242,7 @@ func (c *Console) initExtensions() error {
 	}
 
 	// Compute aliases from server-provided modules.
+	// 从服务端提供的模块计算别名。
 	aliases := map[string]struct{}{"eth": {}}
 	for api := range apis {
 		if api == "web3" {
@@ -228,6 +257,7 @@ func (c *Console) initExtensions() error {
 	}
 
 	// Apply aliases.
+	// 应用别名。
 	c.jsre.Do(func(vm *goja.Runtime) {
 		web3 := getObject(vm, "web3")
 		for name := range aliases {
@@ -240,6 +270,7 @@ func (c *Console) initExtensions() error {
 }
 
 // initAdmin creates additional admin APIs implemented by the bridge.
+// initAdmin 函数创建由桥接实现的额外的 admin API。
 func (c *Console) initAdmin(vm *goja.Runtime, bridge *bridge) {
 	if admin := getObject(vm, "admin"); admin != nil {
 		admin.Set("sleepBlocks", jsre.MakeCallback(vm, bridge.SleepBlocks))
@@ -260,6 +291,7 @@ func (c *Console) clearHistory() {
 
 // consoleOutput is an override for the console.log and console.error methods to
 // stream the output into the configured output stream instead of stdout.
+// consoleOutput 函数重写了 console.log 和 console.error 方法，将输出流式传输到配置的输出流而不是标准输出。
 func (c *Console) consoleOutput(call goja.FunctionCall) goja.Value {
 	var output []string
 	for _, argument := range call.Arguments {
@@ -271,21 +303,27 @@ func (c *Console) consoleOutput(call goja.FunctionCall) goja.Value {
 
 // AutoCompleteInput is a pre-assembled word completer to be used by the user
 // input prompter to provide hints to the user about the methods available.
+// AutoCompleteInput 是一个预先组装的单词补全器，供用户输入提示器使用，向用户提供可用方法的提示。
 func (c *Console) AutoCompleteInput(line string, pos int) (string, []string, string) {
 	// No completions can be provided for empty inputs
+	// 无法为空输入提供补全
 	if len(line) == 0 || pos == 0 {
 		return "", nil, ""
 	}
 	// Chunk data to relevant part for autocompletion
 	// E.g. in case of nested lines eth.getBalance(eth.coinb<tab><tab>
+	// 将数据块化为与自动补全相关的部分
+	// 例如，在嵌套行 eth.getBalance(eth.coinb<tab><tab> 的情况下
 	start := pos - 1
 	for ; start > 0; start-- {
 		// Skip all methods and namespaces (i.e. including the dot)
+		// 跳过所有方法和命名空间（即包括点）
 		c := line[start]
 		if c == '.' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '1' && c <= '9') {
 			continue
 		}
 		// We've hit an unexpected character, autocomplete form here
+		// 我们遇到了一个意外的字符，从这里开始自动补全
 		start++
 		break
 	}
@@ -294,10 +332,12 @@ func (c *Console) AutoCompleteInput(line string, pos int) (string, []string, str
 
 // Welcome show summary of current Geth instance and some metadata about the
 // console's available modules.
+// Welcome 函数显示当前 Geth 实例的摘要以及控制台可用模块的一些元数据。
 func (c *Console) Welcome() {
 	message := "Welcome to the Geth JavaScript console!\n\n"
 
 	// Print some generic Geth metadata
+	// 打印一些通用的 Geth 元数据
 	if res, err := c.jsre.Run(`
 		var message = "instance: " + web3.version.node + "\n";
 		message += "at block: " + eth.blockNumber + " (" + new Date(1000 * eth.getBlock(eth.blockNumber).timestamp) + ")\n";
@@ -309,6 +349,7 @@ func (c *Console) Welcome() {
 		message += res.String()
 	}
 	// List all the supported modules for the user to call
+	// 列出用户可以调用的所有受支持的模块
 	if apis, err := c.client.SupportedModules(); err == nil {
 		modules := make([]string, 0, len(apis))
 		for api, version := range apis {
@@ -323,6 +364,7 @@ func (c *Console) Welcome() {
 
 // Evaluate executes code and pretty prints the result to the specified output
 // stream.
+// Evaluate 函数执行代码并将结果格式化打印到指定的输出流。
 func (c *Console) Evaluate(statement string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -332,11 +374,14 @@ func (c *Console) Evaluate(statement string) {
 	c.jsre.Evaluate(statement, c.printer)
 
 	// Avoid exiting Interactive when jsre was interrupted by SIGINT.
+	// 当 jsre 被 SIGINT 中断时，避免退出交互模式。
 	c.clearSignalReceived()
 }
 
 // interruptHandler runs in its own goroutine and waits for signals.
 // When a signal is received, it interrupts the JS interpreter.
+// interruptHandler 函数在其自身的 goroutine 中运行并等待信号。
+// 当接收到信号时，它会中断 JS 解释器。
 func (c *Console) interruptHandler() {
 	defer c.wg.Done()
 
@@ -346,6 +391,10 @@ func (c *Console) interruptHandler() {
 	// On unsupported terminals, SIGINT can also happen while prompting.
 	// Unfortunately, it is not possible to abort the prompt in this case and
 	// the c.readLines goroutine leaks.
+	// 在交互模式期间，liner 在提示输入时会抑制信号。但是，在评估 JS 时会收到信号。
+	//
+	// 在不支持的终端上，SIGINT 也可能在提示时发生。
+	// 不幸的是，在这种情况下无法中止提示，并且 c.readLines goroutine 会泄漏。
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT)
 	defer signal.Stop(sig)
@@ -379,6 +428,7 @@ func (c *Console) clearSignalReceived() {
 }
 
 // StopInteractive causes Interactive to return as soon as possible.
+// StopInteractive 函数使 Interactive 尽快返回。
 func (c *Console) StopInteractive() {
 	select {
 	case c.stopInteractiveCh <- struct{}{}:
@@ -388,14 +438,21 @@ func (c *Console) StopInteractive() {
 
 // Interactive starts an interactive user session, where input is prompted from
 // the configured user prompter.
+// Interactive 函数启动一个交互式用户会话，其中从配置的用户提示器请求输入。
 func (c *Console) Interactive() {
 	var (
-		prompt      = c.prompt             // the current prompt line (used for multi-line inputs)
-		indents     = 0                    // the current number of input indents (used for multi-line inputs)
-		input       = ""                   // the current user input
-		inputLine   = make(chan string, 1) // receives user input
-		inputErr    = make(chan error, 1)  // receives liner errors
-		requestLine = make(chan string)    // requests a line of input
+		prompt = c.prompt // the current prompt line (used for multi-line inputs)
+		// prompt 是当前的提示行（用于多行输入）。
+		indents = 0 // the current number of input indents (used for multi-line inputs)
+		// indents 是当前输入缩进的数量（用于多行输入）。
+		input = "" // the current user input
+		// input 是当前用户输入。
+		inputLine = make(chan string, 1) // receives user input
+		// inputLine 是接收用户输入的通道。
+		inputErr = make(chan error, 1) // receives liner errors
+		// inputErr 是接收 liner 错误的通道。
+		requestLine = make(chan string) // requests a line of input
+		// requestLine 是请求一行输入的通道。
 	)
 
 	defer func() {
@@ -403,11 +460,13 @@ func (c *Console) Interactive() {
 	}()
 
 	// The line reader runs in a separate goroutine.
+	// 行读取器在单独的 goroutine 中运行。
 	go c.readLines(inputLine, inputErr, requestLine)
 	defer close(requestLine)
 
 	for {
 		// Send the next prompt, triggering an input read.
+		// 发送下一个提示符，触发输入读取。
 		requestLine <- prompt
 
 		select {
@@ -419,6 +478,9 @@ func (c *Console) Interactive() {
 			// SIGINT received while prompting for input -> unsupported terminal.
 			// I'm not sure if the best choice would be to leave the console running here.
 			// Bash keeps running in this case. node.js does not.
+			// 在提示输入时收到 SIGINT -> 不支持的终端。
+			// 我不确定在这里保持控制台运行是否是最佳选择。
+			// 在这种情况下，Bash 会继续运行。node.js 不会。
 			fmt.Fprintln(c.printer, "caught interrupt, exiting")
 			return
 
@@ -426,6 +488,7 @@ func (c *Console) Interactive() {
 			if err == liner.ErrPromptAborted {
 				// When prompting for multi-line input, the first Ctrl-C resets
 				// the multi-line state.
+				// 在提示多行输入时，第一个 Ctrl-C 会重置多行状态。
 				prompt, indents, input = c.prompt, 0, ""
 				continue
 			}
@@ -433,6 +496,7 @@ func (c *Console) Interactive() {
 
 		case line := <-inputLine:
 			// User input was returned by the prompter, handle special cases.
+			// 用户输入已由提示器返回，处理特殊情况。
 			if indents <= 0 && exit.MatchString(line) {
 				return
 			}
@@ -440,6 +504,7 @@ func (c *Console) Interactive() {
 				continue
 			}
 			// Append the line to the input and check for multi-line interpretation.
+			// 将该行附加到输入并检查多行解释。
 			input += line + "\n"
 			indents = countIndents(input)
 			if indents <= 0 {
@@ -448,6 +513,7 @@ func (c *Console) Interactive() {
 				prompt = strings.Repeat(".", indents*3) + " "
 			}
 			// If all the needed lines are present, save the command and run it.
+			// 如果所有需要的行都存在，则保存命令并运行它。
 			if indents <= 0 {
 				if len(input) > 0 && input[0] != ' ' && !passwordRegexp.MatchString(input) {
 					if command := strings.TrimSpace(input); len(c.history) == 0 || command != c.history[len(c.history)-1] {
@@ -465,6 +531,7 @@ func (c *Console) Interactive() {
 }
 
 // readLines runs in its own goroutine, prompting for input.
+// readLines 函数在其自身的 goroutine 中运行，提示输入。
 func (c *Console) readLines(input chan<- string, errc chan<- error, prompt <-chan string) {
 	for p := range prompt {
 		line, err := c.prompter.PromptInput(p)
@@ -478,31 +545,39 @@ func (c *Console) readLines(input chan<- string, errc chan<- error, prompt <-cha
 
 // countIndents returns the number of indentations for the given input.
 // In case of invalid input such as var a = } the result can be negative.
+// countIndents 函数返回给定输入的缩进数。
+// 如果输入无效（例如 var a = }），结果可能为负数。
 func countIndents(input string) int {
 	var (
 		indents     = 0
 		inString    = false
-		strOpenChar = ' '   // keep track of the string open char to allow var str = "I'm ....";
+		strOpenChar = ' ' // keep track of the string open char to allow var str = "I'm ....";
+		// strOpenChar 用于跟踪字符串的开始字符，以允许类似 var str = "I'm ...."; 的写法。
 		charEscaped = false // keep track if the previous char was the '\' char, allow var str = "abc\"def";
+		// charEscaped 用于跟踪前一个字符是否是 '\' 字符，以允许类似 var str = "abc\"def"; 的写法。
 	)
 
 	for _, c := range input {
 		switch c {
 		case '\\':
 			// indicate next char as escaped when in string and previous char isn't escaping this backslash
+			// 当在字符串中且前一个字符没有转义此反斜杠时，指示下一个字符被转义
 			if !charEscaped && inString {
 				charEscaped = true
 			}
 		case '\'', '"':
 			if inString && !charEscaped && strOpenChar == c { // end string
+				// 结束字符串
 				inString = false
 			} else if !inString && !charEscaped { // begin string
+				// 开始字符串
 				inString = true
 				strOpenChar = c
 			}
 			charEscaped = false
 		case '{', '(':
 			if !inString { // ignore brackets when in string, allow var str = "a{"; without indenting
+				// 当在字符串中时忽略括号，允许类似 var str = "a{"; 的写法而不缩进
 				indents++
 			}
 			charEscaped = false
@@ -520,9 +595,11 @@ func countIndents(input string) int {
 }
 
 // Stop cleans up the console and terminates the runtime environment.
+// Stop 函数清理控制台并终止运行时环境。
 func (c *Console) Stop(graceful bool) error {
 	c.stopOnce.Do(func() {
 		// Stop the interrupt handler.
+		// 停止中断处理程序。
 		close(c.stopped)
 		c.wg.Wait()
 	})
@@ -536,4 +613,5 @@ func (c *Console) writeHistory() error {
 		return err
 	}
 	return os.Chmod(c.histPath, 0600) // Force 0600, even if it was different previously
+	// 强制设置为 0600 权限，即使之前不同
 }
