@@ -21,21 +21,26 @@ import "errors"
 var (
 	// ErrUnknownAncestor is returned when validating a block requires an ancestor
 	// that is unknown.
+	// 当验证一个区块需要一个未知的祖先区块时返回 ErrUnknownAncestor。
 	ErrUnknownAncestor = errors.New("unknown ancestor")
 
 	// ErrPrunedAncestor is returned when validating a block requires an ancestor
 	// that is known, but the state of which is not available.
+	// 当验证一个区块需要一个已知但状态不可用的祖先区块时返回 ErrPrunedAncestor。
 	ErrPrunedAncestor = errors.New("pruned ancestor")
 
 	// ErrFutureBlock is returned when a block's timestamp is in the future according
 	// to the current node.
+	// 当一个区块的时间戳相对于当前节点处于未来时返回 ErrFutureBlock。
 	ErrFutureBlock = errors.New("block in the future")
 
 	// ErrInvalidNumber is returned if a block's number doesn't equal its parent's
 	// plus one.
+	// 如果一个区块的编号不等于其父区块编号加一时返回 ErrInvalidNumber。
 	ErrInvalidNumber = errors.New("invalid block number")
 
 	// ErrInvalidTerminalBlock is returned if a block is invalid wrt. the terminal
 	// total difficulty.
+	// 如果一个区块相对于终端总难度无效时返回 ErrInvalidTerminalBlock。
 	ErrInvalidTerminalBlock = errors.New("invalid terminal block")
 )
