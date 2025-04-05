@@ -31,18 +31,20 @@ import (
 
 // usecolor defines whether the CLI help should use colored output or normal dumb
 // colorless terminal formatting.
+// usecolor 定义 CLI 帮助是否应使用彩色输出或普通的无颜色终端格式。
 var usecolor = (isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())) && os.Getenv("TERM") != "dumb"
 
 // NewApp creates an app with sane defaults.
+// NewApp 创建一个具有合理默认值的应用程序。
 func NewApp(usage string) *cli.App {
-	git, _ := version.VCS()
+	git, _ := version.VCS() // 获取版本控制系统信息（如 Git 提交哈希和日期）。
 	app := cli.NewApp()
-	app.EnableBashCompletion = true
-	app.Version = version.WithCommit(git.Commit, git.Date)
-	app.Usage = usage
-	app.Copyright = "Copyright 2013-2025 The go-ethereum Authors"
+	app.EnableBashCompletion = true                               // 启用 Bash 自动补全。
+	app.Version = version.WithCommit(git.Commit, git.Date)        // 设置版本号，包含提交哈希和日期。
+	app.Usage = usage                                             // 设置应用程序的用途描述。
+	app.Copyright = "Copyright 2013-2025 The go-ethereum Authors" // 设置版权信息。
 	app.Before = func(ctx *cli.Context) error {
-		MigrateGlobalFlags(ctx)
+		MigrateGlobalFlags(ctx) // 在应用启动前迁移全局标志。
 		return nil
 	}
 	return app
@@ -65,6 +67,7 @@ var migrationApplied = map[*cli.Command]struct{}{}
 // will return true even if --lightkdf is set as a global option.
 //
 // This function may become unnecessary when https://github.com/urfave/cli/pull/1245 is merged.
+// MigrateGlobalFlags 将所有全局标志值迁移到上下文中。应在 app.Before 中尽早调用。
 func MigrateGlobalFlags(ctx *cli.Context) {
 	var iterate func(cs []*cli.Command, fn func(*cli.Command))
 	iterate = func(cs []*cli.Command, fn func(*cli.Command)) {
@@ -79,6 +82,7 @@ func MigrateGlobalFlags(ctx *cli.Context) {
 	}
 
 	// This iterates over all commands and wraps their action function.
+	// 遍历所有命令并包装其 Action 函数。
 	iterate(ctx.App.Commands, func(cmd *cli.Command) {
 		if cmd.Action == nil {
 			return
@@ -86,7 +90,7 @@ func MigrateGlobalFlags(ctx *cli.Context) {
 
 		action := cmd.Action
 		cmd.Action = func(ctx *cli.Context) error {
-			doMigrateFlags(ctx)
+			doMigrateFlags(ctx) // 迁移标志。
 			return action(ctx)
 		}
 	})
@@ -95,6 +99,7 @@ func MigrateGlobalFlags(ctx *cli.Context) {
 func doMigrateFlags(ctx *cli.Context) {
 	// Figure out if there are any aliases of commands. If there are, we want
 	// to ignore them when iterating over the flags.
+	// 找出是否有命令的别名。如果有，在迭代标志时忽略它们。
 	aliases := make(map[string]bool)
 	for _, fl := range ctx.Command.Flags {
 		for _, alias := range fl.Names()[1:] {
@@ -130,16 +135,19 @@ func doMigrateFlags(ctx *cli.Context) {
 func init() {
 	if usecolor {
 		// Annotate all help categories with colors
+		// 使用颜色注释所有帮助类别。
 		cli.AppHelpTemplate = regexp.MustCompile("[A-Z ]+:").ReplaceAllString(cli.AppHelpTemplate, "\u001B[33m$0\u001B[0m")
 
 		// Annotate flag categories with colors (private template, so need to
 		// copy-paste the entire thing here...)
+		// 使用颜色注释标志类别（私有模板，因此需要在此处复制粘贴整个内容）。
 		cli.AppHelpTemplate = strings.ReplaceAll(cli.AppHelpTemplate, "{{template \"visibleFlagCategoryTemplate\" .}}", "{{range .VisibleFlagCategories}}\n   {{if .Name}}\u001B[33m{{.Name}}\u001B[0m\n\n   {{end}}{{$flglen := len .Flags}}{{range $i, $e := .Flags}}{{if eq (subtract $flglen $i) 1}}{{$e}}\n{{else}}{{$e}}\n   {{end}}{{end}}{{end}}")
 	}
 	cli.FlagStringer = FlagString
 }
 
 // FlagString prints a single flag in help.
+// FlagString 在帮助中打印单个标志。
 func FlagString(f cli.Flag) string {
 	df, ok := f.(cli.DocGenerationFlag)
 	if !ok {
@@ -221,6 +229,7 @@ func wordWrap(s string, width int) string {
 //
 // Note, the prefix should *not* contain the separator underscore, that will be
 // added automatically.
+// AutoEnvVars 通过将标志大写、替换 `.` 为 `_` 并添加指定前缀，为所有特定的 CLI 标志生成环境变量。
 func AutoEnvVars(flags []cli.Flag, prefix string) {
 	for _, flag := range flags {
 		envvar := strings.ToUpper(prefix + "_" + strings.ReplaceAll(strings.ReplaceAll(flag.Names()[0], ".", "_"), "-", "_"))
@@ -265,6 +274,7 @@ func AutoEnvVars(flags []cli.Flag, prefix string) {
 // CheckEnvVars iterates over all the environment variables and checks if any of
 // them look like a CLI flag but is not consumed. This can be used to detect old
 // or mistyped names.
+// CheckEnvVars 遍历所有环境变量，检查是否有任何看起来像 CLI 标志但未被使用的变量。可用于检测旧的或拼写错误的名称。
 func CheckEnvVars(ctx *cli.Context, flags []cli.Flag, prefix string) {
 	known := make(map[string]string)
 	for _, flag := range flags {
