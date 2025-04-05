@@ -32,16 +32,25 @@ import (
 	gqlErrors "github.com/graph-gophers/graphql-go/errors"
 )
 
+// 以太坊后端（ethapi.Backend）：
+// backend 是以太坊节点的 API 接口，提供对区块链数据的访问，如区块头、交易收据等。
+// 这里的 Resolver 使用它来解析 GraphQL 查询。
+
+// GraphQL 是一种查询语言，相比传统的 REST API，它允许客户端灵活指定所需数据结构。在以太坊中，GraphQL 常用于替代 JSON-RPC 接口，提供更高效的数据查询方式。
+// 这段代码可能用于以太坊客户端（如 Geth）的扩展功能，通过 GraphQL 暴露区块链数据。
+
 type handler struct {
 	Schema *graphql.Schema
 }
 
+// ServeHTTP handles GraphQL requests over HTTP.
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Query         string                 `json:"query"`
 		OperationName string                 `json:"operationName"`
 		Variables     map[string]interface{} `json:"variables"`
 	}
+	// 定义一个结构体用于解析 HTTP 请求体中的 JSON 数据，包含 GraphQL 查询字符串、操作名称和变量。
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -53,6 +62,7 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		timer     *time.Timer
 		cancel    context.CancelFunc
 	)
+	// 初始化上下文、同步控制变量、定时器和取消函数，用于管理请求的生命周期和超时处理。
 	ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 
@@ -85,9 +95,16 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			})
 		})
+		// 如果请求上下文指定了超时时间，则启动一个定时器，在超时后取消请求并返回超时响应。
+		// 详细解释：
+		// 1. `rpc.ContextRequestTimeout(ctx)` 检查上下文是否设置了超时时间。
+		// 2. `time.AfterFunc` 在指定时间后执行匿名函数，调用 `responded.Do` 确保响应只发送一次。
+		// 3. 超时后，构造一个带有错误信息的 GraphQL 响应，序列化为 JSON 并写入 HTTP 响应。
+		// 4. 设置 `Transfer-Encoding` 和 `Content-Length` 头，确保响应在超时边缘正确传输，避免分块编码问题。
 	}
 
 	response := h.Schema.Exec(ctx, params.Query, params.OperationName, params.Variables)
+	// 执行 GraphQL 查询，使用传入的查询字符串、操作名称和变量，返回查询结果。
 	if timer != nil {
 		timer.Stop()
 	}
@@ -103,10 +120,12 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write(responseJSON)
 	})
+	// 将查询结果序列化为 JSON 并写入 HTTP 响应，如果有错误则返回 400 状态码。
 }
 
 // New constructs a new GraphQL service instance.
 func New(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterSystem, cors, vhosts []string) error {
+	// 创建一个新的 GraphQL 服务实例，初始化相关组件并返回错误（如果有）。
 	_, err := newHandler(stack, backend, filterSystem, cors, vhosts)
 	return err
 }
@@ -114,6 +133,7 @@ func New(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterS
 // newHandler returns a new `http.Handler` that will answer GraphQL queries.
 // It additionally exports an interactive query browser on the / endpoint.
 func newHandler(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterSystem, cors, vhosts []string) (*handler, error) {
+	// 构造一个新的 HTTP 处理程序，用于响应 GraphQL 查询，并支持交互式查询浏览器。
 	q := Resolver{backend, filterSystem}
 
 	s, err := graphql.ParseSchema(schema, &q)
@@ -127,6 +147,7 @@ func newHandler(stack *node.Node, backend ethapi.Backend, filterSystem *filters.
 	stack.RegisterHandler("GraphQL UI", "/graphql/ui/", GraphiQL{})
 	stack.RegisterHandler("GraphQL", "/graphql", handler)
 	stack.RegisterHandler("GraphQL", "/graphql/", handler)
+	// 注册 GraphQL UI 和查询端点到节点栈中，支持 CORS 和虚拟主机配置。
 
 	return &h, nil
 }

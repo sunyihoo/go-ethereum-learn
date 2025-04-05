@@ -35,6 +35,10 @@ import (
 // This handler returns GraphiQL when requested.
 //
 // For more information, see https://github.com/graphql/graphiql.
+// GraphiQL 是一个用于探索 GraphiQL API 的浏览器内 IDE。
+// 这个处理程序在请求时返回 GraphiQL。
+//
+// 更多信息，请参见 https://github.com/graphql/graphiql。
 type GraphiQL struct{}
 
 func respOk(w http.ResponseWriter, body []byte, ctype string) {
@@ -42,6 +46,8 @@ func respOk(w http.ResponseWriter, body []byte, ctype string) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(body)
 }
+
+// respOk 函数将成功的响应写入 HTTP 响应流，包括内容类型和安全头。
 
 func respErr(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
@@ -52,11 +58,15 @@ func respErr(w http.ResponseWriter, msg string, code int) {
 	w.Write(errMsg)
 }
 
+// respErr 函数将错误响应写入 HTTP 响应流，以 JSON 格式返回错误信息。
+
 func (h GraphiQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respErr(w, "only GET allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// 如果请求方法不是 GET，则返回“仅允许 GET”错误，状态码为 405。
+
 	switch r.URL.Path {
 	case "/graphql/ui/graphiql.min.css":
 		data, err := graphiql.Assets.ReadFile(filepath.Base(r.URL.Path))
@@ -66,6 +76,7 @@ func (h GraphiQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		respOk(w, data, "text/css")
+		// 处理 GraphiQL 的 CSS 文件请求，从嵌入资源中读取并返回。
 	case "/graphql/ui/graphiql.min.js",
 		"/graphql/ui/react.production.min.js",
 		"/graphql/ui/react-dom.production.min.js":
@@ -76,6 +87,11 @@ func (h GraphiQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		respOk(w, data, "application/javascript; charset=utf-8")
+		// 处理 GraphiQL 和 React 的 JS 文件请求，从嵌入资源中读取并返回。
+		// 详细解释：
+		// 1. `graphiql.Assets.ReadFile` 从嵌入的资源（如 go-bindata 或 embed.FS）中读取文件。
+		// 2. 支持多个 JS 文件，包括 GraphiQL 主脚本和 React 库。
+		// 3. 设置 MIME 类型为 JavaScript，并指定 UTF-8 编码。
 	default:
 		data, err := graphiql.Assets.ReadFile("index.html")
 		if err != nil {
@@ -84,5 +100,6 @@ func (h GraphiQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		respOk(w, data, "text/html")
+		// 默认情况下返回 GraphiQL 的 HTML 主页面。
 	}
 }
