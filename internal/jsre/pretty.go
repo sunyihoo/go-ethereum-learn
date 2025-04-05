@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	maxPrettyPrintLevel = 3
-	indentString        = "  "
+	maxPrettyPrintLevel = 3    // Maximum level of nesting for pretty printing objects and arrays. 漂亮打印对象和数组的最大嵌套级别。
+	indentString        = "  " // String used for indentation. 用于缩进的字符串。
 )
 
 var (
@@ -42,6 +42,7 @@ var (
 )
 
 // these fields are hidden when printing objects.
+// 这些字段在打印对象时会被隐藏。
 var boringKeys = map[string]bool{
 	"valueOf":              true,
 	"toString":             true,
@@ -53,11 +54,13 @@ var boringKeys = map[string]bool{
 }
 
 // prettyPrint writes value to standard output.
+// prettyPrint 将值写入标准输出。
 func prettyPrint(vm *goja.Runtime, value goja.Value, w io.Writer) {
 	ppctx{vm: vm, w: w}.printValue(value, 0, false)
 }
 
 // prettyError writes err to standard output.
+// prettyError 将错误写入标准输出。
 func prettyError(vm *goja.Runtime, err error, w io.Writer) {
 	failure := err.Error()
 	if gojaErr, ok := err.(*goja.Exception); ok {
@@ -66,6 +69,8 @@ func prettyError(vm *goja.Runtime, err error, w io.Writer) {
 	fmt.Fprint(w, ErrorColor("%s", failure))
 }
 
+// prettyPrintJS is a Go function callable from JavaScript to pretty print values.
+// prettyPrintJS 是一个可从 JavaScript 调用的 Go 函数，用于漂亮地打印值。
 func (re *JSRE) prettyPrintJS(call goja.FunctionCall) goja.Value {
 	for _, v := range call.Arguments {
 		prettyPrint(re.vm, v, re.output)
@@ -108,6 +113,7 @@ func (ctx ppctx) printValue(v goja.Value, level int, inArray bool) {
 // SafeGet attempt to get the value associated to `key`, and
 // catches the panic that goja creates if an error occurs in
 // key.
+// SafeGet 尝试获取与 `key` 关联的值，并捕获 goja 在 `key` 中发生错误时创建的 panic。
 func SafeGet(obj *goja.Object, key string) (ret goja.Value) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -146,11 +152,13 @@ func (ctx ppctx) printObject(obj *goja.Object, level int, inArray bool) {
 
 	case "Object":
 		// Print values from bignumber.js as regular numbers.
+		// 将来自 bignumber.js 的值打印为常规数字。
 		if ctx.isBigNumber(obj) {
 			fmt.Fprint(ctx.w, NumberColor("%s", toString(obj)))
 			return
 		}
 		// Otherwise, print all fields indented, but stop if we're too deep.
+		// 否则，缩进打印所有字段，但如果嵌套太深则停止。
 		keys := ctx.fields(obj)
 		if len(keys) == 0 {
 			fmt.Fprint(ctx.w, "{}")
@@ -211,6 +219,8 @@ func (ctx ppctx) fields(obj *goja.Object) []string {
 			// (typically because it is backed by an RPC call that is
 			// not supported by this instance.  Add it to the list of
 			// values so that it appears as `undefined` to the user.
+			// 找不到与该键对应的值（通常是因为它由该实例不支持的 RPC 调用支持）。
+			// 将其添加到值列表中，以便它对用户显示为 `undefined`。
 			vals = append(vals, k)
 		} else {
 			if _, callable := goja.AssertFunction(key); callable {
@@ -268,12 +278,14 @@ func iterOwnKeys(vm *goja.Runtime, obj *goja.Object, f func(string)) {
 
 func (ctx ppctx) isBigNumber(v *goja.Object) bool {
 	// Handle numbers with custom constructor.
+	// 处理具有自定义构造函数的数字。
 	if obj := v.Get("constructor").ToObject(ctx.vm); obj != nil {
 		if strings.HasPrefix(toString(obj), "function BigNumber") {
 			return true
 		}
 	}
 	// Handle default constructor.
+	// 处理默认构造函数。
 	BigNumber := ctx.vm.Get("BigNumber").ToObject(ctx.vm)
 	if BigNumber == nil {
 		return false
