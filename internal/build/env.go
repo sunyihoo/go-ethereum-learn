@@ -28,25 +28,41 @@ import (
 
 var (
 	// These flags override values in build env.
-	GitCommitFlag     = flag.String("git-commit", "", `Overrides git commit hash embedded into executables`)
-	GitBranchFlag     = flag.String("git-branch", "", `Overrides git branch being built`)
-	GitTagFlag        = flag.String("git-tag", "", `Overrides git tag being built`)
-	BuildnumFlag      = flag.String("buildnum", "", `Overrides CI build number`)
-	PullRequestFlag   = flag.Bool("pull-request", false, `Overrides pull request status of the build`)
-	CronJobFlag       = flag.Bool("cron-job", false, `Overrides cron job status of the build`)
+	// 这些标志覆盖构建环境中的值。
+	GitCommitFlag = flag.String("git-commit", "", `Overrides git commit hash embedded into executables`)
+	// 覆盖嵌入到可执行文件中的 git 提交哈希
+	GitBranchFlag = flag.String("git-branch", "", `Overrides git branch being built`)
+	// 覆盖正在构建的 git 分支
+	GitTagFlag = flag.String("git-tag", "", `Overrides git tag being built`)
+	// 覆盖正在构建的 git 标签
+	BuildnumFlag = flag.String("buildnum", "", `Overrides CI build number`)
+	// 覆盖 CI 构建编号
+	PullRequestFlag = flag.Bool("pull-request", false, `Overrides pull request status of the build`)
+	// 覆盖构建的拉取请求状态
+	CronJobFlag = flag.Bool("cron-job", false, `Overrides cron job status of the build`)
+	// 覆盖构建的定时任务状态
 	UbuntuVersionFlag = flag.String("ubuntu", "", `Sets the ubuntu version being built for`)
+	// 设置正在构建的 Ubuntu 版本
 )
 
 // Environment contains metadata provided by the build environment.
+// Environment 包含构建环境提供的元数据。
 type Environment struct {
-	CI                        bool
-	Name                      string // name of the environment
-	Repo                      string // name of GitHub repo
+	CI   bool
+	Name string // name of the environment
+	// 环境名称
+	Repo string // name of GitHub repo
+	// GitHub 仓库名称
 	Commit, Date, Branch, Tag string // Git info
-	Buildnum                  string
-	UbuntuVersion             string // Ubuntu version being built for
-	IsPullRequest             bool
-	IsCronJob                 bool
+	// Git 信息（提交哈希、日期、分支、标签）
+	Buildnum string
+	// 构建编号
+	UbuntuVersion string // Ubuntu version being built for
+	// 正在构建的 Ubuntu 版本
+	IsPullRequest bool
+	// 是否为拉取请求
+	IsCronJob bool
+	// 是否为定时任务
 }
 
 func (env Environment) String() string {
@@ -56,6 +72,7 @@ func (env Environment) String() string {
 
 // Env returns metadata about the current CI environment, falling back to LocalEnv
 // if not running on CI.
+// Env 返回当前 CI 环境的元数据，如果未运行在 CI 上，则回退到 LocalEnv。
 func Env() Environment {
 	switch {
 	case os.Getenv("CI") == "true" && os.Getenv("TRAVIS") == "true":
@@ -98,6 +115,7 @@ func Env() Environment {
 }
 
 // LocalEnv returns build environment metadata gathered from git.
+// LocalEnv 返回从 git 收集的构建环境元数据。
 func LocalEnv() Environment {
 	env := applyEnvFlags(Environment{Name: "local", Repo: "ethereum/go-ethereum"})
 
@@ -107,7 +125,10 @@ func LocalEnv() Environment {
 	} else {
 		// In this case we are in "detached head" state
 		// see: https://git-scm.com/docs/git-checkout#_detached_head
+		// 在这种情况下，我们处于“分离头指针”状态
+		// 参见：https://git-scm.com/docs/git-checkout#_detached_head
 		// Additional check required to verify, that file contains commit hash
+		// 需要额外检查以验证文件是否包含提交哈希
 		commitRe, _ := regexp.Compile("^([0-9a-f]{40})$")
 		if commit := commitRe.FindString(head); commit != "" && env.Commit == "" {
 			env.Commit = commit

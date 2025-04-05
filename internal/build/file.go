@@ -26,6 +26,7 @@ import (
 )
 
 // FileExist checks if a file exists at path.
+// FileExist 检查文件在指定路径下是否存在。
 func FileExist(path string) bool {
 	_, err := os.Stat(path)
 	if err != nil && os.IsNotExist(err) {
@@ -35,6 +36,7 @@ func FileExist(path string) bool {
 }
 
 // HashFiles iterates the provided set of files, computing the hash of each.
+// HashFiles 遍历提供的文件集合，计算每个文件的哈希值。
 func HashFiles(files []string) (map[string][32]byte, error) {
 	res := make(map[string][32]byte)
 	for _, filePath := range files {
@@ -53,10 +55,12 @@ func HashFiles(files []string) (map[string][32]byte, error) {
 
 // HashFolder iterates all files under the given directory, computing the hash
 // of each.
+// HashFolder 遍历给定目录下的所有文件，计算每个文件的哈希值。
 func HashFolder(folder string, exlude []string) (map[string][32]byte, error) {
 	res := make(map[string][32]byte)
 	err := filepath.WalkDir(folder, func(path string, d os.DirEntry, _ error) error {
 		// Skip anything that's exluded or not a regular file
+		// 跳过任何被排除的内容或非常规文件
 		for _, skip := range exlude {
 			if strings.HasPrefix(path, filepath.FromSlash(skip)) {
 				return filepath.SkipDir
@@ -66,6 +70,7 @@ func HashFolder(folder string, exlude []string) (map[string][32]byte, error) {
 			return nil
 		}
 		// Regular file found, hash it
+		// 找到常规文件，对其进行哈希计算
 		f, err := os.OpenFile(path, os.O_RDONLY, 0666)
 		if err != nil {
 			return err
@@ -84,6 +89,7 @@ func HashFolder(folder string, exlude []string) (map[string][32]byte, error) {
 }
 
 // DiffHashes compares two maps of file hashes and returns the changed files.
+// DiffHashes 比较两个文件哈希映射，返回发生变化的文件。
 func DiffHashes(a map[string][32]byte, b map[string][32]byte) []string {
 	var updates []string
 

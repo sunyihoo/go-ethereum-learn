@@ -32,8 +32,12 @@ import (
 //
 // Note, this method assumes a single key will be container in the pgpkey arg,
 // furthermore that it is in armored format.
+// PGPSignFile 从指定的字符串中解析 PGP 私钥，并为输入文件创建签名文件，输出到指定的输出参数中。
+//
+// 注意，此方法假设 pgpkey 参数中只包含一个密钥，并且该密钥是 armored 格式。
 func PGPSignFile(input string, output string, pgpkey string) error {
 	// Parse the keyring and make sure we only have a single private key in it
+	// 解析密钥环并确保其中只包含一个私钥
 	keys, err := openpgp.ReadArmoredKeyRing(bytes.NewBufferString(pgpkey))
 	if err != nil {
 		return err
@@ -42,6 +46,7 @@ func PGPSignFile(input string, output string, pgpkey string) error {
 		return fmt.Errorf("key count mismatch: have %d, want %d", len(keys), 1)
 	}
 	// Create the input and output streams for signing
+	// 创建用于签名的输入和输出流
 	in, err := os.Open(input)
 	if err != nil {
 		return err
@@ -55,10 +60,12 @@ func PGPSignFile(input string, output string, pgpkey string) error {
 	defer out.Close()
 
 	// Generate the signature and return
+	// 生成签名并返回
 	return openpgp.ArmoredDetachSign(out, keys[0], in, nil)
 }
 
 // PGPKeyID parses an armored key and returns the key ID.
+// PGPKeyID 解析 armored 格式的密钥并返回密钥 ID。
 func PGPKeyID(pgpkey string) (string, error) {
 	keys, err := openpgp.ReadArmoredKeyRing(bytes.NewBufferString(pgpkey))
 	if err != nil {

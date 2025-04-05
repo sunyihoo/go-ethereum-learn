@@ -28,10 +28,14 @@ import (
 // AzureBlobstoreConfig is an authentication and configuration struct containing
 // the data needed by the Azure SDK to interact with a specific container in the
 // blobstore.
+// AzureBlobstoreConfig 是一个认证和配置结构体，包含 Azure SDK 与 blobstore 中特定容器交互所需的数据。
 type AzureBlobstoreConfig struct {
-	Account   string // Account name to authorize API requests with
-	Token     string // Access token for the above account
+	Account string // Account name to authorize API requests with
+	// 账户名称，用于授权 API 请求
+	Token string // Access token for the above account
+	// 上述账户的访问令牌
 	Container string // Blob container to upload files into
+	// 用于上传文件的 Blob 容器
 }
 
 // AzureBlobstoreUpload uploads a local file to the Azure Blob Storage. Note, this
@@ -39,12 +43,14 @@ type AzureBlobstoreConfig struct {
 // need a multi API call approach implemented.
 //
 // See: https://msdn.microsoft.com/en-us/library/azure/dd179451.aspx#Anchor_3
+// AzureBlobstoreUpload 将本地文件上传到 Azure Blob 存储。注意，此方法假定最大文件大小为 64MB（Azure 限制）。更大的文件需要实现多 API 调用方法。
 func AzureBlobstoreUpload(path string, name string, config AzureBlobstoreConfig) error {
 	if *DryRunFlag {
 		fmt.Printf("would upload %q to %s/%s/%s\n", path, config.Account, config.Container, name)
 		return nil
 	}
 	// Create an authenticated client against the Azure cloud
+	// 创建一个针对 Azure 云的认证客户端
 	credential, err := azblob.NewSharedKeyCredential(config.Account, config.Token)
 	if err != nil {
 		return err
@@ -55,6 +61,7 @@ func AzureBlobstoreUpload(path string, name string, config AzureBlobstoreConfig)
 		return err
 	}
 	// Stream the file to upload into the designated blobstore container
+	// 将要上传的文件流式传输到指定的 blobstore 容器
 	in, err := os.Open(path)
 	if err != nil {
 		return err
@@ -66,8 +73,10 @@ func AzureBlobstoreUpload(path string, name string, config AzureBlobstoreConfig)
 }
 
 // AzureBlobstoreList lists all the files contained within an azure blobstore.
+// AzureBlobstoreList 列出 Azure blobstore 中包含的所有文件。
 func AzureBlobstoreList(config AzureBlobstoreConfig) ([]*container.BlobItem, error) {
 	// Create an authenticated client against the Azure cloud
+	// 创建一个针对 Azure 云的认证客户端
 	credential, err := azblob.NewSharedKeyCredential(config.Account, config.Token)
 	if err != nil {
 		return nil, err
@@ -92,6 +101,7 @@ func AzureBlobstoreList(config AzureBlobstoreConfig) ([]*container.BlobItem, err
 
 // AzureBlobstoreDelete iterates over a list of files to delete and removes them
 // from the blobstore.
+// AzureBlobstoreDelete 遍历要删除的文件列表并从 blobstore 中移除它们。
 func AzureBlobstoreDelete(config AzureBlobstoreConfig, blobs []*container.BlobItem) error {
 	if *DryRunFlag {
 		for _, blob := range blobs {
@@ -100,6 +110,7 @@ func AzureBlobstoreDelete(config AzureBlobstoreConfig, blobs []*container.BlobIt
 		return nil
 	}
 	// Create an authenticated client against the Azure cloud
+	// 创建一个针对 Azure 云的认证客户端
 	credential, err := azblob.NewSharedKeyCredential(config.Account, config.Token)
 	if err != nil {
 		return err
@@ -110,6 +121,7 @@ func AzureBlobstoreDelete(config AzureBlobstoreConfig, blobs []*container.BlobIt
 		return err
 	}
 	// Iterate over the blobs and delete them
+	// 遍历 blobs 并删除它们
 	for _, blob := range blobs {
 		if _, err := client.DeleteBlob(context.Background(), config.Container, *blob.Name, nil); err != nil {
 			return err

@@ -28,18 +28,25 @@ import (
 
 type GoToolchain struct {
 	Root string // GOROOT
+	// Go语言的根目录
 
 	// Cross-compilation variables. These are set when running the go tool.
+	// 交叉编译变量。这些在运行 go 工具时设置。
 	GOARCH string
-	GOOS   string
-	CC     string
+	// 目标架构
+	GOOS string
+	// 目标操作系统
+	CC string
+	// C编译器
 }
 
 // Go creates an invocation of the go command.
+// Go 创建一个 go 命令的调用。
 func (g *GoToolchain) Go(command string, args ...string) *exec.Cmd {
 	tool := g.goTool(command, args...)
 
 	// Configure environment for cross build.
+	// 配置交叉构建的环境。
 	if g.GOARCH != "" && g.GOARCH != runtime.GOARCH {
 		tool.Env = append(tool.Env, "CGO_ENABLED=1")
 		tool.Env = append(tool.Env, "GOARCH="+g.GOARCH)
@@ -48,6 +55,7 @@ func (g *GoToolchain) Go(command string, args ...string) *exec.Cmd {
 		tool.Env = append(tool.Env, "GOOS="+g.GOOS)
 	}
 	// Configure C compiler.
+	// 配置C编译器。
 	if g.CC != "" {
 		tool.Env = append(tool.Env, "CC="+g.CC)
 	} else if os.Getenv("CC") != "" {
@@ -55,6 +63,7 @@ func (g *GoToolchain) Go(command string, args ...string) *exec.Cmd {
 	}
 	// CKZG by default is not portable, append the necessary build flags to make
 	// it not rely on modern CPU instructions and enable linking against.
+	// CKZG 默认不可移植，添加必要的构建标志，使其不依赖现代CPU指令并启用链接。
 	tool.Env = append(tool.Env, "CGO_CFLAGS=-O2 -g -D__BLST_PORTABLE__")
 
 	return tool
@@ -69,7 +78,9 @@ func (g *GoToolchain) goTool(command string, args ...string) *exec.Cmd {
 	tool.Env = append(tool.Env, "GOROOT="+g.Root)
 
 	// Forward environment variables to the tool, but skip compiler target settings.
+	// 将环境变量转发给工具，但跳过编译器目标设置。
 	// TODO: what about GOARM?
+	// TODO：GOARM怎么办？
 	skip := map[string]struct{}{"GOROOT": {}, "GOARCH": {}, "GOOS": {}, "GOBIN": {}, "CC": {}}
 	for _, e := range os.Environ() {
 		if i := strings.IndexByte(e, '='); i >= 0 {
@@ -84,6 +95,7 @@ func (g *GoToolchain) goTool(command string, args ...string) *exec.Cmd {
 
 // DownloadGo downloads the Go binary distribution and unpacks it into a temporary
 // directory. It returns the GOROOT of the unpacked toolchain.
+// DownloadGo 下载 Go 二进制分发包并解压到临时目录中，返回解压后的工具链的 GOROOT。
 func DownloadGo(csdb *ChecksumDB) string {
 	version, err := Version(csdb, "golang")
 	if err != nil {
@@ -91,6 +103,7 @@ func DownloadGo(csdb *ChecksumDB) string {
 	}
 	// Shortcut: if the Go version that runs this script matches the
 	// requested version exactly, there is no need to download anything.
+	// 快捷方式：如果运行此脚本的 Go 版本与请求的版本完全匹配，则无需下载任何内容。
 	activeGo := strings.TrimPrefix(runtime.Version(), "go")
 	if activeGo == version {
 		log.Printf("-dlgo version matches active Go version %s, skipping download.", activeGo)
@@ -103,6 +116,7 @@ func DownloadGo(csdb *ChecksumDB) string {
 	}
 
 	// For Arm architecture, GOARCH includes ISA version.
+	// 对于 Arm 架构，GOARCH 包括指令集版本。
 	os := runtime.GOOS
 	arch := runtime.GOARCH
 	if arch == "arm" {
@@ -132,6 +146,7 @@ func DownloadGo(csdb *ChecksumDB) string {
 }
 
 // Version returns the versions defined in the checksumdb.
+// Version 返回校验数据库中定义的版本。
 func Version(csdb *ChecksumDB, version string) (string, error) {
 	for _, l := range csdb.allChecksums {
 		if !strings.HasPrefix(l, "# version:") {
@@ -153,6 +168,8 @@ func Version(csdb *ChecksumDB, version string) (string, error) {
 // DownloadAndVerifyChecksums downloads all files and checks that they match
 // the checksum given in checksums.txt.
 // This task can be used to sanity-check new checksums.
+// DownloadAndVerifyChecksums 下载所有文件并检查它们是否与 checksums.txt 中给定的校验和匹配。
+// 此任务可用于对新校验和进行健全性检查。
 func DownloadAndVerifyChecksums(csdb *ChecksumDB) {
 	var (
 		base   = ""

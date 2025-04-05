@@ -32,14 +32,17 @@ import (
 type Archive interface {
 	// Directory adds a new directory entry to the archive and sets the
 	// directory for subsequent calls to Header.
+	// Directory 将一个新的目录条目添加到归档中，并为后续的Header调用设置目录。
 	Directory(name string) error
 
 	// Header adds a new file to the archive. The file is added to the directory
 	// set by Directory. The content of the file must be written to the returned
 	// writer.
+	// Header 将一个新文件添加到归档中。文件将被添加到由Directory设置的目录中。文件内容必须写入返回的写入器。
 	Header(os.FileInfo) (io.Writer, error)
 
 	// Close flushes the archive and closes the underlying file.
+	// Close 刷新归档并关闭底层文件。
 	Close() error
 }
 
@@ -55,6 +58,7 @@ func NewArchive(file *os.File) (Archive, string) {
 }
 
 // AddFile appends an existing file to an archive.
+// AddFile 将一个现有文件追加到归档中。
 func AddFile(a Archive, file string) error {
 	fd, err := os.Open(file)
 	if err != nil {
@@ -76,6 +80,7 @@ func AddFile(a Archive, file string) error {
 }
 
 // WriteArchive creates an archive containing the given files.
+// WriteArchive 创建一个包含给定文件的归档。
 func WriteArchive(name string, files []string) (err error) {
 	archfd, err := os.Create(name)
 	if err != nil {
@@ -85,6 +90,7 @@ func WriteArchive(name string, files []string) (err error) {
 	defer func() {
 		archfd.Close()
 		// Remove the half-written archive on failure.
+		// 如果失败，删除半写的归档文件。
 		if err != nil {
 			os.Remove(name)
 		}
@@ -188,6 +194,7 @@ func (a *TarballArchive) Close() error {
 }
 
 // ExtractArchive unpacks a .zip or .tar.gz archive to the destination directory.
+// ExtractArchive 将 .zip 或 .tar.gz 归档解压到目标目录。
 func ExtractArchive(archive string, dest string) error {
 	ar, err := os.Open(archive)
 	if err != nil {
@@ -206,6 +213,7 @@ func ExtractArchive(archive string, dest string) error {
 }
 
 // extractTarball unpacks a .tar.gz file.
+// extractTarball 解压一个 .tar.gz 文件。
 func extractTarball(ar io.Reader, dest string) error {
 	gzr, err := gzip.NewReader(ar)
 	if err != nil {
@@ -216,6 +224,7 @@ func extractTarball(ar io.Reader, dest string) error {
 	tr := tar.NewReader(gzr)
 	for {
 		// Move to the next file header.
+		// 移动到下一个文件头。
 		header, err := tr.Next()
 		if err != nil {
 			if err == io.EOF {
@@ -225,6 +234,7 @@ func extractTarball(ar io.Reader, dest string) error {
 		}
 		// We only care about regular files, directory modes
 		// and special file types are not supported.
+		// 我们只关心常规文件，目录模式和特殊文件类型不受支持。
 		if header.Typeflag == tar.TypeReg {
 			armode := header.FileInfo().Mode()
 			err := extractFile(header.Name, armode, tr, dest)
@@ -236,6 +246,7 @@ func extractTarball(ar io.Reader, dest string) error {
 }
 
 // extractZip unpacks the given .zip file.
+// extractZip 解压给定的 .zip 文件。
 func extractZip(ar *os.File, dest string) error {
 	info, err := ar.Stat()
 	if err != nil {
@@ -265,24 +276,29 @@ func extractZip(ar *os.File, dest string) error {
 }
 
 // extractFile extracts a single file from an archive.
+// extractFile 从归档中提取单个文件。
 func extractFile(arpath string, armode os.FileMode, data io.Reader, dest string) error {
 	// Check that path is inside destination directory.
+	// 检查路径是否在目标目录内。
 	target := filepath.Join(dest, filepath.FromSlash(arpath))
 	if !strings.HasPrefix(target, filepath.Clean(dest)+string(os.PathSeparator)) {
 		return fmt.Errorf("path %q escapes archive destination", target)
 	}
 
-	// Remove the preivously-extracted file if it exists
+	// Remove the previously-extracted file if it exists
+	// 如果存在之前解压的文件，则删除它。
 	if err := os.RemoveAll(target); err != nil {
 		return err
 	}
 
 	// Recreate the destination directory
+	// 重新创建目标目录。
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return err
 	}
 
 	// Copy file data.
+	// 复制文件数据。
 	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY, armode)
 	if err != nil {
 		return err

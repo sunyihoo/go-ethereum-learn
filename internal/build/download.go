@@ -30,11 +30,13 @@ import (
 )
 
 // ChecksumDB keeps file checksums.
+// ChecksumDB 保存文件的校验和。
 type ChecksumDB struct {
 	allChecksums []string
 }
 
 // MustLoadChecksums loads a file containing checksums.
+// MustLoadChecksums 加载包含校验和的文件。
 func MustLoadChecksums(file string) *ChecksumDB {
 	content, err := os.ReadFile(file)
 	if err != nil {
@@ -44,6 +46,7 @@ func MustLoadChecksums(file string) *ChecksumDB {
 }
 
 // Verify checks whether the given file is valid according to the checksum database.
+// Verify 检查给定文件根据校验和数据库是否有效。
 func (db *ChecksumDB) Verify(path string) error {
 	fd, err := os.Open(path)
 	if err != nil {
@@ -73,6 +76,7 @@ func (db *ChecksumDB) findHash(basename, hash string) bool {
 }
 
 // DownloadFile downloads a file and verifies its checksum.
+// DownloadFile 下载文件并验证其校验和。
 func (db *ChecksumDB) DownloadFile(url, dstPath string) error {
 	if err := db.Verify(dstPath); err == nil {
 		fmt.Printf("%s is up-to-date\n", dstPath)
@@ -126,6 +130,7 @@ func (w *downloadWriter) Write(buf []byte) (int, error) {
 	n, err := w.dstBuf.Write(buf)
 
 	// Report progress.
+	// 报告进度。
 	w.written += int64(n)
 	pct := w.written * 10 / w.size * 10
 	if pct != w.lastpct {
@@ -141,6 +146,7 @@ func (w *downloadWriter) Write(buf []byte) (int, error) {
 func (w *downloadWriter) Close() error {
 	if w.lastpct > 0 {
 		fmt.Println() // Finish the progress line.
+		// 完成进度行。
 	}
 	flushErr := w.dstBuf.Flush()
 	closeErr := w.file.Close()
