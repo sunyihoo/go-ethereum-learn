@@ -26,12 +26,14 @@ import (
 )
 
 // Iterator wraps RawIterator and returns decoded Era1 entries.
+// Iterator 封装了 RawIterator 并返回解码后的 Era1 条目。
 type Iterator struct {
 	inner *RawIterator
 }
 
 // NewIterator returns a new Iterator instance. Next must be immediately
 // called on new iterators to load the first item.
+// NewIterator 返回一个新的 Iterator 实例。必须立即在新迭代器上调用 Next 以加载第一个条目。
 func NewIterator(e *Era) (*Iterator, error) {
 	inner, err := NewRawIterator(e)
 	if err != nil {
@@ -43,22 +45,27 @@ func NewIterator(e *Era) (*Iterator, error) {
 // Next moves the iterator to the next block entry. It returns false when all
 // items have been read or an error has halted its progress. Block, Receipts,
 // and BlockAndReceipts should no longer be called after false is returned.
+// Next 将迭代器移动到下一个区块条目。当所有条目都已读取或发生错误导致其停止时，它返回 false。
+// 在返回 false 后，不应再调用 Block、Receipts 和 BlockAndReceipts。
 func (it *Iterator) Next() bool {
 	return it.inner.Next()
 }
 
 // Number returns the current number block the iterator will return.
+// Number 返回迭代器将返回的当前区块号。
 func (it *Iterator) Number() uint64 {
 	return it.inner.next - 1
 }
 
 // Error returns the error status of the iterator. It should be called before
 // reading from any of the iterator's values.
+// Error 返回迭代器的错误状态。在读取迭代器的任何值之前应该调用它。
 func (it *Iterator) Error() error {
 	return it.inner.Error()
 }
 
 // Block returns the block for the iterator's current position.
+// Block 返回迭代器当前位置的区块。
 func (it *Iterator) Block() (*types.Block, error) {
 	if it.inner.Header == nil || it.inner.Body == nil {
 		return nil, errors.New("header and body must be non-nil")
@@ -77,6 +84,7 @@ func (it *Iterator) Block() (*types.Block, error) {
 }
 
 // Receipts returns the receipts for the iterator's current position.
+// Receipts 返回迭代器当前位置的交易回执。
 func (it *Iterator) Receipts() (types.Receipts, error) {
 	if it.inner.Receipts == nil {
 		return nil, errors.New("receipts must be non-nil")
@@ -88,6 +96,7 @@ func (it *Iterator) Receipts() (types.Receipts, error) {
 
 // BlockAndReceipts returns the block and receipts for the iterator's current
 // position.
+// BlockAndReceipts 返回迭代器当前位置的区块和交易回执。
 func (it *Iterator) BlockAndReceipts() (*types.Block, types.Receipts, error) {
 	b, err := it.Block()
 	if err != nil {
@@ -102,6 +111,7 @@ func (it *Iterator) BlockAndReceipts() (*types.Block, types.Receipts, error) {
 
 // TotalDifficulty returns the total difficulty for the iterator's current
 // position.
+// TotalDifficulty 返回迭代器当前位置的总难度。
 func (it *Iterator) TotalDifficulty() (*big.Int, error) {
 	td, err := io.ReadAll(it.inner.TotalDifficulty)
 	if err != nil {
@@ -111,6 +121,7 @@ func (it *Iterator) TotalDifficulty() (*big.Int, error) {
 }
 
 // RawIterator reads an RLP-encode Era1 entries.
+// RawIterator 读取 RLP 编码的 Era1 条目。
 type RawIterator struct {
 	e    *Era   // backing Era1
 	next uint64 // next block to read
@@ -124,6 +135,7 @@ type RawIterator struct {
 
 // NewRawIterator returns a new RawIterator instance. Next must be immediately
 // called on new iterators to load the first item.
+// NewRawIterator 返回一个新的 RawIterator 实例。必须立即在新迭代器上调用 Next 以加载第一个条目。
 func NewRawIterator(e *Era) (*RawIterator, error) {
 	return &RawIterator{
 		e:    e,
@@ -135,8 +147,11 @@ func NewRawIterator(e *Era) (*RawIterator, error) {
 // items have been read or an error has halted its progress. Header, Body,
 // Receipts, TotalDifficulty will be set to nil in the case returning false or
 // finding an error and should therefore no longer be read from.
+// Next 将迭代器移动到下一个区块条目。当所有条目都已读取或发生错误导致其停止时，它返回 false。
+// 在返回 false 或发现错误的情况下，Header、Body、Receipts、TotalDifficulty 将被设置为 nil，因此不应再从中读取。
 func (it *RawIterator) Next() bool {
 	// Clear old errors.
+	// 清除旧的错误。
 	it.err = nil
 	if it.e.m.start+it.e.m.count <= it.next {
 		it.clear()
@@ -146,11 +161,15 @@ func (it *RawIterator) Next() bool {
 	if err != nil {
 		// Error here means block index is corrupted, so don't
 		// continue.
+		// 这里的错误意味着区块索引已损坏，因此不要继续。
 		it.clear()
 		it.err = err
 		return false
 	}
 	var n int64
+	// newSnappyReader creates a reader that decompresses the data on the fly using snappy.
+	// It takes the underlying storage (it.e.s), the type of data (e.g., TypeCompressedHeader), and the offset as input.
+	// It returns an io.Reader, the number of bytes read from the offset, and an error if any.
 	if it.Header, n, it.err = newSnappyReader(it.e.s, TypeCompressedHeader, off); it.err != nil {
 		it.clear()
 		return true
@@ -166,6 +185,8 @@ func (it *RawIterator) Next() bool {
 		return true
 	}
 	off += n
+	// it.e.s.ReaderAt creates a reader that reads directly from the storage at the given type and offset.
+	// In this case, it's used for TotalDifficulty, which might not be compressed or handled differently.
 	if it.TotalDifficulty, _, it.err = it.e.s.ReaderAt(TypeTotalDifficulty, off); it.err != nil {
 		it.clear()
 		return true
@@ -175,12 +196,14 @@ func (it *RawIterator) Next() bool {
 }
 
 // Number returns the current number block the iterator will return.
+// Number 返回迭代器将返回的当前区块号。
 func (it *RawIterator) Number() uint64 {
 	return it.next - 1
 }
 
 // Error returns the error status of the iterator. It should be called before
 // reading from any of the iterator's values.
+// Error 返回迭代器的错误状态。在读取迭代器的任何值之前应该调用它。
 func (it *RawIterator) Error() error {
 	if it.err == io.EOF {
 		return nil
@@ -189,6 +212,7 @@ func (it *RawIterator) Error() error {
 }
 
 // clear sets all the outputs to nil.
+// clear 将所有输出设置为 nil。
 func (it *RawIterator) clear() {
 	it.Header = nil
 	it.Body = nil

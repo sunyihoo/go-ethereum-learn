@@ -71,20 +71,63 @@ import (
 //
 // Due to the accumulator size limit of 8192, the maximum number of blocks in
 // an Era1 batch is also 8192.
+// Builder 用于创建区块数据的 Era1 归档文件。
+//
+// Era1 文件本身就是 e2store 文件。有关此格式的更多信息，请参阅 https://github.com/status-im/nimbus-eth2/blob/stable/docs/e2store.md。
+//
+// Era1 文件的整体结构与 Era 文件（包含共识层数据，以及合并后的执行层数据）的结构非常相似。
+//
+// 该结构可以通过以下定义进行总结：
+//
+//	era1 := Version | block-tuple* | other-entries* | Accumulator | BlockIndex
+//	block-tuple :=  CompressedHeader | CompressedBody | CompressedReceipts | TotalDifficulty
+//
+// 每个基本元素都是一个独立的条目：
+//
+//	Version            = { type: [0x65, 0x32], data: nil }
+//	CompressedHeader   = { type: [0x03, 0x00], data: snappyFramed(rlp(header)) }
+//	CompressedBody     = { type: [0x04, 0x00], data: snappyFramed(rlp(body)) }
+//	CompressedReceipts = { type: [0x05, 0x00], data: snappyFramed(rlp(receipts)) }
+//	TotalDifficulty    = { type: [0x06, 0x00], data: uint256(header.total_difficulty) }
+//	AccumulatorRoot    = { type: [0x07, 0x00], data: accumulator-root }
+//	BlockIndex         = { type: [0x32, 0x66], data: block-index }
+//
+// 累加器通过构建一个最多包含 8192 个 header-record 的 SSZ 列表，然后计算该列表的 hash_tree_root 来计算。
+//
+//	header-record := { block-hash: Bytes32, total-difficulty: Uint256 }
+//	accumulator   := hash_tree_root([]header-record, 8192)
+//
+// BlockIndex 存储每个压缩区块条目的相对偏移量。格式如下：
+//
+//	block-index := starting-number | index | index | index ... | count
+//
+// starting-number 是归档文件中的第一个区块号。每个索引都相对于记录的开头定义。文件中区块条目的总数记录在 count 中。
+//
+// 由于累加器大小限制为 8192，因此 Era1 批处理中的最大区块数也为 8192。
 type Builder struct {
-	w        *e2store.Writer
+	w *e2store.Writer
+	// w 是用于写入底层 e2store 文件的写入器。
 	startNum *uint64
-	startTd  *big.Int
-	indexes  []uint64
-	hashes   []common.Hash
-	tds      []*big.Int
-	written  int
+	// startNum 是归档文件中的起始区块号。
+	startTd *big.Int
+	// startTd 是起始区块的总难度。
+	indexes []uint64
+	// indexes 存储每个区块数据条目在文件中的起始偏移量。
+	hashes []common.Hash
+	// hashes 存储每个区块的哈希值，用于计算累加器。
+	tds []*big.Int
+	// tds 存储每个区块的总难度值，用于计算累加器。
+	written int
+	// written 记录已写入文件的总字节数。
 
-	buf    *bytes.Buffer
+	buf *bytes.Buffer
+	// buf 是用于 snappy 压缩的临时缓冲区。
 	snappy *snappy.Writer
+	// snappy 是用于 snappy 压缩的写入器。
 }
 
 // NewBuilder returns a new Builder instance.
+// NewBuilder 返回一个新的 Builder 实例。
 func NewBuilder(w io.Writer) *Builder {
 	buf := bytes.NewBuffer(nil)
 	return &Builder{
@@ -96,6 +139,7 @@ func NewBuilder(w io.Writer) *Builder {
 
 // Add writes a compressed block entry and compressed receipts entry to the
 // underlying e2store file.
+// Add 将压缩的区块条目和压缩的回执条目写入底层的 e2store 文件。
 func (b *Builder) Add(block *types.Block, receipts types.Receipts, td *big.Int) error {
 	eh, err := rlp.EncodeToBytes(block.Header())
 	if err != nil {
@@ -114,8 +158,10 @@ func (b *Builder) Add(block *types.Block, receipts types.Receipts, td *big.Int) 
 
 // AddRLP writes a compressed block entry and compressed receipts entry to the
 // underlying e2store file.
+// AddRLP 将压缩的区块条目和压缩的回执条目写入底层的 e2store 文件。
 func (b *Builder) AddRLP(header, body, receipts []byte, number uint64, hash common.Hash, td, difficulty *big.Int) error {
 	// Write Era1 version entry before first block.
+	// 在写入第一个区块之前，写入 Era1 版本条目。
 	if b.startNum == nil {
 		n, err := b.w.Write(TypeVersion, nil)
 		if err != nil {
@@ -135,6 +181,7 @@ func (b *Builder) AddRLP(header, body, receipts []byte, number uint64, hash comm
 	b.tds = append(b.tds, td)
 
 	// Write block data.
+	// 写入区块数据。
 	if err := b.snappyWrite(TypeCompressedHeader, header); err != nil {
 		return err
 	}
@@ -146,6 +193,7 @@ func (b *Builder) AddRLP(header, body, receipts []byte, number uint64, hash comm
 	}
 
 	// Also write total difficulty, but don't snappy encode.
+	// 同时写入总难度，但不进行 snappy 编码。
 	btd := bigToBytes32(td)
 	n, err := b.w.Write(TypeTotalDifficulty, btd[:])
 	b.written += n
@@ -158,11 +206,13 @@ func (b *Builder) AddRLP(header, body, receipts []byte, number uint64, hash comm
 
 // Finalize computes the accumulator and block index values, then writes the
 // corresponding e2store entries.
+// Finalize 计算累加器和区块索引值，然后写入相应的 e2store 条目。
 func (b *Builder) Finalize() (common.Hash, error) {
 	if b.startNum == nil {
 		return common.Hash{}, errors.New("finalize called on empty builder")
 	}
 	// Compute accumulator root and write entry.
+	// 计算累加器根并写入条目。
 	root, err := ComputeAccumulator(b.hashes, b.tds)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("error calculating accumulator root: %w", err)
@@ -173,10 +223,13 @@ func (b *Builder) Finalize() (common.Hash, error) {
 		return common.Hash{}, fmt.Errorf("error writing accumulator: %w", err)
 	}
 	// Get beginning of index entry to calculate block relative offset.
+	// 获取索引条目的起始位置，以计算区块的相对偏移量。
 	base := int64(b.written)
 
 	// Construct block index. Detailed format described in Builder
 	// documentation, but it is essentially encoded as:
+	// "start | index | index | ... | count"
+	// 构建区块索引。详细格式在 Builder 文档中描述，但本质上编码为：
 	// "start | index | index | ... | count"
 	var (
 		count = len(b.indexes)
@@ -189,6 +242,8 @@ func (b *Builder) Finalize() (common.Hash, error) {
 	// would be different. The idea with this is that after reading a
 	// relative offset, the corresponding block can be quickly read by
 	// performing a seek relative to the current position.
+	// 每个偏移量都相对于它在索引中编码的位置。这意味着即使同一个区块在索引中包含两次（无论如何这都是无效的），相对偏移量也会不同。
+	// 这样做的目的是，在读取一个相对偏移量后，可以通过相对于当前位置进行查找来快速读取相应的区块。
 	for i, offset := range b.indexes {
 		relative := int64(offset) - base
 		binary.LittleEndian.PutUint64(index[8+i*8:], uint64(relative))
@@ -196,6 +251,7 @@ func (b *Builder) Finalize() (common.Hash, error) {
 	binary.LittleEndian.PutUint64(index[8+count*8:], uint64(count))
 
 	// Finally, write the block index entry.
+	// 最后，写入区块索引条目。
 	if _, err := b.w.Write(TypeBlockIndex, index); err != nil {
 		return common.Hash{}, fmt.Errorf("unable to write block index: %w", err)
 	}
@@ -204,6 +260,7 @@ func (b *Builder) Finalize() (common.Hash, error) {
 }
 
 // snappyWrite is a small helper to take care snappy encoding and writing an e2store entry.
+// snappyWrite 是一个小助手函数，用于处理 snappy 编码和写入 e2store 条目。
 func (b *Builder) snappyWrite(typ uint16, in []byte) error {
 	var (
 		buf = b.buf

@@ -24,24 +24,32 @@ import (
 )
 
 const (
-	headerSize     = 8
+	headerSize = 8
+	// 每个记录的头部大小为 8 字节。
 	valueSizeLimit = 1024 * 1024 * 50
+	// 单个值的最大大小限制为 50 MB。
 )
 
 // Entry is a variable-length-data record in an e2store.
+// Entry 是 e2store 中的一个变长数据记录。
 type Entry struct {
-	Type  uint16
+	Type uint16
+	// 记录的类型，占 2 字节。
 	Value []byte
+	// 记录的实际数据，长度可变。
 }
 
 // Writer writes entries using e2store encoding.
 // For more information on this format, see:
 // https://github.com/status-im/nimbus-eth2/blob/stable/docs/e2store.md
+// Writer 使用 e2store 编码写入记录。有关此格式的更多信息，请参阅上述链接。
 type Writer struct {
 	w io.Writer
+	// 实际的数据写入器。
 }
 
 // NewWriter returns a new Writer that writes to w.
+// NewWriter 返回一个新的 Writer，它将数据写入 w。
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{w}
 }
@@ -50,10 +58,14 @@ func NewWriter(w io.Writer) *Writer {
 // An entry is encoded in a type-length-value format. The first 8 bytes of the
 // record store the type (2 bytes), the length (4 bytes), and some reserved
 // data (2 bytes). The remaining bytes store b.
+// Write 将单个 e2store 记录写入 w。
+// 记录以类型-长度-值（TLV）格式编码。前 8 字节存储类型（2 字节）、长度（4 字节）和保留字段（2 字节），其余字节存储实际数据。
 func (w *Writer) Write(typ uint16, b []byte) (int, error) {
 	buf := make([]byte, headerSize)
 	binary.LittleEndian.PutUint16(buf, typ)
+	// 将类型写入缓冲区的前 2 字节。
 	binary.LittleEndian.PutUint32(buf[2:], uint32(len(b)))
+	// 将数据长度写入缓冲区的第 3 到第 6 字节。
 
 	// Write header.
 	if n, err := w.w.Write(buf); err != nil {
@@ -61,23 +73,29 @@ func (w *Writer) Write(typ uint16, b []byte) (int, error) {
 	}
 	// Write value, return combined write size.
 	n, err := w.w.Write(b)
+	// 写入实际数据，并返回总写入字节数（头部 + 数据）。
 	return n + headerSize, err
 }
 
 // A Reader reads entries from an e2store-encoded file.
 // For more information on this format, see
 // https://github.com/status-im/nimbus-eth2/blob/stable/docs/e2store.md
+// Reader 从 e2store 编码的文件中读取记录。有关此格式的更多信息，请参阅上述链接。
 type Reader struct {
-	r      io.ReaderAt
+	r io.ReaderAt
+	// 数据读取器，支持随机访问。
 	offset int64
+	// 当前读取位置的偏移量。
 }
 
 // NewReader returns a new Reader that reads from r.
+// NewReader 返回一个新的 Reader，它从 r 中读取数据。
 func NewReader(r io.ReaderAt) *Reader {
 	return &Reader{r, 0}
 }
 
 // Read reads one Entry from r.
+// Read 从 r 中读取一个记录。
 func (r *Reader) Read() (*Entry, error) {
 	var e Entry
 	n, err := r.ReadAt(&e, r.offset)
@@ -85,10 +103,12 @@ func (r *Reader) Read() (*Entry, error) {
 		return nil, err
 	}
 	r.offset += int64(n)
+	// 更新偏移量以指向下一个记录。
 	return &e, nil
 }
 
 // ReadAt reads one Entry from r at the specified offset.
+// ReadAt 从指定偏移量处读取一个记录。
 func (r *Reader) ReadAt(entry *Entry, off int64) (int, error) {
 	typ, length, err := r.ReadMetadataAt(off)
 	if err != nil {
@@ -100,9 +120,11 @@ func (r *Reader) ReadAt(entry *Entry, off int64) (int, error) {
 	if length > valueSizeLimit {
 		return headerSize, fmt.Errorf("item larger than item size limit %d: have %d", valueSizeLimit, length)
 	}
+	// 如果记录长度超过限制，则返回错误。
 	if length == 0 {
 		return headerSize, nil
 	}
+	// 如果记录长度为 0，则直接返回头部大小。
 
 	// Read value.
 	val := make([]byte, length)
@@ -117,11 +139,13 @@ func (r *Reader) ReadAt(entry *Entry, off int64) (int, error) {
 	}
 	entry.Value = val
 	return int(headerSize + length), nil
+	// 返回记录的总大小（头部 + 数据）。
 }
 
 // ReaderAt returns an io.Reader delivering value data for the entry at
 // the specified offset. If the entry type does not match the expected type, an
 // error is returned.
+// ReaderAt 返回一个 io.Reader，用于提供指定偏移量处记录的值数据。如果记录类型与预期类型不匹配，则返回错误。
 func (r *Reader) ReaderAt(expectedType uint16, off int64) (io.Reader, int, error) {
 	// problem = need to return length+headerSize not just value length via section reader
 	typ, length, err := r.ReadMetadataAt(off)
@@ -135,10 +159,12 @@ func (r *Reader) ReaderAt(expectedType uint16, off int64) (io.Reader, int, error
 		return nil, headerSize, fmt.Errorf("item larger than item size limit %d: have %d", valueSizeLimit, length)
 	}
 	return io.NewSectionReader(r.r, off+headerSize, int64(length)), headerSize + int(length), nil
+	// 返回 SectionReader 和记录的总大小。
 }
 
 // LengthAt reads the header at off and returns the total length of the entry,
 // including header.
+// LengthAt 读取指定偏移量处的头部，并返回记录的总长度（包括头部）。
 func (r *Reader) LengthAt(off int64) (int64, error) {
 	_, length, err := r.ReadMetadataAt(off)
 	if err != nil {
@@ -148,6 +174,7 @@ func (r *Reader) LengthAt(off int64) (int64, error) {
 }
 
 // ReadMetadataAt reads the header metadata at the given offset.
+// ReadMetadataAt 读取指定偏移量处的头部元数据。
 func (r *Reader) ReadMetadataAt(off int64) (typ uint16, length uint32, err error) {
 	b := make([]byte, headerSize)
 	if n, err := r.r.ReadAt(b, off); err != nil {
@@ -158,16 +185,19 @@ func (r *Reader) ReadMetadataAt(off int64) (typ uint16, length uint32, err error
 	}
 	typ = binary.LittleEndian.Uint16(b)
 	length = binary.LittleEndian.Uint32(b[2:])
+	// 解码类型和长度。
 
 	// Check reserved bytes of header.
 	if b[6] != 0 || b[7] != 0 {
 		return 0, 0, errors.New("reserved bytes are non-zero")
 	}
+	// 检查保留字段是否为零。
 
 	return typ, length, nil
 }
 
 // Find returns the first entry with the matching type.
+// Find 返回第一个匹配类型的记录。
 func (r *Reader) Find(want uint16) (*Entry, error) {
 	var (
 		off    int64
@@ -190,10 +220,12 @@ func (r *Reader) Find(want uint16) (*Entry, error) {
 			return &e, nil
 		}
 		off += int64(headerSize + length)
+		// 移动到下一个记录。
 	}
 }
 
 // FindAll returns all entries with the matching type.
+// FindAll 返回所有匹配类型的记录。
 func (r *Reader) FindAll(want uint16) ([]*Entry, error) {
 	var (
 		off     int64
@@ -217,5 +249,6 @@ func (r *Reader) FindAll(want uint16) ([]*Entry, error) {
 			entries = append(entries, e)
 		}
 		off += int64(headerSize + length)
+		// 移动到下一个记录。
 	}
 }
