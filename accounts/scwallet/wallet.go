@@ -46,42 +46,51 @@ import (
 // ErrPairingPasswordNeeded is returned if opening the smart card requires pairing with a pairing
 // password. In this case, the calling application should request user input to enter
 // the pairing password and send it back.
+// 如果打开智能卡需要配对密码，则返回此错误。调用应用程序应请求用户输入配对密码并将其发送回来。
 var ErrPairingPasswordNeeded = errors.New("smartcard: pairing password needed")
 
 // ErrPINNeeded is returned if opening the smart card requires a PIN code. In
 // this case, the calling application should request user input to enter the PIN
 // and send it back.
+// 如果打开智能卡需要PIN码，则返回此错误。调用应用程序应请求用户输入PIN码并发送回来。
 var ErrPINNeeded = errors.New("smartcard: pin needed")
 
 // ErrPINUnblockNeeded is returned if opening the smart card requires a PIN code,
 // but all PIN attempts have already been exhausted. In this case the calling
 // application should request user input for the PUK and a new PIN code to set
 // fo the card.
+// 如果打开智能卡需要PIN码，但所有PIN尝试次数已用尽，则返回此错误。调用应用程序应请求用户输入PUK码和新PIN码。
 var ErrPINUnblockNeeded = errors.New("smartcard: pin unblock needed")
 
 // ErrAlreadyOpen is returned if the smart card is attempted to be opened, but
 // there is already a paired and unlocked session.
+// 如果尝试打开智能卡，但已存在配对且解锁的会话，则返回此错误。
 var ErrAlreadyOpen = errors.New("smartcard: already open")
 
 // ErrPubkeyMismatch is returned if the public key recovered from a signature
 // does not match the one expected by the user.
+// 如果从签名恢复的公钥与用户期望的不匹配，则返回此错误。
 var ErrPubkeyMismatch = errors.New("smartcard: recovered public key mismatch")
 
 var (
 	appletAID = []byte{0xA0, 0x00, 0x00, 0x08, 0x04, 0x00, 0x01, 0x01, 0x01}
 	// DerivationSignatureHash is used to derive the public key from the signature of this hash
+	// DerivationSignatureHash 用于从该哈希的签名派生公钥
 	DerivationSignatureHash = sha256.Sum256(common.Hash{}.Bytes())
 )
 
 var (
 	// PinRegexp is the regular expression used to validate PIN codes.
+	// pinRegexp 是用于验证PIN码的正则表达式。
 	pinRegexp = regexp.MustCompile(`^[0-9]{6,}$`)
 
 	// PukRegexp is the regular expression used to validate PUK codes.
+	// pukRegexp 是用于验证PUK码的正则表达式。
 	pukRegexp = regexp.MustCompile(`^[0-9]{12,}$`)
 )
 
 // List of APDU command-related constants
+// APDU命令相关常量的列表
 const (
 	claISO7816  = 0
 	claSCWallet = 0x80
@@ -101,6 +110,7 @@ const (
 )
 
 // List of ADPU command parameters
+// APDU命令参数的列表
 const (
 	P1DeriveKeyFromMaster  = uint8(0x00)
 	P1DeriveKeyFromParent  = uint8(0x01)
@@ -115,26 +125,40 @@ const (
 
 // Minimum time to wait between self derivation attempts, even it the user is
 // requesting accounts like crazy.
+// 自派生尝试之间的最小等待时间，即使用户频繁请求账户。
 const selfDeriveThrottling = time.Second
 
 // Wallet represents a smartcard wallet instance.
+// Wallet 表示一个智能卡钱包实例。
 type Wallet struct {
-	Hub       *Hub   // A handle to the Hub that instantiated this wallet.
+	Hub *Hub // A handle to the Hub that instantiated this wallet.
+	// Hub 是实例化此钱包的Hub的句柄。
 	PublicKey []byte // The wallet's public key (used for communication and identification, not signing!)
+	// PublicKey 是钱包的公钥（用于通信和识别，不用于签名！）
 
-	lock    sync.Mutex // Lock that gates access to struct fields and communication with the card
-	card    *pcsc.Card // A handle to the smartcard interface for the wallet.
-	session *Session   // The secure communication session with the card
-	log     log.Logger // Contextual logger to tag the base with its id
+	lock sync.Mutex // Lock that gates access to struct fields and communication with the card
+	// lock 是保护结构体字段和与智能卡通信访问的互斥锁
+	card *pcsc.Card // A handle to the smartcard interface for the wallet.
+	// card 是智能卡接口的句柄
+	session *Session // The secure communication session with the card
+	// session 是与智能卡的安全通信会话
+	log log.Logger // Contextual logger to tag the base with its id
+	// log 是带有ID标记的上下文日志记录器
 
 	deriveNextPaths []accounts.DerivationPath // Next derivation paths for account auto-discovery (multiple bases supported)
-	deriveNextAddrs []common.Address          // Next derived account addresses for auto-discovery (multiple bases supported)
-	deriveChain     ethereum.ChainStateReader // Blockchain state reader to discover used account with
-	deriveReq       chan chan struct{}        // Channel to request a self-derivation on
-	deriveQuit      chan chan error           // Channel to terminate the self-deriver with
+	// deriveNextPaths 是用于账户自动发现的下一个派生路径（支持多个基础路径）
+	deriveNextAddrs []common.Address // Next derived account addresses for auto-discovery (multiple bases supported)
+	// deriveNextAddrs 是用于自动发现的下一个派生账户地址（支持多个基础路径）
+	deriveChain ethereum.ChainStateReader // Blockchain state reader to discover used account with
+	// deriveChain 是用于发现已使用账户的区块链状态读取器
+	deriveReq chan chan struct{} // Channel to request a self-derivation on
+	// deriveReq 是请求自派生的通道
+	deriveQuit chan chan error // Channel to terminate the self-deriver with
+	// deriveQuit 是终止自派生器的通道
 }
 
 // NewWallet constructs and returns a new Wallet instance.
+// NewWallet 构造并返回一个新的Wallet实例。
 func NewWallet(hub *Hub, card *pcsc.Card) *Wallet {
 	wallet := &Wallet{
 		Hub:  hub,
@@ -146,6 +170,8 @@ func NewWallet(hub *Hub, card *pcsc.Card) *Wallet {
 // transmit sends an APDU to the smartcard and receives and decodes the response.
 // It automatically handles requests by the card to fetch the return data separately,
 // and returns an error if the response status code is not success.
+// transmit 向智能卡发送APDU命令并接收和解码响应。
+// 它自动处理智能卡请求单独获取返回数据的情况，并在响应状态码不成功时返回错误。
 func transmit(card *pcsc.Card, command *commandAPDU) (*responseAPDU, error) {
 	data, err := command.serialize()
 	if err != nil {
@@ -163,6 +189,7 @@ func transmit(card *pcsc.Card, command *commandAPDU) (*responseAPDU, error) {
 	}
 
 	// Are we being asked to fetch the response separately?
+	// 我们是否被要求单独获取响应？
 	if response.Sw1 == sw1GetResponse && (command.Cla != claISO7816 || command.Ins != insGetResponse) {
 		return transmit(card, &commandAPDU{
 			Cla:  claISO7816,
@@ -183,6 +210,7 @@ func transmit(card *pcsc.Card, command *commandAPDU) (*responseAPDU, error) {
 
 // applicationInfo encodes information about the smartcard application - its
 // instance UID and public key.
+// applicationInfo 编码了智能卡应用程序的信息 - 其实例UID和公钥。
 type applicationInfo struct {
 	InstanceUID []byte `asn1:"tag:15"`
 	PublicKey   []byte `asn1:"tag:0"`
@@ -190,6 +218,8 @@ type applicationInfo struct {
 
 // connect connects to the wallet application and establishes a secure channel with it.
 // must be called before any other interaction with the wallet.
+// connect 连接到钱包应用程序并与其建立安全通道。
+// 在与钱包的任何其他交互之前必须调用。
 func (w *Wallet) connect() error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -214,6 +244,7 @@ func (w *Wallet) connect() error {
 }
 
 // doselect is an internal (unlocked) function to send a SELECT APDU to the card.
+// doselect 是一个内部（未锁定的）函数，用于向智能卡发送SELECT APDU命令。
 func (w *Wallet) doselect() (*applicationInfo, error) {
 	response, err := transmit(w.card, &commandAPDU{
 		Cla:  claISO7816,
@@ -234,11 +265,13 @@ func (w *Wallet) doselect() (*applicationInfo, error) {
 }
 
 // ping checks the card's status and returns an error if unsuccessful.
+// ping 检查智能卡的状态，如果不成功则返回错误。
 func (w *Wallet) ping() error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 
 	// We can't ping if not paired
+	// 如果未配对，我们无法ping
 	if !w.session.paired() {
 		return nil
 	}
@@ -249,6 +282,7 @@ func (w *Wallet) ping() error {
 }
 
 // release releases any resources held by an open wallet instance.
+// release 释放打开的钱包实例所持有的任何资源。
 func (w *Wallet) release() error {
 	if w.session != nil {
 		return w.session.release()
@@ -258,6 +292,7 @@ func (w *Wallet) release() error {
 
 // pair is an internal (unlocked) function for establishing a new pairing
 // with the wallet.
+// pair 是一个内部（未锁定的）函数，用于与钱包建立新的配对。
 func (w *Wallet) pair(puk []byte) error {
 	if w.session.paired() {
 		return errors.New("wallet already paired")
@@ -273,6 +308,7 @@ func (w *Wallet) pair(puk []byte) error {
 }
 
 // Unpair deletes an existing wallet pairing.
+// Unpair 删除现有的钱包配对。
 func (w *Wallet) Unpair(pin []byte) error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -293,27 +329,34 @@ func (w *Wallet) Unpair(pin []byte) error {
 }
 
 // URL retrieves the canonical path under which this wallet is reachable. It is
-// user by upper layers to define a sorting order over all wallets from multiple
+// used by upper layers to define a sorting order over all wallets from multiple
 // backends.
+// URL 检索此钱包可达的规范路径。
+// 它被上层用于定义多个后端的所有钱包的排序顺序。
 func (w *Wallet) URL() accounts.URL {
 	return accounts.URL{
 		Scheme: w.Hub.scheme,
 		Path:   fmt.Sprintf("%x", w.PublicKey[1:5]), // Byte #0 isn't unique; 1:5 covers << 64K cards, bump to 1:9 for << 4M
+		// 字节 #0 不唯一；1:5 覆盖 << 64K 张卡，增加到 1:9 可覆盖 << 4M 张卡
 	}
 }
 
 // Status returns a textual status to aid the user in the current state of the
 // wallet. It also returns an error indicating any failure the wallet might have
 // encountered.
+// Status 返回文本状态以帮助用户了解钱包的当前状态。
+// 它还返回一个错误，指示钱包可能遇到的任何失败。
 func (w *Wallet) Status() (string, error) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 
 	// If the card is not paired, we can only wait
+	// 如果卡未配对，我们只能等待
 	if !w.session.paired() {
 		return "Unpaired, waiting for pairing password", nil
 	}
 	// Yay, we have an encrypted session, retrieve the actual status
+	// 我们有了一个加密会话，检索实际状态
 	status, err := w.session.walletStatus()
 	if err != nil {
 		return fmt.Sprintf("Failed: %v", err), err
@@ -343,45 +386,62 @@ func (w *Wallet) Status() (string, error) {
 //
 // Please note, if you open a wallet, you must close it to release any allocated
 // resources (especially important when working with hardware wallets).
+// Open 初始化对钱包实例的访问。它不是用于解锁或解密账户密钥，
+// 而是简单地建立与硬件钱包的连接和/或访问派生种子。
+//
+// passphrase 参数可能被特定钱包实例的实现使用，也可能不使用。
+// 没有无密码打开方法的原因是 стрем向统一的钱包处理，不受不同后端提供者的影响。
+//
+// 请注意，如果您打开一个钱包，必须关闭它以释放任何分配的资源（特别是在使用硬件钱包时尤为重要）。
 func (w *Wallet) Open(passphrase string) error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 
 	// If the session is already open, bail out
+	// 如果会话已经打开，则退出
 	if w.session.verified {
 		return ErrAlreadyOpen
 	}
 	// If the smart card is not yet paired, attempt to do so either from a previous
 	// pairing key or form the supplied PUK code.
+	// 如果智能卡尚未配对，尝试使用之前的配对密钥或提供的PUK码进行配对。
 	if !w.session.paired() {
 		// If a previous pairing exists, only ever try to use that
+		// 如果存在之前的配对，则仅尝试使用该配对
 		if pairing := w.Hub.pairing(w); pairing != nil {
 			if err := w.session.authenticate(*pairing); err != nil {
 				return fmt.Errorf("failed to authenticate card %x: %s", w.PublicKey[:4], err)
 			}
 			// Pairing still ok, fall through to PIN checks
+			// 配对仍然有效，继续进行PIN检查
 		} else {
 			// If no passphrase was supplied, request the PUK from the user
+			// 如果未提供密码，则向用户请求PUK
 			if passphrase == "" {
 				return ErrPairingPasswordNeeded
 			}
 			// Attempt to pair the smart card with the user supplied PUK
+			// 尝试使用用户提供的PUK配对智能卡
 			if err := w.pair([]byte(passphrase)); err != nil {
 				return err
 			}
 			// Pairing succeeded, fall through to PIN checks. This will of course fail,
 			// but we can't return ErrPINNeeded directly here because we don't know whether
 			// a PIN check or a PIN reset is needed.
+			// 配对成功，继续进行PIN检查。当然这会失败，
+			// 但我们不能在这里直接返回 ErrPINNeeded，因为我们不知道是需要PIN检查还是PIN重置。
 			passphrase = ""
 		}
 	}
 	// The smart card was successfully paired, retrieve its status to check whether
 	// PIN verification or unblocking is needed.
+	// 智能卡配对成功，检索其状态以检查是否需要PIN验证或解锁。
 	status, err := w.session.walletStatus()
 	if err != nil {
 		return err
 	}
 	// Request the appropriate next authentication data, or use the one supplied
+	// 请求适当的下一个认证数据，或使用提供的认证数据
 	switch {
 	case passphrase == "" && status.PinRetryCount > 0:
 		return ErrPINNeeded
@@ -405,32 +465,39 @@ func (w *Wallet) Open(passphrase string) error {
 		}
 	}
 	// Smart card paired and unlocked, initialize and register
+	// 智能卡配对并解锁，初始化并注册
 	w.deriveReq = make(chan chan struct{})
 	w.deriveQuit = make(chan chan error)
 
 	go w.selfDerive()
 
 	// Notify anyone listening for wallet events that a new device is accessible
+	// 通知监听钱包事件的任何人，一个新设备可访问
 	go w.Hub.updateFeed.Send(accounts.WalletEvent{Wallet: w, Kind: accounts.WalletOpened})
 
 	return nil
 }
 
 // Close stops and closes the wallet, freeing any resources.
+// Close 停止并关闭钱包，释放任何资源。
 func (w *Wallet) Close() error {
 	// Ensure the wallet was opened
+	// 确保钱包已打开
 	w.lock.Lock()
 	dQuit := w.deriveQuit
 	w.lock.Unlock()
 
 	// Terminate the self-derivations
+	// 终止自派生
 	var derr error
 	if dQuit != nil {
 		errc := make(chan error)
 		dQuit <- errc
 		derr = <-errc // Save for later, we *must* close the USB
+		// 保存以备后用，我们必须关闭USB
 	}
 	// Terminate the device connection
+	// 终止设备连接
 	w.lock.Lock()
 	defer w.lock.Unlock()
 
@@ -445,11 +512,13 @@ func (w *Wallet) Close() error {
 
 // selfDerive is an account derivation loop that upon request attempts to find
 // new non-zero accounts.
+// selfDerive 是一个账户派生循环，根据请求尝试找到新的非零账户。
 func (w *Wallet) selfDerive() {
 	w.log.Debug("Smart card wallet self-derivation started")
 	defer w.log.Debug("Smart card wallet self-derivation stopped")
 
 	// Execute self-derivations until termination or error
+	// 执行自派生直到终止或出错
 	var (
 		reqc chan struct{}
 		errc chan error
@@ -457,14 +526,18 @@ func (w *Wallet) selfDerive() {
 	)
 	for errc == nil && err == nil {
 		// Wait until either derivation or termination is requested
+		// 等待直到请求派生或终止
 		select {
 		case errc = <-w.deriveQuit:
 			// Termination requested
+			// 请求终止
 			continue
 		case reqc = <-w.deriveReq:
 			// Account discovery requested
+			// 请求账户发现
 		}
 		// Derivation needs a chain and device access, skip if either unavailable
+		// 派生需要区块链和设备访问，如果任一不可用则跳过
 		w.lock.Lock()
 		if w.session == nil || w.deriveChain == nil {
 			w.lock.Unlock()
@@ -474,6 +547,7 @@ func (w *Wallet) selfDerive() {
 		pairing := w.Hub.pairing(w)
 
 		// Device lock obtained, derive the next batch of accounts
+		// 获得设备锁，派生下一批账户
 		var (
 			paths   []accounts.DerivationPath
 			nextAcc accounts.Account
@@ -486,6 +560,7 @@ func (w *Wallet) selfDerive() {
 		for i := 0; i < len(nextAddrs); i++ {
 			for empty := false; !empty; {
 				// Retrieve the next derived Ethereum account
+				// 检索下一个派生的以太坊账户
 				if nextAddrs[i] == (common.Address{}) {
 					if nextAcc, err = w.session.derive(nextPaths[i]); err != nil {
 						w.log.Warn("Smartcard wallet account derivation failed", "err", err)
@@ -494,6 +569,7 @@ func (w *Wallet) selfDerive() {
 					nextAddrs[i] = nextAcc.Address
 				}
 				// Check the account's status against the current chain state
+				// 检查账户状态与当前链状态的对比
 				var (
 					balance *big.Int
 					nonce   uint64
@@ -509,6 +585,7 @@ func (w *Wallet) selfDerive() {
 					break
 				}
 				// If the next account is empty, stop self-derivation, but add for the last base path
+				// 如果下一个账户为空，则停止自派生，但为最后一个基础路径添加
 				if balance.Sign() == 0 && nonce == 0 {
 					empty = true
 					if i < len(nextAddrs)-1 {
@@ -516,17 +593,20 @@ func (w *Wallet) selfDerive() {
 					}
 				}
 				// We've just self-derived a new account, start tracking it locally
+				// 我们刚刚自派生了一个新账户，开始在本地跟踪它
 				path := make(accounts.DerivationPath, len(nextPaths[i]))
 				copy(path[:], nextPaths[i][:])
 				paths = append(paths, path)
 
 				// Display a log message to the user for new (or previously empty accounts)
+				// 为新账户（或之前为空的账户）向用户显示日志消息
 				if _, known := pairing.Accounts[nextAddrs[i]]; !known || !empty || nextAddrs[i] != w.deriveNextAddrs[i] {
 					w.log.Info("Smartcard wallet discovered new account", "address", nextAddrs[i], "path", path, "balance", balance, "nonce", nonce)
 				}
 				pairing.Accounts[nextAddrs[i]] = path
 
 				// Fetch the next potential account
+				// 获取下一个潜在账户
 				if !empty {
 					nextAddrs[i] = common.Address{}
 					nextPaths[i][len(nextPaths[i])-1]++
@@ -534,28 +614,35 @@ func (w *Wallet) selfDerive() {
 			}
 		}
 		// If there are new accounts, write them out
+		// 如果有新账户，则写入它们
 		if len(paths) > 0 {
 			err = w.Hub.setPairing(w, pairing)
 		}
 		// Shift the self-derivation forward
+		// 将自派生向前推进
 		w.deriveNextAddrs = nextAddrs
 		w.deriveNextPaths = nextPaths
 
 		// Self derivation complete, release device lock
+		// 自派生完成，释放设备锁
 		w.lock.Unlock()
 
 		// Notify the user of termination and loop after a bit of time (to avoid trashing)
+		// 通知用户终止，并在一段时间后循环（以避免过度操作）
 		reqc <- struct{}{}
 		if err == nil {
 			select {
 			case errc = <-w.deriveQuit:
 				// Termination requested, abort
+				// 请求终止，中止
 			case <-time.After(selfDeriveThrottling):
 				// Waited enough, willing to self-derive again
+				// 等待足够时间，愿意再次自派生
 			}
 		}
 	}
 	// In case of error, wait for termination
+	// 如果出错，等待终止
 	if err != nil {
 		w.log.Debug("Smartcard wallet self-derivation failed", "err", err)
 		errc = <-w.deriveQuit
@@ -566,15 +653,20 @@ func (w *Wallet) selfDerive() {
 // Accounts retrieves the list of signing accounts the wallet is currently aware
 // of. For hierarchical deterministic wallets, the list will not be exhaustive,
 // rather only contain the accounts explicitly pinned during account derivation.
+// Accounts 检索钱包当前已知的签名账户列表。
+// 对于分层确定性钱包，列表不会是详尽的，而只包含在账户派生期间明确固定的账户。
 func (w *Wallet) Accounts() []accounts.Account {
 	// Attempt self-derivation if it's running
+	// 如果自派生正在运行，则尝试自派生
 	reqc := make(chan struct{}, 1)
 	select {
 	case w.deriveReq <- reqc:
 		// Self-derivation request accepted, wait for it
+		// 自派生请求被接受，等待它
 		<-reqc
 	default:
 		// Self-derivation offline, throttled or busy, skip
+		// 自派生离线、受限或忙碌，跳过
 	}
 
 	w.lock.Lock()
@@ -602,6 +694,7 @@ func (w *Wallet) makeAccount(address common.Address, path accounts.DerivationPat
 }
 
 // Contains returns whether an account is part of this particular wallet or not.
+// Contains 返回指定账户是否属于此特定钱包。
 func (w *Wallet) Contains(account accounts.Account) bool {
 	if pairing := w.Hub.pairing(w); pairing != nil {
 		_, ok := pairing.Accounts[account.Address]
@@ -611,16 +704,20 @@ func (w *Wallet) Contains(account accounts.Account) bool {
 }
 
 // Initialize installs a keypair generated from the provided key into the wallet.
+// Initialize 将从提供的密钥生成的关键对安装到钱包中。
 func (w *Wallet) Initialize(seed []byte) error {
 	go w.selfDerive()
 	// DO NOT lock at this stage, as the initialize
 	// function relies on Status()
+	// 在此阶段不要锁定，因为 initialize 函数依赖于 Status()
 	return w.session.initialize(seed)
 }
 
 // Derive attempts to explicitly derive a hierarchical deterministic account at
 // the specified derivation path. If requested, the derived account will be added
 // to the wallet's tracked account list.
+// Derive 尝试在指定的派生路径上显式派生一个分层确定性账户。
+// 如果请求，派生的账户将被添加到钱包的跟踪账户列表中。
 func (w *Wallet) Derive(path accounts.DerivationPath, pin bool) (accounts.Account, error) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -655,6 +752,14 @@ func (w *Wallet) Derive(path accounts.DerivationPath, pin bool) (accounts.Accoun
 //
 // You can disable automatic account discovery by calling SelfDerive with a nil
 // chain state reader.
+// SelfDerive 设置一个基础账户派生路径，钱包尝试从中发现非零账户并自动将它们添加到跟踪账户列表中。
+//
+// 注意，自派生将增加指定路径的最后一个组件，而不是下降到子路径，以允许从非零组件开始发现账户。
+//
+// 一些硬件钱包在其演变过程中切换了派生路径，因此此方法支持提供多个基础路径以发现旧用户账户。
+// 只有最后一个基础路径将用于派生下一个空账户。
+//
+// 您可以通过使用 nil 链状态读取器调用 SelfDerive 来禁用自动账户发现。
 func (w *Wallet) SelfDerive(bases []accounts.DerivationPath, chain ethereum.ChainStateReader) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -679,6 +784,13 @@ func (w *Wallet) SelfDerive(bases []accounts.DerivationPath, chain ethereum.Chai
 // about which fields or actions are needed. The user may retry by providing
 // the needed details via SignDataWithPassphrase, or by other means (e.g. unlock
 // the account in a keystore).
+// SignData 请求钱包对给定数据的哈希进行签名。
+//
+// 它通过包含的地址单独查找指定的账户，或者可选地借助嵌入式URL字段中的任何位置元数据。
+//
+// 如果钱包需要额外的认证来签名请求（例如密码解密账户，或PIN码验证交易），
+// 将返回一个 AuthNeededError 实例，其中包含用户需要哪些字段或操作的信息。
+// 用户可以通过 SignDataWithPassphrase 提供所需细节重试，或者通过其他方式（例如在密钥库中解锁账户）。
 func (w *Wallet) SignData(account accounts.Account, mimeType string, data []byte) ([]byte, error) {
 	return w.signHash(account, crypto.Keccak256(data))
 }
@@ -706,6 +818,13 @@ func (w *Wallet) signHash(account accounts.Account, hash []byte) ([]byte, error)
 // about which fields or actions are needed. The user may retry by providing
 // the needed details via SignTxWithPassphrase, or by other means (e.g. unlock
 // the account in a keystore).
+// SignTx 请求钱包对给定的交易进行签名。
+//
+// 它通过包含的地址单独查找指定的账户，或者可选地借助嵌入式URL字段中的任何位置元数据。
+//
+// 如果钱包需要额外的认证来签名请求（例如密码解密账户，或PIN码验证交易），
+// 将返回一个 AuthNeededError 实例，其中包含用户需要哪些字段或操作的信息。
+// 用户可以通过 SignTxWithPassphrase 提供所需细节重试，或者通过其他方式（例如在密钥库中解锁账户）。
 func (w *Wallet) SignTx(account accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
 	signer := types.LatestSignerForChainID(chainID)
 	hash := signer.Hash(tx)
@@ -721,6 +840,9 @@ func (w *Wallet) SignTx(account accounts.Account, tx *types.Transaction, chainID
 //
 // It looks up the account specified either solely via its address contained within,
 // or optionally with the aid of any location metadata from the embedded URL field.
+// SignDataWithPassphrase 请求钱包使用给定的密码作为额外认证信息对给定数据的哈希进行签名。
+//
+// 它通过包含的地址单独查找指定的账户，或者可选地借助嵌入式URL字段中的任何位置元数据。
 func (w *Wallet) SignDataWithPassphrase(account accounts.Account, passphrase, mimeType string, data []byte) ([]byte, error) {
 	return w.signHashWithPassphrase(account, passphrase, crypto.Keccak256(data))
 }
@@ -746,12 +868,19 @@ func (w *Wallet) signHashWithPassphrase(account accounts.Account, passphrase str
 // about which fields or actions are needed. The user may retry by providing
 // the needed details via SignHashWithPassphrase, or by other means (e.g. unlock
 // the account in a keystore).
+// SignText 请求钱包对给定数据的哈希进行签名，使用以太坊前缀方案。
+// 它通过包含的地址单独查找指定的账户，或者可选地借助嵌入式URL字段中的任何位置元数据。
+//
+// 如果钱包需要额外的认证来签名请求（例如密码解密账户，或PIN码验证交易），
+// 将返回一个 AuthNeededError 实例，其中包含用户需要哪些字段或操作的信息。
+// 用户可以通过 SignHashWithPassphrase 提供所需细节重试，或者通过其他方式（例如在密钥库中解锁账户）。
 func (w *Wallet) SignText(account accounts.Account, text []byte) ([]byte, error) {
 	return w.signHash(account, accounts.TextHash(text))
 }
 
 // SignTextWithPassphrase implements accounts.Wallet, attempting to sign the
 // given hash with the given account using passphrase as extra authentication
+// SignTextWithPassphrase 实现了 accounts.Wallet，尝试使用给定的账户和密码对给定文本的哈希进行签名。
 func (w *Wallet) SignTextWithPassphrase(account accounts.Account, passphrase string, text []byte) ([]byte, error) {
 	return w.signHashWithPassphrase(account, passphrase, crypto.Keccak256(accounts.TextHash(text)))
 }
@@ -761,6 +890,9 @@ func (w *Wallet) SignTextWithPassphrase(account accounts.Account, passphrase str
 //
 // It looks up the account specified either solely via its address contained within,
 // or optionally with the aid of any location metadata from the embedded URL field.
+// SignTxWithPassphrase 请求钱包使用给定的密码作为额外认证信息对给定的交易进行签名。
+//
+// 它通过包含的地址单独查找指定的账户，或者可选地借助嵌入式URL字段中的任何位置元数据。
 func (w *Wallet) SignTxWithPassphrase(account accounts.Account, passphrase string, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
 	if !w.session.verified {
 		if err := w.Open(passphrase); err != nil {
@@ -773,6 +905,8 @@ func (w *Wallet) SignTxWithPassphrase(account accounts.Account, passphrase strin
 // findAccountPath returns the derivation path for the provided account.
 // It first checks for the address in the list of pinned accounts, and if it is
 // not found, attempts to parse the derivation path from the account's URL.
+// findAccountPath 返回提供的账户的派生路径。
+// 它首先在固定的账户列表中检查地址，如果未找到，则尝试从账户的URL解析派生路径。
 func (w *Wallet) findAccountPath(account accounts.Account) (accounts.DerivationPath, error) {
 	pairing := w.Hub.pairing(w)
 	if path, ok := pairing.Accounts[account.Address]; ok {
@@ -780,6 +914,7 @@ func (w *Wallet) findAccountPath(account accounts.Account) (accounts.DerivationP
 	}
 
 	// Look for the path in the URL
+	// 在URL中查找路径
 	if account.URL.Scheme != w.Hub.scheme {
 		return nil, fmt.Errorf("scheme %s does not match wallet scheme %s", account.URL.Scheme, w.Hub.scheme)
 	}
@@ -797,13 +932,18 @@ func (w *Wallet) findAccountPath(account accounts.Account) (accounts.DerivationP
 }
 
 // Session represents a secured communication session with the wallet.
+// Session 表示与钱包的安全通信会话。
 type Session struct {
-	Wallet   *Wallet               // A handle to the wallet that opened the session
-	Channel  *SecureChannelSession // A secure channel for encrypted messages
-	verified bool                  // Whether the pin has been verified in this session.
+	Wallet *Wallet // A handle to the wallet that opened the session
+	// Wallet 是打开会话的钱包的句柄
+	Channel *SecureChannelSession // A secure channel for encrypted messages
+	// Channel 是用于加密消息的安全通道
+	verified bool // Whether the pin has been verified in this session.
+	// verified 表示此会话中是否已验证PIN。
 }
 
 // pair establishes a new pairing over this channel, using the provided secret.
+// pair 在此通道上使用提供的密钥建立新的配对。
 func (s *Session) pair(secret []byte) (smartcardPairing, error) {
 	err := s.Channel.Pair(secret)
 	if err != nil {
@@ -819,6 +959,7 @@ func (s *Session) pair(secret []byte) (smartcardPairing, error) {
 }
 
 // unpair deletes an existing pairing.
+// unpair 删除现有的配对。
 func (s *Session) unpair() error {
 	if !s.verified {
 		return errors.New("unpair requires that the PIN be verified")
@@ -827,6 +968,7 @@ func (s *Session) unpair() error {
 }
 
 // verifyPin unlocks a wallet with the provided pin.
+// verifyPin 使用提供的PIN解锁钱包。
 func (s *Session) verifyPin(pin []byte) error {
 	if _, err := s.Channel.transmitEncrypted(claSCWallet, insVerifyPin, 0, 0, pin); err != nil {
 		return err
@@ -837,6 +979,7 @@ func (s *Session) verifyPin(pin []byte) error {
 
 // unblockPin unblocks a wallet with the provided puk and resets the pin to the
 // new one specified.
+// unblockPin 使用提供的PUK解锁钱包并将PIN重置为指定的新PIN。
 func (s *Session) unblockPin(pukpin []byte) error {
 	if _, err := s.Channel.transmitEncrypted(claSCWallet, insUnblockPin, 0, 0, pukpin); err != nil {
 		return err
@@ -846,16 +989,19 @@ func (s *Session) unblockPin(pukpin []byte) error {
 }
 
 // release releases resources associated with the channel.
+// release 释放与通道相关的资源。
 func (s *Session) release() error {
 	return s.Wallet.card.Disconnect(pcsc.LeaveCard)
 }
 
 // paired returns true if a valid pairing exists.
+// paired 如果存在有效配对则返回true。
 func (s *Session) paired() bool {
 	return s.Channel.PairingKey != nil
 }
 
 // authenticate uses an existing pairing to establish a secure channel.
+// authenticate 使用现有的配对建立安全通道。
 func (s *Session) authenticate(pairing smartcardPairing) error {
 	if !bytes.Equal(s.Wallet.PublicKey, pairing.PublicKey) {
 		return fmt.Errorf("cannot pair using another wallet's pairing; %x != %x", s.Wallet.PublicKey, pairing.PublicKey)
@@ -866,13 +1012,18 @@ func (s *Session) authenticate(pairing smartcardPairing) error {
 }
 
 // walletStatus describes a smartcard wallet's status information.
+// walletStatus 描述智能卡钱包的状态信息。
 type walletStatus struct {
-	PinRetryCount int  // Number of remaining PIN retries
-	PukRetryCount int  // Number of remaining PUK retries
-	Initialized   bool // Whether the card has been initialized with a private key
+	PinRetryCount int // Number of remaining PIN retries
+	// PinRetryCount 剩余的PIN重试次数
+	PukRetryCount int // Number of remaining PUK retries
+	// PukRetryCount 剩余的PUK重试次数
+	Initialized bool // Whether the card has been initialized with a private key
+	// Initialized 卡是否已用私钥初始化
 }
 
 // walletStatus fetches the wallet's status from the card.
+// walletStatus 从智能卡获取钱包的状态。
 func (s *Session) walletStatus() (*walletStatus, error) {
 	response, err := s.Channel.transmitEncrypted(claSCWallet, insStatus, statusP1WalletStatus, 0, nil)
 	if err != nil {
@@ -888,6 +1039,8 @@ func (s *Session) walletStatus() (*walletStatus, error) {
 
 // derivationPath fetches the wallet's current derivation path from the card.
 //
+// derivationPath 从智能卡获取钱包的当前派生路径。
+//
 //lint:ignore U1000 needs to be added to the console interface
 func (s *Session) derivationPath() (accounts.DerivationPath, error) {
 	response, err := s.Channel.transmitEncrypted(claSCWallet, insStatus, statusP1Path, 0, nil)
@@ -900,6 +1053,7 @@ func (s *Session) derivationPath() (accounts.DerivationPath, error) {
 }
 
 // initializeData contains data needed to initialize the smartcard wallet.
+// initializeData 包含初始化智能卡钱包所需的数据。
 type initializeData struct {
 	PublicKey  []byte `asn1:"tag:0"`
 	PrivateKey []byte `asn1:"tag:1"`
@@ -907,9 +1061,11 @@ type initializeData struct {
 }
 
 // initialize initializes the card with new key data.
+// initialize 使用新的密钥数据初始化智能卡。
 func (s *Session) initialize(seed []byte) error {
 	// Check that the wallet isn't currently initialized,
 	// otherwise the key would be overwritten.
+	// 检查钱包当前是否已初始化，否则密钥将被覆盖。
 	status, err := s.Wallet.Status()
 	if err != nil {
 		return err
@@ -922,6 +1078,7 @@ func (s *Session) initialize(seed []byte) error {
 	defer s.Wallet.lock.Unlock()
 
 	// HMAC the seed to produce the private key and chain code
+	// 使用HMAC处理种子以生成私钥和链码
 	mac := hmac.New(sha512.New, []byte("Bitcoin seed"))
 	mac.Write(seed)
 	seed = mac.Sum(nil)
@@ -941,6 +1098,7 @@ func (s *Session) initialize(seed []byte) error {
 	}
 
 	// Nasty hack to force the top-level struct tag to be context-specific
+	// 强制顶级结构体标签为上下文特定的hack
 	data[0] = 0xA1
 
 	_, err = s.Channel.transmitEncrypted(claSCWallet, insLoadKey, 0x02, 0, data)
@@ -948,6 +1106,7 @@ func (s *Session) initialize(seed []byte) error {
 }
 
 // derive derives a new HD key path on the card.
+// derive 在智能卡上派生一个新的HD密钥路径。
 func (s *Session) derive(path accounts.DerivationPath) (accounts.Account, error) {
 	startingPoint, path, err := derivationpath.Decode(path.String())
 	if err != nil {
@@ -1004,6 +1163,8 @@ func (s *Session) derive(path accounts.DerivationPath) (accounts.Account, error)
 
 // keyExport contains information on an exported keypair.
 //
+// keyExport 包含导出的密钥对的信息。
+//
 //lint:ignore U1000 needs to be added to the console interface
 type keyExport struct {
 	PublicKey  []byte `asn1:"tag:0"`
@@ -1011,6 +1172,8 @@ type keyExport struct {
 }
 
 // publicKey returns the public key for the current derivation path.
+//
+// publicKey 返回当前派生路径的公钥。
 //
 //lint:ignore U1000 needs to be added to the console interface
 func (s *Session) publicKey() ([]byte, error) {
@@ -1027,6 +1190,7 @@ func (s *Session) publicKey() ([]byte, error) {
 
 // signatureData contains information on a signature - the signature itself and
 // the corresponding public key.
+// signatureData 包含签名的信息 - 签名本身和对应的公钥。
 type signatureData struct {
 	PublicKey []byte `asn1:"tag:0"`
 	Signature struct {
@@ -1037,6 +1201,7 @@ type signatureData struct {
 
 // sign asks the card to sign a message, and returns a valid signature after
 // recovering the v value.
+// sign 请求智能卡对消息进行签名，并在恢复v值后返回有效的签名。
 func (s *Session) sign(path accounts.DerivationPath, hash []byte) ([]byte, error) {
 	startTime := time.Now()
 	_, err := s.derive(path)
@@ -1054,12 +1219,14 @@ func (s *Session) sign(path accounts.DerivationPath, hash []byte) ([]byte, error
 		return nil, err
 	}
 	// Serialize the signature
+	// 序列化签名
 	rbytes, sbytes := sigdata.Signature.R.Bytes(), sigdata.Signature.S.Bytes()
 	sig := make([]byte, 65)
 	copy(sig[32-len(rbytes):32], rbytes)
 	copy(sig[64-len(sbytes):64], sbytes)
 
 	// Recover the V value.
+	// 恢复V值。
 	sig, err = makeRecoverableSignature(hash, sig, sigdata.PublicKey)
 	if err != nil {
 		return nil, err
@@ -1070,6 +1237,7 @@ func (s *Session) sign(path accounts.DerivationPath, hash []byte) ([]byte, error
 }
 
 // confirmPublicKey confirms that the given signature belongs to the specified key.
+// confirmPublicKey 确认给定的签名属于指定的密钥。
 func confirmPublicKey(sig, pubkey []byte) error {
 	_, err := makeRecoverableSignature(DerivationSignatureHash[:], sig, pubkey)
 	return err
@@ -1077,6 +1245,7 @@ func confirmPublicKey(sig, pubkey []byte) error {
 
 // makeRecoverableSignature uses a signature and an expected public key to
 // recover the v value and produce a recoverable signature.
+// makeRecoverableSignature 使用签名和预期的公钥恢复v值并生成可恢复的签名。
 func makeRecoverableSignature(hash, sig, expectedPubkey []byte) ([]byte, error) {
 	var libraryError error
 	for v := 0; v < 2; v++ {
