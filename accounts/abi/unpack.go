@@ -29,12 +29,15 @@ import (
 
 var (
 	// MaxUint256 is the maximum value that can be represented by a uint256.
+	// MaxUint256 是 uint256 可以表示的最大值。
 	MaxUint256 = new(big.Int).Sub(new(big.Int).Lsh(common.Big1, 256), common.Big1)
 	// MaxInt256 is the maximum value that can be represented by a int256.
+	// MaxInt256 是 int256 可以表示的最大值。
 	MaxInt256 = new(big.Int).Sub(new(big.Int).Lsh(common.Big1, 255), common.Big1)
 )
 
 // ReadInteger reads the integer based on its kind and returns the appropriate value.
+// ReadInteger 根据整数类型读取整数并返回适当的值。
 func ReadInteger(typ Type, b []byte) (interface{}, error) {
 	ret := new(big.Int).SetBytes(b)
 
@@ -63,6 +66,7 @@ func ReadInteger(typ Type, b []byte) (interface{}, error) {
 			return u64, nil
 		default:
 			// the only case left for unsigned integer is uint256.
+			// 对于无符号整数，唯一剩下的情况是 uint256。
 			return ret, nil
 		}
 	}
@@ -70,6 +74,9 @@ func ReadInteger(typ Type, b []byte) (interface{}, error) {
 	// big.SetBytes can't tell if a number is negative or positive in itself.
 	// On EVM, if the returned number > max int256, it is negative.
 	// A number is > max int256 if the bit at position 255 is set.
+	// big.SetBytes 本身无法判断数字是正数还是负数。
+	// 在 EVM 上，如果返回的数字 > max int256，则为负数。
+	// 如果第 255 位被置位，则数字 > max int256。
 	if ret.Bit(255) == 1 {
 		ret.Add(MaxUint256, new(big.Int).Neg(ret))
 		ret.Add(ret, common.Big1)
@@ -99,12 +106,13 @@ func ReadInteger(typ Type, b []byte) (interface{}, error) {
 		return i64, nil
 	default:
 		// the only case left for integer is int256
-
+		// 对于整数，唯一剩下的情况是 int256
 		return ret, nil
 	}
 }
 
 // readBool reads a bool.
+// readBool 读取布尔值。
 func readBool(word []byte) (bool, error) {
 	for _, b := range word[:31] {
 		if b != 0 {
@@ -124,6 +132,9 @@ func readBool(word []byte) (bool, error) {
 // A function type is simply the address with the function selection signature at the end.
 //
 // readFunctionType enforces that standard by always presenting it as a 24-array (address + sig = 24 bytes)
+// 函数类型仅仅是地址后面跟有函数选择签名。
+//
+// readFunctionType 通过始终将其表示为 24 字节数组（地址 + 签名 = 24 字节）来强制执行该标准。
 func readFunctionType(t Type, word []byte) (funcTy [24]byte, err error) {
 	if t.T != FunctionTy {
 		return [24]byte{}, errors.New("abi: invalid type in call to make function type byte array")
@@ -137,6 +148,7 @@ func readFunctionType(t Type, word []byte) (funcTy [24]byte, err error) {
 }
 
 // ReadFixedBytes uses reflection to create a fixed array to be read from.
+// ReadFixedBytes 使用反射创建一个要读取的固定数组。
 func ReadFixedBytes(t Type, word []byte) (interface{}, error) {
 	if t.T != FixedBytesTy {
 		return nil, errors.New("abi: invalid type in call to make fixed byte array")
@@ -149,6 +161,7 @@ func ReadFixedBytes(t Type, word []byte) (interface{}, error) {
 }
 
 // forEachUnpack iteratively unpack elements.
+// forEachUnpack 迭代解包元素。
 func forEachUnpack(t Type, output []byte, start, size int) (interface{}, error) {
 	if size < 0 {
 		return nil, fmt.Errorf("cannot marshal input to array, size is negative (%d)", size)
@@ -158,14 +171,17 @@ func forEachUnpack(t Type, output []byte, start, size int) (interface{}, error) 
 	}
 
 	// this value will become our slice or our array, depending on the type
+	// 这个值将根据类型成为我们的切片或数组
 	var refSlice reflect.Value
 
 	switch t.T {
 	case SliceTy:
 		// declare our slice
+		// 声明我们的切片
 		refSlice = reflect.MakeSlice(t.GetType(), size, size)
 	case ArrayTy:
 		// declare our array
+		// 声明我们的数组
 		refSlice = reflect.New(t.GetType()).Elem()
 	default:
 		return nil, errors.New("abi: invalid type in array/slice unpacking stage")
@@ -173,6 +189,8 @@ func forEachUnpack(t Type, output []byte, start, size int) (interface{}, error) 
 
 	// Arrays have packed elements, resulting in longer unpack steps.
 	// Slices have just 32 bytes per element (pointing to the contents).
+	// 数组具有打包的元素，导致解包步骤更长。
+	// 切片每个元素只有 32 字节（指向内容）。
 	elemSize := getTypeSize(*t.Elem)
 
 	for i, j := start, 0; j < size; i, j = i+elemSize, j+1 {
@@ -182,10 +200,12 @@ func forEachUnpack(t Type, output []byte, start, size int) (interface{}, error) 
 		}
 
 		// append the item to our reflect slice
+		// 将项追加到我们的反射切片中
 		refSlice.Index(j).Set(reflect.ValueOf(inter))
 	}
 
 	// return the interface
+	// 返回接口
 	return refSlice.Interface(), nil
 }
 
@@ -208,10 +228,21 @@ func forTupleUnpack(t Type, output []byte) (interface{}, error) {
 			//
 			// Calculate the full array size to get the correct offset for the next argument.
 			// Decrement it by 1, as the normal index increment is still applied.
+			// 如果我们有一个静态数组，如 [3]uint256，这些被编码为
+			// 就像 uint256,uint256,uint256。
+			// 这意味着从现在起我们需要添加两个“虚拟”参数来计算索引。
+			//
+			// 多层嵌套的数组值也被内联编码：
+			// [2][3]uint256: uint256,uint256,uint256,uint256,uint256,uint256
+			//
+			// 计算完整数组大小以获取下一个参数的正确偏移量。
+			// 减去 1，因为正常的索引增量仍然适用。
 			virtualArgs += getTypeSize(*elem)/32 - 1
 		} else if elem.T == TupleTy && !isDynamicType(*elem) {
 			// If we have a static tuple, like (uint256, bool, uint256), these are
 			// coded as just like uint256,bool,uint256
+			// 如果我们有一个静态元组，如 (uint256, bool, uint256)，这些被编码为
+			// 就像 uint256,bool,uint256
 			virtualArgs += getTypeSize(*elem)/32 - 1
 		}
 		retval.Field(index).Set(reflect.ValueOf(marshalledValue))
@@ -221,6 +252,7 @@ func forTupleUnpack(t Type, output []byte) (interface{}, error) {
 
 // toGoType parses the output bytes and recursively assigns the value of these bytes
 // into a go type with accordance with the ABI spec.
+// toGoType 解析输出字节并根据 ABI 规范递归地将这些字节的值分配到 Go 类型中。
 func toGoType(index int, t Type, output []byte) (interface{}, error) {
 	if index+32 > len(output) {
 		return nil, fmt.Errorf("abi: cannot marshal in to go type: length insufficient %d require %d", len(output), index+32)
@@ -233,6 +265,7 @@ func toGoType(index int, t Type, output []byte) (interface{}, error) {
 	)
 
 	// if we require a length prefix, find the beginning word and size returned.
+	// 如果我们需要长度前缀，找到返回的起始单词和大小。
 	if t.requiresLengthPrefix() {
 		begin, length, err = lengthPrefixPointsTo(index, output)
 		if err != nil {
@@ -264,6 +297,7 @@ func toGoType(index int, t Type, output []byte) (interface{}, error) {
 		}
 		return forEachUnpack(t, output[index:], 0, t.Size)
 	case StringTy: // variable arrays are written at the end of the return bytes
+		// 变量数组被写入返回字节的末尾
 		return string(output[begin : begin+length]), nil
 	case IntTy, UintTy:
 		return ReadInteger(t, returnOutput)
@@ -285,6 +319,7 @@ func toGoType(index int, t Type, output []byte) (interface{}, error) {
 }
 
 // lengthPrefixPointsTo interprets a 32 byte slice as an offset and then determines which indices to look to decode the type.
+// lengthPrefixPointsTo 将 32 字节切片解释为偏移量，然后确定要查看哪些索引来解码类型。
 func lengthPrefixPointsTo(index int, output []byte) (start int, length int, err error) {
 	bigOffsetEnd := new(big.Int).SetBytes(output[index : index+32])
 	bigOffsetEnd.Add(bigOffsetEnd, common.Big32)
@@ -315,6 +350,7 @@ func lengthPrefixPointsTo(index int, output []byte) (start int, length int, err 
 }
 
 // tuplePointsTo resolves the location reference for dynamic tuple.
+// tuplePointsTo 解析动态元组的位置引用。
 func tuplePointsTo(index int, output []byte) (start int, err error) {
 	offset := new(big.Int).SetBytes(output[index : index+32])
 	outputLen := big.NewInt(int64(len(output)))

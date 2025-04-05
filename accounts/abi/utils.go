@@ -29,12 +29,25 @@ import "fmt"
 //
 // Name conflicts are mostly resolved by adding number suffix. e.g. if the abi contains
 // Methods "send" and "send1", ResolveNameConflict would return "send2" for input "send".
+// ResolveNameConflict 返回给定事物的下一个可用名称。
+// 该辅助函数可用于多种目的：
+//
+//   - 在 Solidity 中支持函数重载，此函数可以解决重载函数的名称冲突问题。
+//   - 在生成 Go 语言绑定时，参数（在函数、事件、错误和结构体定义中）名称会被转换为驼峰命名风格，
+//     这可能会导致名称冲突。
+//
+// 名称冲突通常通过添加数字后缀来解决。例如，如果 ABI 包含方法 "send" 和 "send1"，
+// ResolveNameConflict 对于输入 "send" 将返回 "send2"。
 func ResolveNameConflict(rawName string, used func(string) bool) string {
+	// 初始化名称为原始名称
 	name := rawName
+	// 检查当前名称是否已被使用
 	ok := used(name)
+	// 如果名称已被使用，则循环添加数字后缀，直到找到未使用的名称
 	for idx := 0; ok; idx++ {
 		name = fmt.Sprintf("%s%d", rawName, idx)
 		ok = used(name)
 	}
+	// 返回最终可用的名称
 	return name
 }

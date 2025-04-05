@@ -24,12 +24,26 @@ import (
 	"strings"
 )
 
+// ABI（Application Binary Interface） ：
+// ABI 是以太坊智能合约的二进制接口规范，用于定义函数签名、参数编码和返回值解码规则。
+// 参数编码遵循固定宽度（32 字节对齐）和动态偏移量规则。
+// 静态类型与动态类型 ：
+// 静态类型（如 uint256、bool）在编码时占用固定长度。
+// 动态类型（如 string、bytes）在编码时包含偏移量和实际内容。
+// 元组（Tuple） ：
+// 元组是多个值的集合，编码时按顺序排列。
+// 静态元组直接编码为连续的值，动态元组则包含偏移量。
+// 索引参数（Indexed Parameters） ：
+// 索引参数仅适用于事件日志，用于优化日志查询。
+// 索引参数不会出现在事件数据中，而是作为主题（topics）存储。
+
 // Argument holds the name of the argument and the corresponding type.
 // Types are used when packing and testing arguments.
+// Argument 结构体保存参数的名称和对应的类型。这些类型在打包和测试参数时使用。
 type Argument struct {
 	Name    string
 	Type    Type
-	Indexed bool // indexed is only used by events
+	Indexed bool // indexed is only used by events (仅适用于事件)
 }
 
 type Arguments []Argument
@@ -43,6 +57,7 @@ type ArgumentMarshaling struct {
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
+// UnmarshalJSON 方法实现了 json.Unmarshaler 接口。
 func (argument *Argument) UnmarshalJSON(data []byte) error {
 	var arg ArgumentMarshaling
 	err := json.Unmarshal(data, &arg)
@@ -50,6 +65,7 @@ func (argument *Argument) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("argument json err: %v", err)
 	}
 
+	// 使用 NewType 方法解析参数类型。
 	argument.Type, err = NewType(arg.Type, arg.InternalType, arg.Components)
 	if err != nil {
 		return err
@@ -61,6 +77,7 @@ func (argument *Argument) UnmarshalJSON(data []byte) error {
 }
 
 // NonIndexed returns the arguments with indexed arguments filtered out.
+// NonIndexed 方法返回过滤掉索引参数后的参数列表。
 func (arguments Arguments) NonIndexed() Arguments {
 	var ret []Argument
 	for _, arg := range arguments {
@@ -72,11 +89,13 @@ func (arguments Arguments) NonIndexed() Arguments {
 }
 
 // isTuple returns true for non-atomic constructs, like (uint,uint) or uint[].
+// isTuple 方法判断参数列表是否表示非原子结构（如元组或数组）。
 func (arguments Arguments) isTuple() bool {
 	return len(arguments) > 1
 }
 
 // Unpack performs the operation hexdata -> Go format.
+// Unpack 方法将 ABI 编码的十六进制数据解包为 Go 格式。
 func (arguments Arguments) Unpack(data []byte) ([]interface{}, error) {
 	if len(data) == 0 {
 		if len(arguments.NonIndexed()) != 0 {
@@ -88,8 +107,9 @@ func (arguments Arguments) Unpack(data []byte) ([]interface{}, error) {
 }
 
 // UnpackIntoMap performs the operation hexdata -> mapping of argument name to argument value.
+// UnpackIntoMap 方法将 ABI 编码的十六进制数据解包为参数名到参数值的映射。
 func (arguments Arguments) UnpackIntoMap(v map[string]interface{}, data []byte) error {
-	// Make sure map is not nil
+	// Make sure map is not nil 确保目标映射不为空。
 	if v == nil {
 		return errors.New("abi: cannot unpack into a nil map")
 	}
@@ -97,7 +117,7 @@ func (arguments Arguments) UnpackIntoMap(v map[string]interface{}, data []byte) 
 		if len(arguments.NonIndexed()) != 0 {
 			return errors.New("abi: attempting to unmarshal an empty string while arguments are expected")
 		}
-		return nil // Nothing to unmarshal, return
+		return nil // Nothing to unmarshal, return 没有需要解包的数据，直接返回。
 	}
 	marshalledValues, err := arguments.UnpackValues(data)
 	if err != nil {
@@ -110,8 +130,9 @@ func (arguments Arguments) UnpackIntoMap(v map[string]interface{}, data []byte) 
 }
 
 // Copy performs the operation go format -> provided struct.
+// Copy 方法将 Go 格式的参数复制到提供的结构体中。
 func (arguments Arguments) Copy(v interface{}, values []interface{}) error {
-	// make sure the passed value is arguments pointer
+	// make sure the passed value is arguments pointer 确保传入的值是指针类型。
 	if reflect.Ptr != reflect.ValueOf(v).Kind() {
 		return fmt.Errorf("abi: Unpack(non-pointer %T)", v)
 	}
@@ -119,7 +140,7 @@ func (arguments Arguments) Copy(v interface{}, values []interface{}) error {
 		if len(arguments.NonIndexed()) != 0 {
 			return errors.New("abi: attempting to copy no values while arguments are expected")
 		}
-		return nil // Nothing to copy, return
+		return nil // Nothing to copy, return 没有需要复制的值，直接返回。
 	}
 	if arguments.isTuple() {
 		return arguments.copyTuple(v, values)
@@ -127,7 +148,8 @@ func (arguments Arguments) Copy(v interface{}, values []interface{}) error {
 	return arguments.copyAtomic(v, values[0])
 }
 
-// copyAtomic copies ( hexdata -> go ) a single value
+// copyAtomic copies (hexdata -> go) a single value.
+// copyAtomic 方法将单个值从 ABI 编码格式转换为 Go 格式。
 func (arguments Arguments) copyAtomic(v interface{}, marshalledValues interface{}) error {
 	dst := reflect.ValueOf(v).Elem()
 	src := reflect.ValueOf(marshalledValues)
@@ -139,6 +161,7 @@ func (arguments Arguments) copyAtomic(v interface{}, marshalledValues interface{
 }
 
 // copyTuple copies a batch of values from marshalledValues to v.
+// copyTuple 方法将一组值从 ABI 编码格式转换为 Go 格式并复制到目标结构体中。
 func (arguments Arguments) copyTuple(v interface{}, marshalledValues []interface{}) error {
 	value := reflect.ValueOf(v).Elem()
 	nonIndexedArgs := arguments.NonIndexed()
@@ -181,6 +204,7 @@ func (arguments Arguments) copyTuple(v interface{}, marshalledValues []interface
 // UnpackValues can be used to unpack ABI-encoded hexdata according to the ABI-specification,
 // without supplying a struct to unpack into. Instead, this method returns a list containing the
 // values. An atomic argument will be a list with one element.
+// UnpackValues 方法根据 ABI 规范解包 ABI 编码的十六进制数据，无需提供目标结构体。相反，该方法返回一个包含解包值的列表。
 func (arguments Arguments) UnpackValues(data []byte) ([]interface{}, error) {
 	nonIndexedArgs := arguments.NonIndexed()
 	retval := make([]interface{}, 0, len(nonIndexedArgs))
@@ -214,22 +238,25 @@ func (arguments Arguments) UnpackValues(data []byte) ([]interface{}, error) {
 
 // PackValues performs the operation Go format -> Hexdata.
 // It is the semantic opposite of UnpackValues.
+// PackValues 方法将 Go 格式的参数打包为 ABI 编码的十六进制数据。它是 UnpackValues 的语义反向操作。
 func (arguments Arguments) PackValues(args []interface{}) ([]byte, error) {
 	return arguments.Pack(args...)
 }
 
 // Pack performs the operation Go format -> Hexdata.
+// Pack 方法将 Go 格式的参数打包为 ABI 编码的十六进制数据。
 func (arguments Arguments) Pack(args ...interface{}) ([]byte, error) {
-	// Make sure arguments match up and pack them
+	// Make sure arguments match up and pack them确保参数数量匹配。
 	abiArgs := arguments
 	if len(args) != len(abiArgs) {
 		return nil, fmt.Errorf("argument count mismatch: got %d for %d", len(args), len(abiArgs))
 	}
 	// variable input is the output appended at the end of packed
 	// output. This is used for strings and bytes types input.
+	// 变量输入是附加在打包输出末尾的内容，用于动态类型（如字符串和字节数组）。
 	var variableInput []byte
 
-	// input offset is the bytes offset for packed output
+	// input offset is the bytes offset for packed output 输入偏移量是打包输出的字节偏移量。
 	inputOffset := 0
 	for _, abiArg := range abiArgs {
 		inputOffset += getTypeSize(abiArg.Type)
@@ -237,31 +264,32 @@ func (arguments Arguments) Pack(args ...interface{}) ([]byte, error) {
 	var ret []byte
 	for i, a := range args {
 		input := abiArgs[i]
-		// pack the input
+		// pack the input打包输入。
 		packed, err := input.Type.pack(reflect.ValueOf(a))
 		if err != nil {
 			return nil, err
 		}
-		// check for dynamic types
+		// check for dynamic types 检查是否为动态类型。
 		if isDynamicType(input.Type) {
-			// set the offset
+			// set the offset 设置偏移量。
 			ret = append(ret, packNum(reflect.ValueOf(inputOffset))...)
-			// calculate next offset
+			// calculate next offset 计算下一个偏移量。
 			inputOffset += len(packed)
-			// append to variable input
+			// append to variable input 将打包值附加到变量输入中。
 			variableInput = append(variableInput, packed...)
 		} else {
-			// append the packed value to the input
+			// append the packed value to the input 将打包值附加到输出中。
 			ret = append(ret, packed...)
 		}
 	}
-	// append the variable input at the end of the packed input
+	// append the variable input at the end of the packed input 将变量输入附加到打包输出末尾。
 	ret = append(ret, variableInput...)
 
 	return ret, nil
 }
 
-// ToCamelCase converts an under-score string to a camel-case string
+// ToCamelCase converts an under-score string to a camel-case string.
+// ToCamelCase 方法将下划线分隔的字符串转换为驼峰命名法的字符串。
 func ToCamelCase(input string) string {
 	parts := strings.Split(input, "_")
 	for i, s := range parts {

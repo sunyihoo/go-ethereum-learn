@@ -24,6 +24,11 @@ import (
 	"strings"
 )
 
+// 在 ABI 解码中，数据类型可能不完全匹配（如 []byte 到 [32]byte），需要宽松的赋值规则。
+// big.Int 是以太坊中常用的类型（表示 uint256 或 int256），此函数特别处理其指针形式。
+// ABI 解码：以太坊智能合约的返回值以字节数组形式编码，需解码为 Go 类型。ConvertType 和 set 提供了灵活的转换机制。
+// 大整数（big.Int）：以太坊中 uint256 和 int256 使用 big.Int 表示，此代码特别优化了对 big.Int 的处理。
+
 // ConvertType converts an interface of a runtime type into an interface of the
 // given type, e.g. turn this code:
 //
@@ -38,12 +43,27 @@ import (
 // into:
 //
 //	type TupleT struct { X *big.Int }
+//
+// ConvertType 将运行时类型的接口转换为给定类型的接口，例如将以下代码：
+//
+//	var fields []reflect.StructField
+//
+//	fields = append(fields, reflect.StructField{
+//			Name: "X",
+//			Type: reflect.TypeOf(new(big.Int)),
+//			Tag:  reflect.StructTag("json:\"" + "x" + "\""),
+//	})
+//
+// 转换为：
+//
+//	type TupleT struct { X *big.Int }
 func ConvertType(in interface{}, proto interface{}) interface{} {
 	protoType := reflect.TypeOf(proto)
 	if reflect.TypeOf(in).ConvertibleTo(protoType) {
 		return reflect.ValueOf(in).Convert(protoType).Interface()
 	}
 	// Use set as a last ditch effort
+	// 作为最后的努力使用 set
 	if err := set(reflect.ValueOf(proto), reflect.ValueOf(in)); err != nil {
 		panic(err)
 	}
@@ -52,6 +72,7 @@ func ConvertType(in interface{}, proto interface{}) interface{} {
 
 // indirect recursively dereferences the value until it either gets the value
 // or finds a big.Int
+// indirect 递归解引用值，直到获取到值或找到 big.Int
 func indirect(v reflect.Value) reflect.Value {
 	if v.Kind() == reflect.Ptr && v.Elem().Type() != reflect.TypeOf(big.Int{}) {
 		return indirect(v.Elem())
@@ -61,6 +82,7 @@ func indirect(v reflect.Value) reflect.Value {
 
 // reflectIntType returns the reflect using the given size and
 // unsignedness.
+// reflectIntType 根据给定的大小和无符号性返回反射类型。
 func reflectIntType(unsigned bool, size int) reflect.Type {
 	if unsigned {
 		switch size {
@@ -89,6 +111,7 @@ func reflectIntType(unsigned bool, size int) reflect.Type {
 
 // mustArrayToByteSlice creates a new byte slice with the exact same size as value
 // and copies the bytes in value to the new slice.
+// mustArrayToByteSlice 创建一个与 value 大小完全相同的新字节切片，并将 value 中的字节复制到新切片中。
 func mustArrayToByteSlice(value reflect.Value) reflect.Value {
 	slice := reflect.MakeSlice(reflect.TypeOf([]byte{}), value.Len(), value.Len())
 	reflect.Copy(slice, value)
@@ -99,6 +122,9 @@ func mustArrayToByteSlice(value reflect.Value) reflect.Value {
 //
 // set is a bit more lenient when it comes to assignment and doesn't force an as
 // strict ruleset as bare `reflect` does.
+// set 尝试通过设置、复制或其他方式将 src 赋值给 dst。
+//
+// set 在赋值时比纯粹的 `reflect` 更宽松，不强制执行严格的规则集。
 func set(dst, src reflect.Value) error {
 	dstType, srcType := dst.Type(), src.Type()
 	switch {
@@ -123,6 +149,9 @@ func set(dst, src reflect.Value) error {
 // setSlice attempts to assign src to dst when slices are not assignable by default
 // e.g. src: [][]byte -> dst: [][15]byte
 // setSlice ignores if we cannot copy all of src' elements.
+// setSlice 在切片默认不可赋值时尝试将 src 赋值给 dst
+// 例如 src: [][]byte -> dst: [][15]byte
+// setSlice 如果无法复制 src 的所有元素，则忽略。
 func setSlice(dst, src reflect.Value) error {
 	slice := reflect.MakeSlice(dst.Type(), src.Len(), src.Len())
 	for i := 0; i < src.Len(); i++ {
@@ -181,6 +210,13 @@ func setStruct(dst, src reflect.Value) error {
 // variable is expected to be mapped into, if it exists and has not been used, pair them.
 //
 // Note this function assumes the given value is a struct value.
+// mapArgNamesToStructFields 将参数名称切片映射到结构体字段。
+//
+// 第一轮：对于每个包含 `abi:""` 标签的可导出字段，如果该字段名称存在于给定的参数名称列表中，将它们配对。
+//
+// 第二轮：对于每个尚未链接的参数名称，找到预期映射到的变量，如果它存在且未被使用，将它们配对。
+//
+// 注意，此函数假定给定的值是一个结构体值。
 func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[string]string, error) {
 	typ := value.Type()
 
@@ -188,23 +224,28 @@ func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[stri
 	struct2abi := make(map[string]string)
 
 	// first round ~~~
+	// 第一轮 ~~~
 	for i := 0; i < typ.NumField(); i++ {
 		structFieldName := typ.Field(i).Name
 
 		// skip private struct fields.
+		// 跳过私有结构体字段。
 		if structFieldName[:1] != strings.ToUpper(structFieldName[:1]) {
 			continue
 		}
 		// skip fields that have no abi:"" tag.
+		// 跳过没有 abi:"" 标签的字段。
 		tagName, ok := typ.Field(i).Tag.Lookup("abi")
 		if !ok {
 			continue
 		}
 		// check if tag is empty.
+		// 检查标签是否为空。
 		if tagName == "" {
 			return nil, fmt.Errorf("struct: abi tag in '%s' is empty", structFieldName)
 		}
 		// check which argument field matches with the abi tag.
+		// 检查哪个参数字段与 abi 标签匹配。
 		found := false
 		for _, arg := range argNames {
 			if arg == tagName {
@@ -212,18 +253,21 @@ func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[stri
 					return nil, fmt.Errorf("struct: abi tag in '%s' already mapped", structFieldName)
 				}
 				// pair them
+				// 将它们配对
 				abi2struct[arg] = structFieldName
 				struct2abi[structFieldName] = arg
 				found = true
 			}
 		}
 		// check if this tag has been mapped.
+		// 检查此标签是否已映射。
 		if !found {
 			return nil, fmt.Errorf("struct: abi tag '%s' defined but not found in abi", tagName)
 		}
 	}
 
 	// second round ~~~
+	// 第二轮 ~~~
 	for _, argName := range argNames {
 		structFieldName := ToCamelCase(argName)
 
@@ -233,6 +277,9 @@ func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[stri
 
 		// this abi has already been paired, skip it... unless there exists another, yet unassigned
 		// struct field with the same field name. If so, raise an error:
+		//    abi: [ { "name": "value" } ]
+		//    struct { Value  *big.Int , Value1 *big.Int `abi:"value"`}
+		// 这个 abi 已经配对，跳过它……除非存在另一个尚未分配的同名结构体字段。如果是这样，抛出错误：
 		//    abi: [ { "name": "value" } ]
 		//    struct { Value  *big.Int , Value1 *big.Int `abi:"value"`}
 		if abi2struct[argName] != "" {
@@ -245,16 +292,21 @@ func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[stri
 		}
 
 		// return an error if this struct field has already been paired.
+		// 如果此结构体字段已经配对，返回错误。
 		if struct2abi[structFieldName] != "" {
 			return nil, fmt.Errorf("abi: multiple outputs mapping to the same struct field '%s'", structFieldName)
 		}
 
 		if value.FieldByName(structFieldName).IsValid() {
 			// pair them
+			// 将它们配对
 			abi2struct[argName] = structFieldName
 			struct2abi[structFieldName] = argName
 		} else {
 			// not paired, but annotate as used, to detect cases like
+			//   abi : [ { "name": "value" }, { "name": "_value" } ]
+			//   struct { Value *big.Int }
+			// 未配对，但标记为已使用，以检测类似以下情况：
 			//   abi : [ { "name": "value" }, { "name": "_value" } ]
 			//   struct { Value *big.Int }
 			struct2abi[structFieldName] = argName
