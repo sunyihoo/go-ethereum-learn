@@ -28,19 +28,21 @@ import (
 // HeadTracker keeps track of the latest validated head and the "prefetch" head
 // which is the (not necessarily validated) head announced by the majority of
 // servers.
+// HeadTracker 跟踪最新的已验证头部和“预取头部”，后者是由大多数服务器宣布的（不一定经过验证）头部。
 type HeadTracker struct {
-	lock                sync.RWMutex
-	committeeChain      *CommitteeChain
-	minSignerCount      int
-	optimisticUpdate    types.OptimisticUpdate
-	hasOptimisticUpdate bool
-	finalityUpdate      types.FinalityUpdate
-	hasFinalityUpdate   bool
-	prefetchHead        types.HeadInfo
-	changeCounter       uint64
+	lock                sync.RWMutex           // 锁，用于线程安全
+	committeeChain      *CommitteeChain        // 委员会链，用于验证签名头部
+	minSignerCount      int                    // 最小签名者数量阈值
+	optimisticUpdate    types.OptimisticUpdate // 最新的乐观更新
+	hasOptimisticUpdate bool                   // 是否有已验证的乐观更新
+	finalityUpdate      types.FinalityUpdate   // 最新的最终性更新
+	hasFinalityUpdate   bool                   // 是否有已验证的最终性更新
+	prefetchHead        types.HeadInfo         // 预取头部信息
+	changeCounter       uint64                 // 变更计数器，用于检测状态变化
 }
 
 // NewHeadTracker creates a new HeadTracker.
+// NewHeadTracker 创建一个新的 HeadTracker 实例。
 func NewHeadTracker(committeeChain *CommitteeChain, minSignerCount int) *HeadTracker {
 	return &HeadTracker{
 		committeeChain: committeeChain,
@@ -49,6 +51,7 @@ func NewHeadTracker(committeeChain *CommitteeChain, minSignerCount int) *HeadTra
 }
 
 // ValidatedOptimistic returns the latest validated optimistic update.
+// ValidatedOptimistic 返回最新的已验证乐观更新。
 func (h *HeadTracker) ValidatedOptimistic() (types.OptimisticUpdate, bool) {
 	h.lock.RLock()
 	defer h.lock.RUnlock()
@@ -57,6 +60,7 @@ func (h *HeadTracker) ValidatedOptimistic() (types.OptimisticUpdate, bool) {
 }
 
 // ValidatedFinality returns the latest validated finality update.
+// ValidatedFinality 返回最新的已验证最终性更新。
 func (h *HeadTracker) ValidatedFinality() (types.FinalityUpdate, bool) {
 	h.lock.RLock()
 	defer h.lock.RUnlock()
@@ -68,6 +72,8 @@ func (h *HeadTracker) ValidatedFinality() (types.FinalityUpdate, bool) {
 // successfully validated and it is better than the old validated update (higher
 // slot or same slot and more signers) then ValidatedOptimistic is updated.
 // The boolean return flag signals if ValidatedOptimistic has been changed.
+// ValidateOptimistic 验证给定的乐观更新。如果更新成功验证并且优于旧的已验证更新（更高的槽位或相同槽位且更多签名者），则更新 ValidatedOptimistic。
+// 返回的布尔值标志 ValidatedOptimistic 是否已更改。
 func (h *HeadTracker) ValidateOptimistic(update types.OptimisticUpdate) (bool, error) {
 	if err := update.Validate(); err != nil {
 		return false, err
@@ -88,6 +94,8 @@ func (h *HeadTracker) ValidateOptimistic(update types.OptimisticUpdate) (bool, e
 // successfully validated and it is better than the old validated update (higher
 // slot or same slot and more signers) then ValidatedFinality is updated.
 // The boolean return flag signals if ValidatedFinality has been changed.
+// ValidateFinality 验证给定的最终性更新。如果更新成功验证并且优于旧的已验证更新（更高的槽位或相同槽位且更多签名者），则更新 ValidatedFinality。
+// 返回的布尔值标志 ValidatedFinality 是否已更改。
 func (h *HeadTracker) ValidateFinality(update types.FinalityUpdate) (bool, error) {
 	if err := update.Validate(); err != nil {
 		return false, err
@@ -104,26 +112,29 @@ func (h *HeadTracker) ValidateFinality(update types.FinalityUpdate) (bool, error
 	return replace, err
 }
 
+// validate compares the given header with the old header and determines if the
+// new header should replace the old one based on slot number and signer count.
+// validate 比较给定的头部与旧头部，并根据槽位号和签名者数量决定新头部是否应替换旧头部。
 func (h *HeadTracker) validate(head, oldHead types.SignedHeader) (bool, error) {
 	signerCount := head.Signature.SignerCount()
 	if signerCount < h.minSignerCount {
-		return false, errors.New("low signer count")
+		return false, errors.New("low signer count") // 签名者数量不足
 	}
 	if head.Header.Slot < oldHead.Header.Slot || (head.Header.Slot == oldHead.Header.Slot && signerCount <= oldHead.Signature.SignerCount()) {
-		return false, nil
+		return false, nil // 新头部不如旧头部
 	}
 	sigOk, age, err := h.committeeChain.VerifySignedHeader(head)
 	if err != nil {
 		return false, err
 	}
 	if age < 0 {
-		log.Warn("Future signed head received", "age", age)
+		log.Warn("Future signed head received", "age", age) // 收到未来的签名头部
 	}
 	if age > time.Minute*2 {
-		log.Warn("Old signed head received", "age", age)
+		log.Warn("Old signed head received", "age", age) // 收到过时的签名头部
 	}
 	if !sigOk {
-		return false, errors.New("invalid header signature")
+		return false, errors.New("invalid header signature") // 无效的头部签名
 	}
 	return true, nil
 }
@@ -133,6 +144,9 @@ func (h *HeadTracker) validate(head, oldHead types.SignedHeader) (bool, error) {
 // validated soon.
 // Note that the prefetch head cannot be validated cryptographically so it should
 // only be used as a performance optimization hint.
+// PrefetchHead 返回最新的已知预取头部信息。
+// 此头部可用于开始获取相关数据，期望它很快会被验证。
+// 注意，预取头部无法通过加密方式验证，因此仅应作为性能优化提示使用。
 func (h *HeadTracker) PrefetchHead() types.HeadInfo {
 	h.lock.RLock()
 	defer h.lock.RUnlock()
@@ -143,6 +157,8 @@ func (h *HeadTracker) PrefetchHead() types.HeadInfo {
 // SetPrefetchHead sets the prefetch head info.
 // Note that HeadTracker does not verify the prefetch head, just acts as a thread
 // safe bulletin board.
+// SetPrefetchHead 设置预取头部信息。
+// 注意，HeadTracker 不会验证预取头部，仅作为一个线程安全的公告板。
 func (h *HeadTracker) SetPrefetchHead(head types.HeadInfo) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
@@ -155,6 +171,7 @@ func (h *HeadTracker) SetPrefetchHead(head types.HeadInfo) {
 }
 
 // ChangeCounter implements request.targetData
+// ChangeCounter 实现了 request.targetData 接口。
 func (h *HeadTracker) ChangeCounter() uint64 {
 	h.lock.RLock()
 	defer h.lock.RUnlock()

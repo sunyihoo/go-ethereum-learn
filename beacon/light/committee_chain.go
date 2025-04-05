@@ -33,12 +33,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// 轻客户端验证信标链头部，确保数据可信。
+
 var (
-	ErrNeedCommittee      = errors.New("sync committee required")
-	ErrInvalidUpdate      = errors.New("invalid committee update")
-	ErrInvalidPeriod      = errors.New("invalid update period")
-	ErrWrongCommitteeRoot = errors.New("wrong committee root")
-	ErrCannotReorg        = errors.New("can not reorg committee chain")
+	ErrNeedCommittee      = errors.New("sync committee required")       // 需要同步委员会
+	ErrInvalidUpdate      = errors.New("invalid committee update")      // 无效的委员会更新
+	ErrInvalidPeriod      = errors.New("invalid update period")         // 无效的更新周期
+	ErrWrongCommitteeRoot = errors.New("wrong committee root")          // 错误的委员会根
+	ErrCannotReorg        = errors.New("can not reorg committee chain") // 无法重组委员会链
 )
 
 // CommitteeChain is a passive data structure that can validate, hold and update
@@ -60,42 +62,58 @@ var (
 //
 // Once synced to the current sync period, CommitteeChain can also validate
 // signed beacon headers.
+// CommitteeChain 是一个被动数据结构，可以验证、持有和更新信标轻客户端同步委员会和更新的链。
+// 它要求链的开始处至少有一个外部设置的固定委员会根，可以基于 BootstrapData 或可信来源（本地信标全节点）设置。
+// 这使得该结构适用于轻客户端和轻服务器设置。
+//
+// 它始终保持以下一致性约束：
+//   - 只有当委员会的根哈希与现有的固定根匹配或由前一周期的更新证明时，委员会才能存在
+//   - 只有当同一周期存在委员会且更新签名有效且参与者足够时，更新才能存在。
+//     下一周期的委员会（由更新证明）也应存在（注意，这意味着如果两者都不存在，则只能一起添加）。
+//     如果下一周期存在固定根，则更新只能在证明相同委员会根的情况下存在。
+//
+// 一旦同步到当前同步周期，CommitteeChain 还可以验证签名信标头部。
 type CommitteeChain struct {
 	// chainmu guards against concurrent access to the canonicalStore structures
 	// (updates, committees, fixedCommitteeRoots) and ensures that they stay consistent
 	// with each other and with committeeCache.
+	// chainmu 防止对 canonicalStore 结构（updates、committees、fixedCommitteeRoots）的并发访问，
+	// 并确保它们彼此以及与 committeeCache 保持一致。
 	chainmu             sync.RWMutex
 	db                  ethdb.KeyValueStore
-	updates             *canonicalStore[*types.LightClientUpdate]
-	committees          *canonicalStore[*types.SerializedSyncCommittee]
-	fixedCommitteeRoots *canonicalStore[common.Hash]
-	committeeCache      *lru.Cache[uint64, syncCommittee] // cache deserialized committees
-	changeCounter       uint64
+	updates             *canonicalStore[*types.LightClientUpdate]       // 更新存储
+	committees          *canonicalStore[*types.SerializedSyncCommittee] // 委员会存储
+	fixedCommitteeRoots *canonicalStore[common.Hash]                    // 固定委员会根存储
+	committeeCache      *lru.Cache[uint64, syncCommittee]               // cache deserialized committees 缓存反序列化的委员会
+	changeCounter       uint64                                          // 变更计数器
 
-	clock       mclock.Clock         // monotonic clock (simulated clock in tests)
-	unixNano    func() int64         // system clock (simulated clock in tests)
-	sigVerifier committeeSigVerifier // BLS sig verifier (dummy verifier in tests)
+	clock       mclock.Clock         // monotonic clock (simulated clock in tests) 单调时钟（测试中为模拟时钟）
+	unixNano    func() int64         // system clock (simulated clock in tests) 系统时钟（测试中为模拟时钟）
+	sigVerifier committeeSigVerifier // BLS sig verifier (dummy verifier in tests) 签名验证器（测试中为虚拟验证器）
 
 	config             *params.ChainConfig
-	minimumUpdateScore types.UpdateScore
-	enforceTime        bool // enforceTime specifies whether the age of a signed header should be checked
+	minimumUpdateScore types.UpdateScore // 最小更新分数
+	enforceTime        bool              // enforceTime specifies whether the age of a signed header should be checked 指定是否检查签名头部的年龄
 }
 
 // NewCommitteeChain creates a new CommitteeChain.
+// NewCommitteeChain 创建一个新的 CommitteeChain。
 func NewCommitteeChain(db ethdb.KeyValueStore, config *params.ChainConfig, signerThreshold int, enforceTime bool) *CommitteeChain {
 	return newCommitteeChain(db, config, signerThreshold, enforceTime, blsVerifier{}, &mclock.System{}, func() int64 { return time.Now().UnixNano() })
 }
 
 // NewTestCommitteeChain creates a new CommitteeChain for testing.
+// NewTestCommitteeChain 为测试创建一个新的 CommitteeChain。
 func NewTestCommitteeChain(db ethdb.KeyValueStore, config *params.ChainConfig, signerThreshold int, enforceTime bool, clock *mclock.Simulated) *CommitteeChain {
 	return newCommitteeChain(db, config, signerThreshold, enforceTime, dummyVerifier{}, clock, func() int64 { return int64(clock.Now()) })
 }
 
 // newCommitteeChain creates a new CommitteeChain with the option of replacing the
 // clock source and signature verification for testing purposes.
+// newCommitteeChain 创建一个新的 CommitteeChain，可以选择替换时钟源和签名验证以用于测试。
 func newCommitteeChain(db ethdb.KeyValueStore, config *params.ChainConfig, signerThreshold int, enforceTime bool, sigVerifier committeeSigVerifier, clock mclock.Clock, unixNano func() int64) *CommitteeChain {
 	s := &CommitteeChain{
-		committeeCache: lru.NewCache[uint64, syncCommittee](10),
+		committeeCache: lru.NewCache[uint64, syncCommittee](10), // LRU 缓存容量为 10
 		db:             db,
 		sigVerifier:    sigVerifier,
 		clock:          clock,
@@ -103,49 +121,59 @@ func newCommitteeChain(db ethdb.KeyValueStore, config *params.ChainConfig, signe
 		config:         config,
 		enforceTime:    enforceTime,
 		minimumUpdateScore: types.UpdateScore{
-			SignerCount:    uint32(signerThreshold),
-			SubPeriodIndex: params.SyncPeriodLength / 16,
+			SignerCount:    uint32(signerThreshold),      // 签名者阈值
+			SubPeriodIndex: params.SyncPeriodLength / 16, // 子周期索引
 		},
 	}
 
 	var err1, err2, err3 error
 	if s.fixedCommitteeRoots, err1 = newCanonicalStore[common.Hash](db, rawdb.FixedCommitteeRootKey); err1 != nil {
 		log.Error("Error creating fixed committee root store", "error", err1)
+		// 创建固定委员会根存储时出错
 	}
 	if s.committees, err2 = newCanonicalStore[*types.SerializedSyncCommittee](db, rawdb.SyncCommitteeKey); err2 != nil {
 		log.Error("Error creating committee store", "error", err2)
+		// 创建委员会存储时出错
 	}
 	if s.updates, err3 = newCanonicalStore[*types.LightClientUpdate](db, rawdb.BestUpdateKey); err3 != nil {
 		log.Error("Error creating update store", "error", err3)
+		// 创建更新存储时出错
 	}
 	if err1 != nil || err2 != nil || err3 != nil || !s.checkConstraints() {
 		log.Info("Resetting invalid committee chain")
+		// 重置无效的委员会链
 		s.Reset()
 	}
 	// roll back invalid updates (might be necessary if forks have been changed since last time)
+	// 回滚无效更新（如果自上次以来分叉已更改，可能需要这样做）
 	for !s.updates.periods.isEmpty() {
 		update, ok := s.updates.get(s.db, s.updates.periods.End-1)
 		if !ok {
 			log.Error("Sync committee update missing", "period", s.updates.periods.End-1)
+			// 同步委员会更新缺失
 			s.Reset()
 			break
 		}
 		if valid, err := s.verifyUpdate(update); err != nil {
 			log.Error("Error validating update", "period", s.updates.periods.End-1, "error", err)
+			// 验证更新时出错
 		} else if valid {
 			break
 		}
 		if err := s.rollback(s.updates.periods.End); err != nil {
 			log.Error("Error writing batch into chain database", "error", err)
+			// 将批次写入链数据库时出错
 		}
 	}
 	if !s.committees.periods.isEmpty() {
 		log.Trace("Sync committee chain loaded", "first period", s.committees.periods.Start, "last period", s.committees.periods.End-1)
+		// 同步委员会链已加载
 	}
 	return s
 }
 
 // checkConstraints checks committee chain validity constraints
+// checkConstraints 检查委员会链的有效性约束
 func (s *CommitteeChain) checkConstraints() bool {
 	isNotInFixedCommitteeRootRange := func(r periodRange) bool {
 		return s.fixedCommitteeRoots.periods.isEmpty() ||
@@ -157,20 +185,24 @@ func (s *CommitteeChain) checkConstraints() bool {
 	if !s.updates.periods.isEmpty() {
 		if isNotInFixedCommitteeRootRange(s.updates.periods) {
 			log.Error("Start update is not in the fixed roots range")
+			// 起始更新不在固定根范围内
 			valid = false
 		}
 		if s.committees.periods.Start > s.updates.periods.Start || s.committees.periods.End <= s.updates.periods.End {
 			log.Error("Missing committees in update range")
+			// 更新范围内缺少委员会
 			valid = false
 		}
 	}
 	if !s.committees.periods.isEmpty() {
 		if isNotInFixedCommitteeRootRange(s.committees.periods) {
 			log.Error("Start committee is not in the fixed roots range")
+			// 起始委员会不在固定根范围内
 			valid = false
 		}
 		if s.committees.periods.End > s.fixedCommitteeRoots.periods.End && s.committees.periods.End > s.updates.periods.End+1 {
 			log.Error("Last committee is neither in the fixed roots range nor proven by updates")
+			// 最后一个委员会既不在固定根范围内，也未由更新证明
 			valid = false
 		}
 	}
@@ -178,12 +210,14 @@ func (s *CommitteeChain) checkConstraints() bool {
 }
 
 // Reset resets the committee chain.
+// Reset 重置委员会链。
 func (s *CommitteeChain) Reset() {
 	s.chainmu.Lock()
 	defer s.chainmu.Unlock()
 
 	if err := s.rollback(0); err != nil {
 		log.Error("Error writing batch into chain database", "error", err)
+		// 将批次写入链数据库时出错
 	}
 	s.changeCounter++
 }
@@ -192,6 +226,8 @@ func (s *CommitteeChain) Reset() {
 // Note: if the chain is already initialized and the committees proven by the
 // checkpoint do match the existing chain then the chain is retained and the
 // new checkpoint becomes fixed.
+// CheckpointInit 基于检查点初始化 CommitteeChain。
+// 注意：如果链已初始化且检查点证明的委员会与现有链匹配，则保留该链，新检查点将成为固定点。
 func (s *CommitteeChain) CheckpointInit(bootstrap types.BootstrapData) error {
 	s.chainmu.Lock()
 	defer s.chainmu.Unlock()
@@ -226,6 +262,8 @@ func (s *CommitteeChain) CheckpointInit(bootstrap types.BootstrapData) error {
 // addFixedCommitteeRoot sets a fixed committee root at the given period.
 // Note that the period where the first committee is added has to have a fixed
 // root which can either come from a BootstrapData or a trusted source.
+// addFixedCommitteeRoot 在给定周期设置固定委员会根。
+// 注意：添加第一个委员会的周期必须有一个固定根，可以来自 BootstrapData 或可信来源。
 func (s *CommitteeChain) addFixedCommitteeRoot(period uint64, root common.Hash) error {
 	if root == (common.Hash{}) {
 		return ErrWrongCommitteeRoot
@@ -243,12 +281,17 @@ func (s *CommitteeChain) addFixedCommitteeRoot(period uint64, root common.Hash) 
 		// This scenario makes sense when a new trusted checkpoint is added to an
 		// existing chain, ensuring that it will not be rolled back (might be
 		// important in case of low signer participation rate).
+		// 注意：固定委员会根范围应始终是连续的，因此预期的同步方法是从检查点开始逐个周期向前同步，
+		// 并可选地向后同步。只有当同一根已被更新链证明时，才能固定不与已固定的根相邻的根。
+		// 在这种情况下，中间的所有根都可以且应该被固定。
+		// 当向现有链添加新的可信检查点时，这种情况是有意义的，确保不会回滚（在签名者参与率低的情况下可能很重要）。
 		if root != oldRoot {
 			return ErrInvalidPeriod
 		}
 		// if the old root exists and matches the new one then it is guaranteed
 		// that the given period is after the existing fixed range and the roots
 		// in between can also be fixed.
+		// 如果旧根存在且与新根匹配，则保证给定周期在现有固定范围之后，中间的根也可以被固定。
 		for p := s.fixedCommitteeRoots.periods.End; p < period; p++ {
 			if err := s.fixedCommitteeRoots.add(batch, p, s.getCommitteeRoot(p)); err != nil {
 				return err
@@ -257,6 +300,7 @@ func (s *CommitteeChain) addFixedCommitteeRoot(period uint64, root common.Hash) 
 	}
 	if oldRoot != (common.Hash{}) && (oldRoot != root) {
 		// existing old root was different, we have to reorg the chain
+		// 现有旧根不同，我们必须重组链
 		if err := s.rollback(period); err != nil {
 			return err
 		}
@@ -266,6 +310,7 @@ func (s *CommitteeChain) addFixedCommitteeRoot(period uint64, root common.Hash) 
 	}
 	if err := batch.Write(); err != nil {
 		log.Error("Error writing batch into chain database", "error", err)
+		// 将批次写入链数据库时出错
 		return err
 	}
 	return nil
@@ -274,6 +319,8 @@ func (s *CommitteeChain) addFixedCommitteeRoot(period uint64, root common.Hash) 
 // deleteFixedCommitteeRootsFrom deletes fixed roots starting from the given period.
 // It also maintains chain consistency, meaning that it also deletes updates and
 // committees if they are no longer supported by a valid update chain.
+// deleteFixedCommitteeRootsFrom 从给定周期开始删除固定根。
+// 它还保持链的一致性，即如果更新链不再有效支持，则同时删除更新和委员会。
 func (s *CommitteeChain) deleteFixedCommitteeRootsFrom(period uint64) error {
 	if period >= s.fixedCommitteeRoots.periods.End {
 		return nil
@@ -285,6 +332,8 @@ func (s *CommitteeChain) deleteFixedCommitteeRootsFrom(period uint64) error {
 		// the fixed root at the first update is removed then the entire update chain
 		// and the proven committees have to be removed. Earlier committees in the
 		// remaining fixed root range can stay.
+		// 注意：更新链的第一个周期应始终是固定的，因此如果第一个更新的固定根被移除，
+		// 则整个更新链和证明的委员会必须被移除。剩余固定根范围内的早期委员会可以保留。
 		s.updates.deleteFrom(batch, period)
 		s.deleteCommitteesFrom(batch, period)
 	} else {
@@ -292,20 +341,24 @@ func (s *CommitteeChain) deleteFixedCommitteeRootsFrom(period uint64) error {
 		// get unfixed but are still proven by the update chain. If there were
 		// committees present after the range proven by updates, those should be
 		// removed if the belonging fixed roots are also removed.
-		fromPeriod := s.updates.periods.End + 1 // not proven by updates
+		// 更新链保持完整，一些先前固定的委员会根可能变为非固定，但仍由更新链证明。
+		// 如果更新证明的范围之后存在委员会，且所属固定根也被移除，则应移除这些委员会。
+		fromPeriod := s.updates.periods.End + 1 // not proven by updates 未被更新证明的周期
 		if period > fromPeriod {
-			fromPeriod = period // also not justified by fixed roots
+			fromPeriod = period //  also not justified by fixed roots 也不由固定根证明的周期
 		}
 		s.deleteCommitteesFrom(batch, fromPeriod)
 	}
 	if err := batch.Write(); err != nil {
 		log.Error("Error writing batch into chain database", "error", err)
+		// 将批次写入链数据库时出错
 		return err
 	}
 	return nil
 }
 
 // deleteCommitteesFrom deletes committees starting from the given period.
+// deleteCommitteesFrom 从给定周期开始删除委员会。
 func (s *CommitteeChain) deleteCommitteesFrom(batch ethdb.Batch, period uint64) {
 	deleted := s.committees.deleteFrom(batch, period)
 	for period := deleted.Start; period < deleted.End; period++ {
@@ -314,6 +367,7 @@ func (s *CommitteeChain) deleteCommitteesFrom(batch ethdb.Batch, period uint64) 
 }
 
 // addCommittee adds a committee at the given period if possible.
+// addCommittee 在可能的情况下在给定周期添加委员会。
 func (s *CommitteeChain) addCommittee(period uint64, committee *types.SerializedSyncCommittee) error {
 	if !s.committees.periods.canExpand(period) {
 		return ErrInvalidPeriod
@@ -335,6 +389,7 @@ func (s *CommitteeChain) addCommittee(period uint64, committee *types.Serialized
 }
 
 // InsertUpdate adds a new update if possible.
+// InsertUpdate 在可能的情况下添加新更新。
 func (s *CommitteeChain) InsertUpdate(update *types.LightClientUpdate, nextCommittee *types.SerializedSyncCommittee) error {
 	s.chainmu.Lock()
 	defer s.chainmu.Unlock()
@@ -350,6 +405,7 @@ func (s *CommitteeChain) InsertUpdate(update *types.LightClientUpdate, nextCommi
 	reorg := oldRoot != (common.Hash{}) && oldRoot != update.NextSyncCommitteeRoot
 	if oldUpdate, ok := s.updates.get(s.db, period); ok && !update.Score().BetterThan(oldUpdate.Score()) {
 		// a better or equal update already exists; no changes, only fail if new one tried to reorg
+		// 已存在更好或相等的更新；不做更改，仅在新更新尝试重组时失败
 		if reorg {
 			return ErrCannotReorg
 		}
@@ -390,14 +446,17 @@ func (s *CommitteeChain) InsertUpdate(update *types.LightClientUpdate, nextCommi
 	}
 	if err := batch.Write(); err != nil {
 		log.Error("Error writing batch into chain database", "error", err)
+		// 将批次写入链数据库时出错
 		return err
 	}
 	log.Info("Inserted new committee update", "period", period, "next committee root", update.NextSyncCommitteeRoot)
+	// 插入新的委员会更新
 	return nil
 }
 
 // NextSyncPeriod returns the next period where an update can be added and also
 // whether the chain is initialized at all.
+// NextSyncPeriod 返回可以添加更新的下一个周期，以及链是否已初始化。
 func (s *CommitteeChain) NextSyncPeriod() (uint64, bool) {
 	s.chainmu.RLock()
 	defer s.chainmu.RUnlock()
@@ -420,6 +479,7 @@ func (s *CommitteeChain) ChangeCounter() uint64 {
 
 // rollback removes all committees and fixed roots from the given period and updates
 // starting from the previous period.
+// rollback 从给定周期移除所有委员会和固定根，并从前一周期开始移除更新。
 func (s *CommitteeChain) rollback(period uint64) error {
 	max := s.updates.periods.End + 1
 	if s.committees.periods.End > max {
@@ -438,6 +498,7 @@ func (s *CommitteeChain) rollback(period uint64) error {
 		}
 		if err := batch.Write(); err != nil {
 			log.Error("Error writing batch into chain database", "error", err)
+			// 将批次写入链数据库时出错
 			return err
 		}
 	}
@@ -447,6 +508,7 @@ func (s *CommitteeChain) rollback(period uint64) error {
 // getCommitteeRoot returns the committee root at the given period, either fixed,
 // proven by a previous update or both. It returns an empty hash if the committee
 // root is unknown.
+// getCommitteeRoot 返回给定周期的委员会根，可以是固定的、由前一更新证明的或两者兼有。如果委员会根未知，则返回空哈希。
 func (s *CommitteeChain) getCommitteeRoot(period uint64) common.Hash {
 	if root, ok := s.fixedCommitteeRoots.get(s.db, period); ok || period == 0 {
 		return root
@@ -458,6 +520,7 @@ func (s *CommitteeChain) getCommitteeRoot(period uint64) common.Hash {
 }
 
 // getSyncCommittee returns the deserialized sync committee at the given period.
+// getSyncCommittee 返回给定周期的反序列化同步委员会。
 func (s *CommitteeChain) getSyncCommittee(period uint64) (syncCommittee, error) {
 	if c, ok := s.committeeCache.Get(period); ok {
 		return c, nil
@@ -466,11 +529,13 @@ func (s *CommitteeChain) getSyncCommittee(period uint64) (syncCommittee, error) 
 		c, err := s.sigVerifier.deserializeSyncCommittee(sc)
 		if err != nil {
 			return nil, fmt.Errorf("sync committee #%d deserialization error: %v", period, err)
+			// 同步委员会 #%d 反序列化错误
 		}
 		s.committeeCache.Add(period, c)
 		return c, nil
 	}
 	return nil, fmt.Errorf("missing serialized sync committee #%d", period)
+	// 缺少序列化的同步委员会 #%d
 }
 
 // VerifySignedHeader returns true if the given signed header has a valid signature
@@ -480,6 +545,10 @@ func (s *CommitteeChain) getSyncCommittee(period uint64) (syncCommittee, error) 
 // The age of the header is also returned (the time elapsed since the beginning
 // of the given slot, according to the local system clock). If enforceTime is
 // true then negative age (future) headers are rejected.
+// VerifySignedHeader 如果给定签名头部根据本地委员会链具有有效签名，则返回 true。
+// 调用者应确保在验证签名之前，与签名头部来自同一来源的委员会已同步。
+// 还返回头部的年龄（根据本地系统时钟，自给定槽开始以来经过的时间）。
+// 如果 enforceTime 为 true，则拒绝负年龄（未来的）头部。
 func (s *CommitteeChain) VerifySignedHeader(head types.SignedHeader) (bool, time.Duration, error) {
 	s.chainmu.RLock()
 	defer s.chainmu.RUnlock()
@@ -514,14 +583,19 @@ func (s *CommitteeChain) verifySignedHeader(head types.SignedHeader) (bool, time
 // verifyUpdate checks whether the header signature is correct and the update
 // fits into the specified constraints (assumes that the update has been
 // successfully validated previously)
+// verifyUpdate 检查头部签名是否正确以及更新是否符合指定约束（假定更新之前已成功验证）。
 func (s *CommitteeChain) verifyUpdate(update *types.LightClientUpdate) (bool, error) {
 	// Note: SignatureSlot determines the sync period of the committee used for signature
 	// verification. Though in reality SignatureSlot is always bigger than update.Header.Slot,
 	// setting them as equal here enforces the rule that they have to be in the same sync
 	// period in order for the light client update proof to be meaningful.
+	// 注意：SignatureSlot 确定用于签名验证的委员会的同步周期。
+	// 虽然实际上 SignatureSlot 总是大于 update.Header.Slot，但在这里将它们设置为相等，
+	// 以强制执行它们必须在同一同步周期内的规则，以便轻客户端更新证明有意义。
 	ok, age, err := s.verifySignedHeader(update.AttestedHeader)
 	if age < 0 {
 		log.Warn("Future committee update received", "age", age)
+		// 收到未来的委员会更新
 	}
 	return ok, err
 }
