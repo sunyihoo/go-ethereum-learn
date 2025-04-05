@@ -28,14 +28,19 @@ import (
 // It can not be used to test the merge transition.
 // This type is needed since the fakeChainReader can not be used with
 // a normal beacon consensus engine.
+// NewFaker 创建一个用于测试的假共识引擎。
+// 该假引擎模拟了一个已完成合并（The Merge）的网络。
+// 它不能用于测试合并过渡（merge transition）。
+// 这种类型是必要的，因为 fakeChainReader 无法与普通的信标链共识引擎一起使用。
 func NewFaker() consensus.Engine {
-	return new(faker)
+	return new(faker) // 返回一个新的 faker 实例作为共识引擎。
 }
 
 type faker struct {
-	Beacon
+	Beacon // 匿名嵌套 Beacon 类型，继承其方法和字段。
 }
 
+// CalcDifficulty 是难度调整算法。对于假引擎，返回固定的信标链难度值。
 func (f *faker) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
-	return beaconDifficulty
+	return beaconDifficulty // 返回固定的信标链难度值。
 }
