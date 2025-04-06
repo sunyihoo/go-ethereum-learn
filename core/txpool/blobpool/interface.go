@@ -25,20 +25,26 @@ import (
 
 // BlockChain defines the minimal set of methods needed to back a blob pool with
 // a chain. Exists to allow mocking the live chain out of tests.
+// BlockChain 定义了使用链来支持 Blob 池所需的最小方法集合。它的存在是为了允许在测试中模拟真实的链。
 type BlockChain interface {
 	// Config retrieves the chain's fork configuration.
+	// Config 方法检索链的分叉配置。
 	Config() *params.ChainConfig
 
 	// CurrentBlock returns the current head of the chain.
+	// CurrentBlock 方法返回链的当前头部区块。
 	CurrentBlock() *types.Header
 
 	// CurrentFinalBlock returns the current block below which blobs should not
 	// be maintained anymore for reorg purposes.
+	// CurrentFinalBlock 方法返回当前区块，低于此区块的 Blob 不应再为了应对重组而保留。
 	CurrentFinalBlock() *types.Header
 
 	// GetBlock retrieves a specific block, used during pool resets.
+	// GetBlock 方法检索一个特定的区块，用于在池重置期间使用。
 	GetBlock(hash common.Hash, number uint64) *types.Block
 
 	// StateAt returns a state database for a given root hash (generally the head).
+	// StateAt 方法返回给定根哈希（通常是头部区块的根哈希）的状态数据库。
 	StateAt(root common.Hash) (*state.StateDB, error)
 }
