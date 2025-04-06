@@ -23,9 +23,11 @@ import (
 
 // GasPool tracks the amount of gas available during execution of the transactions
 // in a block. The zero value is a pool with zero gas available.
+// GasPool 跟踪在区块中执行交易期间可用的 gas 量。零值表示 gas 可用量为零的池。
 type GasPool uint64
 
 // AddGas makes gas available for execution.
+// AddGas 使 gas 可用于执行。
 func (gp *GasPool) AddGas(amount uint64) *GasPool {
 	if uint64(*gp) > math.MaxUint64-amount {
 		panic("gas pool pushed above uint64")
@@ -36,6 +38,7 @@ func (gp *GasPool) AddGas(amount uint64) *GasPool {
 
 // SubGas deducts the given amount from the pool if enough gas is
 // available and returns an error otherwise.
+// SubGas 从池中扣除给定的量（如果 gas 足够可用），否则返回错误。
 func (gp *GasPool) SubGas(amount uint64) error {
 	if uint64(*gp) < amount {
 		return ErrGasLimitReached
@@ -45,11 +48,13 @@ func (gp *GasPool) SubGas(amount uint64) error {
 }
 
 // Gas returns the amount of gas remaining in the pool.
+// Gas 返回池中剩余的 gas 量。
 func (gp *GasPool) Gas() uint64 {
 	return uint64(*gp)
 }
 
 // SetGas sets the amount of gas with the provided number.
+// SetGas 使用提供的数量设置 gas 量。
 func (gp *GasPool) SetGas(gas uint64) {
 	*(*uint64)(gp) = gas
 }

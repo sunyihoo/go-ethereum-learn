@@ -23,6 +23,7 @@ import (
 )
 
 // SenderCacher is a concurrent transaction sender recoverer and cacher.
+// SenderCacher 是一个并发的交易发送者恢复器和缓存器。
 var SenderCacher = newTxSenderCacher(runtime.NumCPU())
 
 // txSenderCacherRequest is a request for recovering transaction senders with a
@@ -31,6 +32,10 @@ var SenderCacher = newTxSenderCacher(runtime.NumCPU())
 // The inc field defines the number of transactions to skip after each recovery,
 // which is used to feed the same underlying input array to different threads but
 // ensure they process the early transactions fast.
+// txSenderCacherRequest 是一个请求，用于使用特定的签名方案恢复交易发送者，并将其缓存到交易本身中。
+//
+// inc 字段定义了每次恢复后要跳过的交易数量，用于将相同的底层输入数组提供给不同的线程，
+// 但确保它们快速处理早期的交易。
 type txSenderCacherRequest struct {
 	signer types.Signer
 	txs    []*types.Transaction
@@ -39,6 +44,7 @@ type txSenderCacherRequest struct {
 
 // txSenderCacher is a helper structure to concurrently ecrecover transaction
 // senders from digital signatures on background threads.
+// txSenderCacher 是一个辅助结构，用于在后台线程上并发地从数字签名中恢复交易发送者。
 type txSenderCacher struct {
 	threads int
 	tasks   chan *txSenderCacherRequest
@@ -46,6 +52,7 @@ type txSenderCacher struct {
 
 // newTxSenderCacher creates a new transaction sender background cacher and starts
 // as many processing goroutines as allowed by the GOMAXPROCS on construction.
+// newTxSenderCacher 创建一个新的交易发送者后台缓存器，并在创建时启动与 GOMAXPROCS 允许数量一样多的处理 goroutine。
 func newTxSenderCacher(threads int) *txSenderCacher {
 	cacher := &txSenderCacher{
 		tasks:   make(chan *txSenderCacherRequest, threads),
@@ -59,6 +66,7 @@ func newTxSenderCacher(threads int) *txSenderCacher {
 
 // cache is an infinite loop, caching transaction senders from various forms of
 // data structures.
+// cache 是一个无限循环，用于从各种形式的数据结构中缓存交易发送者。
 func (cacher *txSenderCacher) cache() {
 	for task := range cacher.tasks {
 		for i := 0; i < len(task.txs); i += task.inc {
@@ -70,12 +78,16 @@ func (cacher *txSenderCacher) cache() {
 // Recover recovers the senders from a batch of transactions and caches them
 // back into the same data structures. There is no validation being done, nor
 // any reaction to invalid signatures. That is up to calling code later.
+// Recover 从一批交易中恢复发送者，并将它们缓存回相同的数据结构中。
+// 这里不进行任何验证，也不对无效签名做出任何反应。这些都留给后面的调用代码处理。
 func (cacher *txSenderCacher) Recover(signer types.Signer, txs []*types.Transaction) {
 	// If there's nothing to recover, abort
+	// 如果没有需要恢复的，则中止。
 	if len(txs) == 0 {
 		return
 	}
 	// Ensure we have meaningful task sizes and schedule the recoveries
+	// 确保我们有合理的任务大小并安排恢复操作。
 	tasks := cacher.threads
 	if len(txs) < tasks*4 {
 		tasks = (len(txs) + 3) / 4
@@ -92,6 +104,8 @@ func (cacher *txSenderCacher) Recover(signer types.Signer, txs []*types.Transact
 // RecoverFromBlocks recovers the senders from a batch of blocks and caches them
 // back into the same data structures. There is no validation being done, nor
 // any reaction to invalid signatures. That is up to calling code later.
+// RecoverFromBlocks 从一批区块中恢复发送者，并将它们缓存回相同的数据结构中。
+// 这里不进行任何验证，也不对无效签名做出任何反应。这些都留给后面的调用代码处理。
 func (cacher *txSenderCacher) RecoverFromBlocks(signer types.Signer, blocks []*types.Block) {
 	count := 0
 	for _, block := range blocks {
