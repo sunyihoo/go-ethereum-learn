@@ -22,52 +22,66 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// 定义了执行函数的类型，接受程序计数器、解释器和作用域上下文，返回字节切片和错误
 type (
 	executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
-	gasFunc       func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
+	// 定义了 gas 函数的类型，接受 EVM、合约、栈、内存和请求的内存大小，返回 gas 成本和错误
+	gasFunc func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
 	// memorySizeFunc returns the required size, and whether the operation overflowed a uint64
+	// memorySizeFunc 返回所需的内存大小，以及操作是否溢出 uint64
 	memorySizeFunc func(*Stack) (size uint64, overflow bool)
 )
 
+// operation 结构体定义了 EVM 操作码的属性
 type operation struct {
 	// execute is the operation function
-	execute     executionFunc
+	// execute 是操作的执行函数
+	execute executionFunc
+	// constantGas 是操作的固定 gas 成本
 	constantGas uint64
-	dynamicGas  gasFunc
+	// dynamicGas 是操作的动态 gas 成本函数
+	dynamicGas gasFunc
 	// minStack tells how many stack items are required
+	// minStack 表示操作所需的最小栈项数
 	minStack int
 	// maxStack specifies the max length the stack can have for this operation
 	// to not overflow the stack.
+	// maxStack 表示操作允许的栈最大长度，以避免栈溢出
 	maxStack int
 
 	// memorySize returns the memory size required for the operation
+	// memorySize 返回操作所需的内存大小
 	memorySize memorySizeFunc
 
 	// undefined denotes if the instruction is not officially defined in the jump table
+	// undefined 表示该指令在跳转表中未正式定义
 	undefined bool
 }
 
+// 定义了不同以太坊分叉版本的指令集
 var (
-	frontierInstructionSet         = newFrontierInstructionSet()
-	homesteadInstructionSet        = newHomesteadInstructionSet()
-	tangerineWhistleInstructionSet = newTangerineWhistleInstructionSet()
-	spuriousDragonInstructionSet   = newSpuriousDragonInstructionSet()
-	byzantiumInstructionSet        = newByzantiumInstructionSet()
-	constantinopleInstructionSet   = newConstantinopleInstructionSet()
-	istanbulInstructionSet         = newIstanbulInstructionSet()
-	berlinInstructionSet           = newBerlinInstructionSet()
-	londonInstructionSet           = newLondonInstructionSet()
-	mergeInstructionSet            = newMergeInstructionSet()
-	shanghaiInstructionSet         = newShanghaiInstructionSet()
-	cancunInstructionSet           = newCancunInstructionSet()
-	verkleInstructionSet           = newVerkleInstructionSet()
-	pragueInstructionSet           = newPragueInstructionSet()
-	eofInstructionSet              = newEOFInstructionSetForTesting()
+	frontierInstructionSet         = newFrontierInstructionSet()         // Frontier 分叉的指令集
+	homesteadInstructionSet        = newHomesteadInstructionSet()        // Homestead 分叉的指令集
+	tangerineWhistleInstructionSet = newTangerineWhistleInstructionSet() // Tangerine Whistle 分叉的指令集
+	spuriousDragonInstructionSet   = newSpuriousDragonInstructionSet()   // Spurious Dragon 分叉的指令集
+	byzantiumInstructionSet        = newByzantiumInstructionSet()        // Byzantium 分叉的指令集
+	constantinopleInstructionSet   = newConstantinopleInstructionSet()   // Constantinople 分叉的指令集
+	istanbulInstructionSet         = newIstanbulInstructionSet()         // Istanbul 分叉的指令集
+	berlinInstructionSet           = newBerlinInstructionSet()           // Berlin 分叉的指令集
+	londonInstructionSet           = newLondonInstructionSet()           // London 分叉的指令集
+	mergeInstructionSet            = newMergeInstructionSet()            // Merge 分叉的指令集
+	shanghaiInstructionSet         = newShanghaiInstructionSet()         // Shanghai 分叉的指令集
+	cancunInstructionSet           = newCancunInstructionSet()           // Cancun 分叉的指令集
+	verkleInstructionSet           = newVerkleInstructionSet()           // Verkle 分叉的指令集
+	pragueInstructionSet           = newPragueInstructionSet()           // Prague 分叉的指令集
+	eofInstructionSet              = newEOFInstructionSetForTesting()    // EOF 指令集（用于测试）
 )
 
 // JumpTable contains the EVM opcodes supported at a given fork.
+// JumpTable 包含在给定分叉版本中支持的 EVM 操作码
 type JumpTable [256]*operation
 
+// validate 函数用于验证 JumpTable，确保每个操作码都已定义且 memorySize 和 dynamicGas 一致
 func validate(jt JumpTable) JumpTable {
 	for i, op := range jt {
 		if op == nil {
@@ -79,6 +93,9 @@ func validate(jt JumpTable) JumpTable {
 		// allows us to avoid a condition check. As long as we have that assumption
 		// in there, this little sanity check prevents us from merging in a
 		// change which violates it.
+		// 解释器假设如果 memorySize 函数已设置，则 dynamicGas 函数也已设置。
+		// 这是一个有些武断的假设，如果需要可以移除——但它允许我们避免条件检查。
+		// 只要有这个假设，这个小检查可以防止合并违反此假设的更改。
 		if op.memorySize != nil && op.dynamicGas == nil {
 			panic(fmt.Sprintf("op %v has dynamic memory but not dynamic gas", OpCode(i).String()))
 		}
@@ -86,46 +103,52 @@ func validate(jt JumpTable) JumpTable {
 	return jt
 }
 
+// 创建 Verkle 分叉的指令集
 func newVerkleInstructionSet() JumpTable {
 	instructionSet := newCancunInstructionSet()
-	enable4762(&instructionSet)
+	enable4762(&instructionSet) // 启用 EIP-4762
 	return validate(instructionSet)
 }
 
+// 创建用于测试的 EOF 指令集
 func NewEOFInstructionSetForTesting() JumpTable {
 	return newEOFInstructionSetForTesting()
 }
 
 func newEOFInstructionSetForTesting() JumpTable {
 	instructionSet := newPragueInstructionSet()
-	enableEOF(&instructionSet)
+	enableEOF(&instructionSet) // 启用 EOF（EVM Object Format）
 	return validate(instructionSet)
 }
 
+// 创建 Prague 分叉的指令集
 func newPragueInstructionSet() JumpTable {
 	instructionSet := newCancunInstructionSet()
-	enable7702(&instructionSet) // EIP-7702 Setcode transaction type
+	enable7702(&instructionSet) // EIP-7702 Setcode transaction type 启用 EIP-7702 Setcode 交易类型
 	return validate(instructionSet)
 }
 
+// 创建 Cancun 分叉的指令集
 func newCancunInstructionSet() JumpTable {
 	instructionSet := newShanghaiInstructionSet()
-	enable4844(&instructionSet) // EIP-4844 (BLOBHASH opcode)
-	enable7516(&instructionSet) // EIP-7516 (BLOBBASEFEE opcode)
-	enable1153(&instructionSet) // EIP-1153 "Transient Storage"
-	enable5656(&instructionSet) // EIP-5656 (MCOPY opcode)
-	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction
+	enable4844(&instructionSet) // EIP-4844 (BLOBHASH opcode) 启用 EIP-4844（BLOBHASH 操作码）
+	enable7516(&instructionSet) // EIP-7516 (BLOBBASEFEE opcode) 启用 EIP-7516（BLOBBASEFEE 操作码）
+	enable1153(&instructionSet) // EIP-1153 "Transient Storage" 启用 EIP-1153 "Transient Storage"
+	enable5656(&instructionSet) // EIP-5656 (MCOPY opcode) 启用 EIP-5656（MCOPY 操作码）
+	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction 启用 EIP-6780 SELFDESTRUCT 仅在同一交易中
 	return validate(instructionSet)
 }
 
+// 创建 Shanghai 分叉的指令集
 func newShanghaiInstructionSet() JumpTable {
 	instructionSet := newMergeInstructionSet()
-	enable3855(&instructionSet) // PUSH0 instruction
-	enable3860(&instructionSet) // Limit and meter initcode
+	enable3855(&instructionSet) // PUSH0 instruction 启用 PUSH0 指令
+	enable3860(&instructionSet) // Limit and meter initcode 限制和计量 initcode
 
 	return validate(instructionSet)
 }
 
+// 创建 Merge 分叉的指令集
 func newMergeInstructionSet() JumpTable {
 	instructionSet := newLondonInstructionSet()
 	instructionSet[PREVRANDAO] = &operation{
@@ -139,28 +162,31 @@ func newMergeInstructionSet() JumpTable {
 
 // newLondonInstructionSet returns the frontier, homestead, byzantium,
 // constantinople, istanbul, petersburg, berlin and london instructions.
+// 创建 London 分叉的指令集，包含 Frontier 到 London 的所有指令
 func newLondonInstructionSet() JumpTable {
 	instructionSet := newBerlinInstructionSet()
-	enable3529(&instructionSet) // EIP-3529: Reduction in refunds https://eips.ethereum.org/EIPS/eip-3529
-	enable3198(&instructionSet) // Base fee opcode https://eips.ethereum.org/EIPS/eip-3198
+	enable3529(&instructionSet) // EIP-3529: Reduction in refunds https://eips.ethereum.org/EIPS/eip-3529 启用 EIP-3529: 减少退款 https://eips.ethereum.org/EIPS/eip-3529
+	enable3198(&instructionSet) // Base fee opcode https://eips.ethereum.org/EIPS/eip-3198 启用 Base fee 操作码 https://eips.ethereum.org/EIPS/eip-3198
 	return validate(instructionSet)
 }
 
 // newBerlinInstructionSet returns the frontier, homestead, byzantium,
 // constantinople, istanbul, petersburg and berlin instructions.
+// 创建 Berlin 指令集，包含 Frontier 到 Berlin 的所有指令
 func newBerlinInstructionSet() JumpTable {
 	instructionSet := newIstanbulInstructionSet()
-	enable2929(&instructionSet) // Gas cost increases for state access opcodes https://eips.ethereum.org/EIPS/eip-2929
+	enable2929(&instructionSet) // Gas cost increases for state access opcodes https://eips.ethereum.org/EIPS/eip-2929 启用 EIP-2929: 增加状态访问操作码的 gas 成本
 	return validate(instructionSet)
 }
 
 // newIstanbulInstructionSet returns the frontier, homestead, byzantium,
 // constantinople, istanbul and petersburg instructions.
+// 创建 Istanbul 指令集，包含 Frontier 到 Istanbul 的所有指令
 func newIstanbulInstructionSet() JumpTable {
 	instructionSet := newConstantinopleInstructionSet()
 
-	enable1344(&instructionSet) // ChainID opcode - https://eips.ethereum.org/EIPS/eip-1344
-	enable1884(&instructionSet) // Reprice reader opcodes - https://eips.ethereum.org/EIPS/eip-1884
+	enable1344(&instructionSet) // ChainID opcode - https://eips.ethereum.org/EIPS/eip-1344 启用 ChainID 操作码
+	enable1884(&instructionSet) // Reprice reader opcodes - https://eips.ethereum.org/EIPS/eip-1884 重新定价读取操作码
 	enable2200(&instructionSet) // Net metered SSTORE - https://eips.ethereum.org/EIPS/eip-2200
 
 	return validate(instructionSet)
@@ -168,6 +194,7 @@ func newIstanbulInstructionSet() JumpTable {
 
 // newConstantinopleInstructionSet returns the frontier, homestead,
 // byzantium and constantinople instructions.
+// 创建 Constantinople 指令集，包含 Frontier 到 Constantinople 的指令
 func newConstantinopleInstructionSet() JumpTable {
 	instructionSet := newByzantiumInstructionSet()
 	instructionSet[SHL] = &operation{
@@ -207,6 +234,7 @@ func newConstantinopleInstructionSet() JumpTable {
 
 // newByzantiumInstructionSet returns the frontier, homestead and
 // byzantium instructions.
+// 创建 Byzantium 指令集，包含 Frontier、Homestead 和 Byzantium 的指令
 func newByzantiumInstructionSet() JumpTable {
 	instructionSet := newSpuriousDragonInstructionSet()
 	instructionSet[STATICCALL] = &operation{
@@ -242,15 +270,18 @@ func newByzantiumInstructionSet() JumpTable {
 }
 
 // EIP 158 a.k.a Spurious Dragon
+// 创建 Spurious Dragon 指令集，包含 EIP-158 变更
 func newSpuriousDragonInstructionSet() JumpTable {
 	instructionSet := newTangerineWhistleInstructionSet()
-	instructionSet[EXP].dynamicGas = gasExpEIP158
+	instructionSet[EXP].dynamicGas = gasExpEIP158 // 更新 EXP 操作的动态 gas 成本
 	return validate(instructionSet)
 }
 
 // EIP 150 a.k.a Tangerine Whistle
+// 创建 Tangerine Whistle 指令集，包含 EIP-150 变更
 func newTangerineWhistleInstructionSet() JumpTable {
 	instructionSet := newHomesteadInstructionSet()
+	// 更新操作码的 gas 成本
 	instructionSet[BALANCE].constantGas = params.BalanceGasEIP150
 	instructionSet[EXTCODESIZE].constantGas = params.ExtcodeSizeGasEIP150
 	instructionSet[SLOAD].constantGas = params.SloadGasEIP150
@@ -263,6 +294,7 @@ func newTangerineWhistleInstructionSet() JumpTable {
 
 // newHomesteadInstructionSet returns the frontier and homestead
 // instructions that can be executed during the homestead phase.
+// 创建 Homestead 指令集，包含 Frontier 和 Homestead 的指令
 func newHomesteadInstructionSet() JumpTable {
 	instructionSet := newFrontierInstructionSet()
 	instructionSet[DELEGATECALL] = &operation{
@@ -278,6 +310,7 @@ func newHomesteadInstructionSet() JumpTable {
 
 // newFrontierInstructionSet returns the frontier instructions
 // that can be executed during the frontier phase.
+// 创建 Frontier 指令集，包含 Frontier 阶段可执行的指令
 func newFrontierInstructionSet() JumpTable {
 	tbl := JumpTable{
 		STOP: {
@@ -1088,6 +1121,7 @@ func newFrontierInstructionSet() JumpTable {
 	}
 
 	// Fill all unassigned slots with opUndefined.
+	// 用 opUndefined 填充所有未分配的槽位
 	for i, entry := range tbl {
 		if entry == nil {
 			tbl[i] = &operation{execute: opUndefined, maxStack: maxStack(0, 0), undefined: true}
@@ -1097,6 +1131,7 @@ func newFrontierInstructionSet() JumpTable {
 	return validate(tbl)
 }
 
+// 复制 JumpTable
 func copyJumpTable(source *JumpTable) *JumpTable {
 	dest := *source
 	for i, op := range source {

@@ -39,19 +39,33 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
+// 什么是预编译合约（Precompiled Contracts）？
+// 预编译合约是以太坊中的一种特殊合约，地址为 0x1 到 0x13（在不同版本中可能有所扩展）。与普通合约不同，预编译合约的代码是原生 Go 代码，直接在 EVM 外部执行，提供比 EVM 字节码更高效的计算能力。它们通常用于执行计算密集型任务，如加密、哈希和椭圆曲线操作。
+
+// Gas 计算
+// 每个预编译合约都实现了 RequiredGas 方法，用于计算执行该合约所需的 Gas。Gas 计算通常基于输入大小和操作的复杂性，确保在执行前预先扣除足够的 Gas，防止 Gas 耗尽导致的失败。
+
+// Gas 机制：Gas 是以太坊中用于支付计算资源的单位。预编译合约的 Gas 成本是预先确定的，确保资源消耗的可预测性。
+// 椭圆曲线密码学：BN256 和 BLS12-381 是以太坊中用于零知识证明和签名方案的椭圆曲线。预编译合约提供了这些曲线的原生支持，极大地提高了性能。
+// 哈希函数：SHA256、RIPEMD160 和 BLAKE2b 是常见的哈希函数，用于数据完整性验证和地址生成。
+// KZG 承诺：KZG（Kate-Zaverucha-Goldberg）承诺是一种用于多项式承诺的密码学原语，支持 EIP-4844 中的数据可用性采样。
+
 // PrecompiledContract is the basic interface for native Go contracts. The implementation
 // requires a deterministic gas count based on the input size of the Run method of the
 // contract.
+// PrecompiledContract 是原生 Go 合约的基本接口。实现需要一个基于合约 Run 方法输入大小的确定性 gas 计数。
 type PrecompiledContract interface {
-	RequiredGas(input []byte) uint64  // RequiredPrice calculates the contract gas use
-	Run(input []byte) ([]byte, error) // Run runs the precompiled contract
+	RequiredGas(input []byte) uint64  // RequiredPrice calculates the contract gas use RequiredGas 计算合约的 gas 使用
+	Run(input []byte) ([]byte, error) // Run runs the precompiled contract Run 运行预编译合约
 }
 
 // PrecompiledContracts contains the precompiled contracts supported at the given fork.
+// PrecompiledContracts 包含在给定分叉中支持的预编译合约。
 type PrecompiledContracts map[common.Address]PrecompiledContract
 
 // PrecompiledContractsHomestead contains the default set of pre-compiled Ethereum
 // contracts used in the Frontier and Homestead releases.
+// PrecompiledContractsHomestead 包含在 Frontier 和 Homestead 版本中使用的默认预编译以太坊合约集。
 var PrecompiledContractsHomestead = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1}): &ecrecover{},
 	common.BytesToAddress([]byte{0x2}): &sha256hash{},
@@ -61,6 +75,7 @@ var PrecompiledContractsHomestead = PrecompiledContracts{
 
 // PrecompiledContractsByzantium contains the default set of pre-compiled Ethereum
 // contracts used in the Byzantium release.
+// PrecompiledContractsByzantium 包含在 Byzantium 版本中使用的默认预编译以太坊合约集。
 var PrecompiledContractsByzantium = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1}): &ecrecover{},
 	common.BytesToAddress([]byte{0x2}): &sha256hash{},
@@ -74,6 +89,7 @@ var PrecompiledContractsByzantium = PrecompiledContracts{
 
 // PrecompiledContractsIstanbul contains the default set of pre-compiled Ethereum
 // contracts used in the Istanbul release.
+// PrecompiledContractsIstanbul 包含在 Istanbul 版本中使用的默认预编译以太坊合约集。
 var PrecompiledContractsIstanbul = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1}): &ecrecover{},
 	common.BytesToAddress([]byte{0x2}): &sha256hash{},
@@ -88,6 +104,7 @@ var PrecompiledContractsIstanbul = PrecompiledContracts{
 
 // PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
 // contracts used in the Berlin release.
+// PrecompiledContractsBerlin 包含在 Berlin 版本中使用的默认预编译以太坊合约集。
 var PrecompiledContractsBerlin = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1}): &ecrecover{},
 	common.BytesToAddress([]byte{0x2}): &sha256hash{},
@@ -102,6 +119,7 @@ var PrecompiledContractsBerlin = PrecompiledContracts{
 
 // PrecompiledContractsCancun contains the default set of pre-compiled Ethereum
 // contracts used in the Cancun release.
+// PrecompiledContractsCancun 包含在 Cancun 版本中使用的默认预编译以太坊合约集。
 var PrecompiledContractsCancun = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1}): &ecrecover{},
 	common.BytesToAddress([]byte{0x2}): &sha256hash{},
@@ -117,6 +135,7 @@ var PrecompiledContractsCancun = PrecompiledContracts{
 
 // PrecompiledContractsPrague contains the set of pre-compiled Ethereum
 // contracts used in the Prague release.
+// PrecompiledContractsPrague 包含在 Prague 版本中使用的预编译以太坊合约集。
 var PrecompiledContractsPrague = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x01}): &ecrecover{},
 	common.BytesToAddress([]byte{0x02}): &sha256hash{},
@@ -173,6 +192,7 @@ func init() {
 	}
 }
 
+// activePrecompiledContracts 返回给定规则下的预编译合约。
 func activePrecompiledContracts(rules params.Rules) PrecompiledContracts {
 	switch {
 	case rules.IsVerkle:
@@ -193,11 +213,13 @@ func activePrecompiledContracts(rules params.Rules) PrecompiledContracts {
 }
 
 // ActivePrecompiledContracts returns a copy of precompiled contracts enabled with the current configuration.
+// ActivePrecompiledContracts 返回当前配置启用的预编译合约的副本。
 func ActivePrecompiledContracts(rules params.Rules) PrecompiledContracts {
 	return maps.Clone(activePrecompiledContracts(rules))
 }
 
 // ActivePrecompiles returns the precompile addresses enabled with the current configuration.
+// ActivePrecompiles 返回当前配置启用的预编译地址。
 func ActivePrecompiles(rules params.Rules) []common.Address {
 	switch {
 	case rules.IsPrague:
@@ -220,6 +242,11 @@ func ActivePrecompiles(rules params.Rules) []common.Address {
 // - the returned bytes,
 // - the _remaining_ gas,
 // - any error that occurred
+// RunPrecompiledContract 运行并评估预编译合约的输出。
+// 它返回
+// - 返回的字节,
+// - 剩余的 gas,
+// - 发生的任何错误
 func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uint64, logger *tracing.Hooks) (ret []byte, remainingGas uint64, err error) {
 	gasCost := p.RequiredGas(input)
 	if suppliedGas < gasCost {
@@ -234,6 +261,7 @@ func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uin
 }
 
 // ecrecover implemented as a native contract.
+// ecrecover 实现为原生合约。
 type ecrecover struct{}
 
 func (c *ecrecover) RequiredGas(input []byte) uint64 {
@@ -272,12 +300,16 @@ func (c *ecrecover) Run(input []byte) ([]byte, error) {
 }
 
 // SHA256 implemented as a native contract.
+// SHA256 实现为原生合约。
 type sha256hash struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
 //
 // This method does not require any overflow checking as the input size gas costs
 // required for anything significant is so high it's impossible to pay for.
+// RequiredGas 返回执行预编译合约所需的 gas。
+//
+// 此方法不需要任何溢出检查，因为对于任何重要的输入大小，gas 成本都非常高，无法支付。
 func (c *sha256hash) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.Sha256PerWordGas + params.Sha256BaseGas
 }
@@ -287,12 +319,16 @@ func (c *sha256hash) Run(input []byte) ([]byte, error) {
 }
 
 // RIPEMD160 implemented as a native contract.
+// RIPEMD160 实现为原生合约。
 type ripemd160hash struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
 //
 // This method does not require any overflow checking as the input size gas costs
 // required for anything significant is so high it's impossible to pay for.
+// RequiredGas 返回执行预编译合约所需的 gas。
+//
+// 此方法不需要任何溢出检查，因为对于任何重要的输入大小，gas 成本都非常高，无法支付。
 func (c *ripemd160hash) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.Ripemd160PerWordGas + params.Ripemd160BaseGas
 }
@@ -303,12 +339,16 @@ func (c *ripemd160hash) Run(input []byte) ([]byte, error) {
 }
 
 // data copy implemented as a native contract.
+// dataCopy 实现为原生合约。
 type dataCopy struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
 //
 // This method does not require any overflow checking as the input size gas costs
 // required for anything significant is so high it's impossible to pay for.
+// RequiredGas 返回执行预编译合约所需的 gas。
+//
+// 此方法不需要任何溢出检查，因为对于任何重要的输入大小，gas 成本都非常高，无法支付。
 func (c *dataCopy) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.IdentityPerWordGas + params.IdentityBaseGas
 }
@@ -317,6 +357,7 @@ func (c *dataCopy) Run(in []byte) ([]byte, error) {
 }
 
 // bigModExp implements a native big integer exponential modular operation.
+// bigModExp 实现原生大整数指数模运算。
 type bigModExp struct {
 	eip2565 bool
 }
@@ -343,6 +384,14 @@ var (
 //		else: return x ** 2 // 16 + 480 * x - 199680
 //
 // where is x is max(length_of_MODULUS, length_of_BASE)
+// modexpMultComplexity 实现 bigModexp multComplexity 公式，如 EIP-198 中定义
+//
+//	def mult_complexity(x):
+//		if x <= 64: return x ** 2
+//		elif x <= 1024: return x ** 2 // 4 + 96 * x - 3072
+//		else: return x ** 2 // 16 + 480 * x - 199680
+//
+// 其中 x 是 max(length_of_MODULUS, length_of_BASE)
 func modexpMultComplexity(x *big.Int) *big.Int {
 	switch {
 	case x.Cmp(big64) <= 0:
@@ -364,6 +413,7 @@ func modexpMultComplexity(x *big.Int) *big.Int {
 }
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bigModExp) RequiredGas(input []byte) uint64 {
 	var (
 		baseLen = new(big.Int).SetBytes(getData(input, 0, 32))
@@ -480,6 +530,8 @@ func (c *bigModExp) Run(input []byte) ([]byte, error) {
 
 // newCurvePoint unmarshals a binary blob into a bn256 elliptic curve point,
 // returning it, or an error if the point is invalid.
+// newCurvePoint 将二进制数据反序列化为 bn256 椭圆曲线点，
+// 返回该点，或在点无效时返回错误。
 func newCurvePoint(blob []byte) (*bn256.G1, error) {
 	p := new(bn256.G1)
 	if _, err := p.Unmarshal(blob); err != nil {
@@ -490,6 +542,8 @@ func newCurvePoint(blob []byte) (*bn256.G1, error) {
 
 // newTwistPoint unmarshals a binary blob into a bn256 elliptic curve point,
 // returning it, or an error if the point is invalid.
+// newTwistPoint 将二进制数据反序列化为 bn256 椭圆曲线点，
+// 返回该点，或在点无效时返回错误。
 func newTwistPoint(blob []byte) (*bn256.G2, error) {
 	p := new(bn256.G2)
 	if _, err := p.Unmarshal(blob); err != nil {
@@ -500,6 +554,7 @@ func newTwistPoint(blob []byte) (*bn256.G2, error) {
 
 // runBn256Add implements the Bn256Add precompile, referenced by both
 // Byzantium and Istanbul operations.
+// runBn256Add 实现 Bn256Add 预编译，由 Byzantium 和 Istanbul 操作引用。
 func runBn256Add(input []byte) ([]byte, error) {
 	x, err := newCurvePoint(getData(input, 0, 64))
 	if err != nil {
@@ -516,9 +571,11 @@ func runBn256Add(input []byte) ([]byte, error) {
 
 // bn256AddIstanbul implements a native elliptic curve point addition conforming to
 // Istanbul consensus rules.
+// bn256AddIstanbul 实现符合 Istanbul 共识规则的原生椭圆曲线点加法。
 type bn256AddIstanbul struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256AddIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256AddGasIstanbul
 }
@@ -529,9 +586,11 @@ func (c *bn256AddIstanbul) Run(input []byte) ([]byte, error) {
 
 // bn256AddByzantium implements a native elliptic curve point addition
 // conforming to Byzantium consensus rules.
+// bn256AddByzantium 实现符合 Byzantium 共识规则的原生椭圆曲线点加法。
 type bn256AddByzantium struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256AddByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256AddGasByzantium
 }
@@ -542,6 +601,7 @@ func (c *bn256AddByzantium) Run(input []byte) ([]byte, error) {
 
 // runBn256ScalarMul implements the Bn256ScalarMul precompile, referenced by
 // both Byzantium and Istanbul operations.
+// runBn256ScalarMul 实现 Bn256ScalarMul 预编译，由 Byzantium 和 Istanbul 操作引用。
 func runBn256ScalarMul(input []byte) ([]byte, error) {
 	p, err := newCurvePoint(getData(input, 0, 64))
 	if err != nil {
@@ -554,9 +614,11 @@ func runBn256ScalarMul(input []byte) ([]byte, error) {
 
 // bn256ScalarMulIstanbul implements a native elliptic curve scalar
 // multiplication conforming to Istanbul consensus rules.
+// bn256ScalarMulIstanbul 实现符合 Istanbul 共识规则的原生椭圆曲线标量乘法。
 type bn256ScalarMulIstanbul struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256ScalarMulIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256ScalarMulGasIstanbul
 }
@@ -567,9 +629,11 @@ func (c *bn256ScalarMulIstanbul) Run(input []byte) ([]byte, error) {
 
 // bn256ScalarMulByzantium implements a native elliptic curve scalar
 // multiplication conforming to Byzantium consensus rules.
+// bn256ScalarMulByzantium 实现符合 Byzantium 共识规则的原生椭圆曲线标量乘法。
 type bn256ScalarMulByzantium struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256ScalarMulByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256ScalarMulGasByzantium
 }
@@ -580,17 +644,21 @@ func (c *bn256ScalarMulByzantium) Run(input []byte) ([]byte, error) {
 
 var (
 	// true32Byte is returned if the bn256 pairing check succeeds.
+	// true32Byte 如果 bn256 配对检查成功，则返回。
 	true32Byte = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 
 	// false32Byte is returned if the bn256 pairing check fails.
+	// false32Byte 如果 bn256 配对检查失败，则返回。
 	false32Byte = make([]byte, 32)
 
 	// errBadPairingInput is returned if the bn256 pairing input is invalid.
+	// errBadPairingInput 如果 bn256 配对输入无效，则返回。
 	errBadPairingInput = errors.New("bad elliptic curve pairing size")
 )
 
 // runBn256Pairing implements the Bn256Pairing precompile, referenced by both
 // Byzantium and Istanbul operations.
+// runBn256Pairing 实现 Bn256Pairing 预编译，由 Byzantium 和 Istanbul 操作引用。
 func runBn256Pairing(input []byte) ([]byte, error) {
 	// Handle some corner cases cheaply
 	if len(input)%192 > 0 {
@@ -622,9 +690,11 @@ func runBn256Pairing(input []byte) ([]byte, error) {
 
 // bn256PairingIstanbul implements a pairing pre-compile for the bn256 curve
 // conforming to Istanbul consensus rules.
+// bn256PairingIstanbul 实现符合 Istanbul 共识规则的 bn256 曲线的配对预编译。
 type bn256PairingIstanbul struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256PairingIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256PairingBaseGasIstanbul + uint64(len(input)/192)*params.Bn256PairingPerPointGasIstanbul
 }
@@ -635,9 +705,11 @@ func (c *bn256PairingIstanbul) Run(input []byte) ([]byte, error) {
 
 // bn256PairingByzantium implements a pairing pre-compile for the bn256 curve
 // conforming to Byzantium consensus rules.
+// bn256PairingByzantium 实现符合 Byzantium 共识规则的 bn256 曲线的配对预编译。
 type bn256PairingByzantium struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bn256PairingByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256PairingBaseGasByzantium + uint64(len(input)/192)*params.Bn256PairingPerPointGasByzantium
 }
@@ -646,6 +718,8 @@ func (c *bn256PairingByzantium) Run(input []byte) ([]byte, error) {
 	return runBn256Pairing(input)
 }
 
+// blake2F implements the BLAKE2 F compression function as a precompile.
+// blake2F 实现 BLAKE2 F 压缩函数作为预编译。
 type blake2F struct{}
 
 func (c *blake2F) RequiredGas(input []byte) uint64 {
@@ -658,9 +732,9 @@ func (c *blake2F) RequiredGas(input []byte) uint64 {
 }
 
 const (
-	blake2FInputLength        = 213
-	blake2FFinalBlockBytes    = byte(1)
-	blake2FNonFinalBlockBytes = byte(0)
+	blake2FInputLength        = 213     // BLAKE2 F 压缩函数的输入长度
+	blake2FFinalBlockBytes    = byte(1) // 最终块的标志
+	blake2FNonFinalBlockBytes = byte(0) // 非最终块的标志
 )
 
 var (
@@ -715,9 +789,11 @@ var (
 )
 
 // bls12381G1Add implements EIP-2537 G1Add precompile.
+// bls12381G1Add 实现 EIP-2537 G1Add 预编译。
 type bls12381G1Add struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G1Add) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G1AddGas
 }
@@ -750,10 +826,14 @@ func (c *bls12381G1Add) Run(input []byte) ([]byte, error) {
 	return encodePointG1(p0), nil
 }
 
+// bls12381G1Mul implements EIP	S
+
 // bls12381G1Mul implements EIP-2537 G1Mul precompile.
+// bls12381G1Mul 实现 EIP-2537 G1Mul 预编译。
 type bls12381G1Mul struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G1Mul) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G1MulGas
 }
@@ -789,9 +869,11 @@ func (c *bls12381G1Mul) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381G1MultiExp implements EIP-2537 G1MultiExp precompile.
+// bls12381G1MultiExp 实现 EIP-2537 G1MultiExp 预编译。
 type bls12381G1MultiExp struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G1MultiExp) RequiredGas(input []byte) uint64 {
 	// Calculate G1 point, scalar value pair length
 	k := len(input) / 160
@@ -849,9 +931,11 @@ func (c *bls12381G1MultiExp) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381G2Add implements EIP-2537 G2Add precompile.
+// bls12381G2Add 实现 EIP-2537 G2Add 预编译。
 type bls12381G2Add struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G2Add) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G2AddGas
 }
@@ -886,9 +970,11 @@ func (c *bls12381G2Add) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381G2Mul implements EIP-2537 G2Mul precompile.
+// bls12381G2Mul 实现 EIP-2537 G2Mul 预编译。
 type bls12381G2Mul struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G2Mul) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G2MulGas
 }
@@ -924,9 +1010,11 @@ func (c *bls12381G2Mul) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381G2MultiExp implements EIP-2537 G2MultiExp precompile.
+// bls12381G2MultiExp 实现 EIP-2537 G2MultiExp 预编译。
 type bls12381G2MultiExp struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381G2MultiExp) RequiredGas(input []byte) uint64 {
 	// Calculate G2 point, scalar value pair length
 	k := len(input) / 288
@@ -984,9 +1072,11 @@ func (c *bls12381G2MultiExp) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381Pairing implements EIP-2537 Pairing precompile.
+// bls12381Pairing 实现 EIP-2537 Pairing 预编译。
 type bls12381Pairing struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381Pairing) RequiredGas(input []byte) uint64 {
 	return params.Bls12381PairingBaseGas + uint64(len(input)/384)*params.Bls12381PairingPerPairGas
 }
@@ -1046,6 +1136,8 @@ func (c *bls12381Pairing) Run(input []byte) ([]byte, error) {
 	return out, nil
 }
 
+// decodePointG1 decodes a G1 point from input bytes.
+// decodePointG1 从输入字节解码 G1 点。
 func decodePointG1(in []byte) (*bls12381.G1Affine, error) {
 	if len(in) != 128 {
 		return nil, errors.New("invalid g1 point length")
@@ -1069,6 +1161,7 @@ func decodePointG1(in []byte) (*bls12381.G1Affine, error) {
 }
 
 // decodePointG2 given encoded (x, y) coordinates in 256 bytes returns a valid G2 Point.
+// decodePointG2 从 256 字节的编码 (x, y) 坐标返回一个有效的 G2 点。
 func decodePointG2(in []byte) (*bls12381.G2Affine, error) {
 	if len(in) != 256 {
 		return nil, errors.New("invalid g2 point length")
@@ -1099,6 +1192,8 @@ func decodePointG2(in []byte) (*bls12381.G2Affine, error) {
 
 // decodeBLS12381FieldElement decodes BLS12-381 elliptic curve field element.
 // Removes top 16 bytes of 64 byte input.
+// decodeBLS12381FieldElement 解码 BLS12-381 椭圆曲线域元素。
+// 移除 64 字节输入的前 16 字节。
 func decodeBLS12381FieldElement(in []byte) (fp.Element, error) {
 	if len(in) != 64 {
 		return fp.Element{}, errors.New("invalid field element length")
@@ -1116,6 +1211,7 @@ func decodeBLS12381FieldElement(in []byte) (fp.Element, error) {
 }
 
 // encodePointG1 encodes a point into 128 bytes.
+// encodePointG1 将点编码为 128 字节。
 func encodePointG1(p *bls12381.G1Affine) []byte {
 	out := make([]byte, 128)
 	fp.BigEndian.PutElement((*[fp.Bytes]byte)(out[16:]), p.X)
@@ -1124,6 +1220,7 @@ func encodePointG1(p *bls12381.G1Affine) []byte {
 }
 
 // encodePointG2 encodes a point into 256 bytes.
+// encodePointG2 将点编码为 256 字节。
 func encodePointG2(p *bls12381.G2Affine) []byte {
 	out := make([]byte, 256)
 	// encode x
@@ -1136,9 +1233,11 @@ func encodePointG2(p *bls12381.G2Affine) []byte {
 }
 
 // bls12381MapG1 implements EIP-2537 MapG1 precompile.
+// bls12381MapG1 实现 EIP-2537 MapG1 预编译。
 type bls12381MapG1 struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381MapG1) RequiredGas(input []byte) uint64 {
 	return params.Bls12381MapG1Gas
 }
@@ -1165,9 +1264,11 @@ func (c *bls12381MapG1) Run(input []byte) ([]byte, error) {
 }
 
 // bls12381MapG2 implements EIP-2537 MapG2 precompile.
+// bls12381MapG2 实现 EIP-2537 MapG2 预编译。
 type bls12381MapG2 struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
+// RequiredGas 返回执行预编译合约所需的 gas。
 func (c *bls12381MapG2) RequiredGas(input []byte) uint64 {
 	return params.Bls12381MapG2Gas
 }
@@ -1198,16 +1299,18 @@ func (c *bls12381MapG2) Run(input []byte) ([]byte, error) {
 }
 
 // kzgPointEvaluation implements the EIP-4844 point evaluation precompile.
+// kzgPointEvaluation 实现 EIP-4844 点评估预编译。
 type kzgPointEvaluation struct{}
 
 // RequiredGas estimates the gas required for running the point evaluation precompile.
+// RequiredGas 估计运行点评估预编译所需的 gas。
 func (b *kzgPointEvaluation) RequiredGas(input []byte) uint64 {
 	return params.BlobTxPointEvaluationPrecompileGas
 }
 
 const (
-	blobVerifyInputLength           = 192  // Max input length for the point evaluation precompile.
-	blobCommitmentVersionKZG  uint8 = 0x01 // Version byte for the point evaluation precompile.
+	blobVerifyInputLength           = 192  // Max input length for the point evaluation precompile. 点评估预编译的最大输入长度。
+	blobCommitmentVersionKZG  uint8 = 0x01 // Version byte for the point evaluation precompile. 点评估预编译的版本字节。
 	blobPrecompileReturnValue       = "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"
 )
 
@@ -1218,6 +1321,7 @@ var (
 )
 
 // Run executes the point evaluation precompile.
+// Run 执行点评估预编译。
 func (b *kzgPointEvaluation) Run(input []byte) ([]byte, error) {
 	if len(input) != blobVerifyInputLength {
 		return nil, errBlobVerifyInvalidInputLength
@@ -1254,6 +1358,7 @@ func (b *kzgPointEvaluation) Run(input []byte) ([]byte, error) {
 }
 
 // kZGToVersionedHash implements kzg_to_versioned_hash from EIP-4844
+// kZGToVersionedHash 实现 EIP-4844 中的 kzg_to_versioned_hash
 func kZGToVersionedHash(kzg kzg4844.Commitment) common.Hash {
 	h := sha256.Sum256(kzg[:])
 	h[0] = blobCommitmentVersionKZG

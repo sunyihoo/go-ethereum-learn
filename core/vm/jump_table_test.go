@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2022 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,17 +14,22 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-/*
-Package vm implements the Ethereum Virtual Machine.
-
-The vm package implements one EVM, a byte code VM. The BC (Byte Code) VM loops
-over a set of bytes and executes them according to the set of rules defined
-in the Ethereum yellow paper.
-*/
-/*
-包 vm 实现了以太坊虚拟机。
-
-vm 包实现了一个 EVM，即字节码虚拟机。字节码（BC）虚拟机循环遍历一组字节，
-并根据以太坊黄皮书中定义的规则集执行它们。
-*/
 package vm
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestJumpTableCopy tests that deep copy is necessary to prevent modify shared jump table
+func TestJumpTableCopy(t *testing.T) {
+	tbl := newMergeInstructionSet()
+	require.Equal(t, uint64(0), tbl[SLOAD].constantGas)
+
+	// a deep copy won't modify the shared jump table
+	deepCopy := copyJumpTable(&tbl)
+	deepCopy[SLOAD].constantGas = 100
+	require.Equal(t, uint64(100), deepCopy[SLOAD].constantGas)
+	require.Equal(t, uint64(0), tbl[SLOAD].constantGas)
+}

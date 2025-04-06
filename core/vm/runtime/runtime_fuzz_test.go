@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2023 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,17 +14,16 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-/*
-Package vm implements the Ethereum Virtual Machine.
+package runtime
 
-The vm package implements one EVM, a byte code VM. The BC (Byte Code) VM loops
-over a set of bytes and executes them according to the set of rules defined
-in the Ethereum yellow paper.
-*/
-/*
-包 vm 实现了以太坊虚拟机。
+import (
+	"testing"
+)
 
-vm 包实现了一个 EVM，即字节码虚拟机。字节码（BC）虚拟机循环遍历一组字节，
-并根据以太坊黄皮书中定义的规则集执行它们。
-*/
-package vm
+func FuzzVmRuntime(f *testing.F) {
+	f.Fuzz(func(t *testing.T, code, input []byte) {
+		Execute(code, input, &Config{
+			GasLimit: 12000000,
+		})
+	})
+}
