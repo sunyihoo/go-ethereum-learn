@@ -36,6 +36,7 @@ const handshakeTimeout = time.Second
 
 // The SessionCache keeps negotiated encryption keys and
 // state for in-progress handshakes in the Discovery v5 wire protocol.
+//
 // SessionCache 存储协商后的加密密钥以及 Discovery v5 协议中正在进行握手的状态。
 type SessionCache struct {
 	sessions   lru.BasicLRU[sessionID, *session] // LRU cache for storing established sessions / 用于存储已建立会话的 LRU 缓存

@@ -34,7 +34,8 @@ import (
 )
 
 // 以太坊 RLPx 传输层
-// rlpxTransport 是 Go-Ethereum 中用于实际网络连接的传输层实现，基于 RLPx 协议（以太坊 DevP2P 的传输层）。它负责加密握手、协议握手和消息传输，是节点间安全通信的关键组件。
+//  rlpxTransport 是 Go-Ethereum 中用于实际网络连接的传输层实现，基于 RLPx 协议（以太坊 DevP2P 的传输层）。
+//  它负责加密握手、协议握手和消息传输，是节点间安全通信的关键组件。
 //
 // 以太坊相关知识点：
 //  RLPx 协议：基于 TCP 的加密传输协议，使用 ECDH 密钥交换和 AES 加密。

@@ -34,9 +34,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-//Discovery v5：以太坊的节点发现协议，改进自 v4，增加了加密和隐私保护（EIP-1459）。
-//ENR：节点记录格式，包含公钥、IP 等信息，通过序列号（Seq）跟踪更新。
-//Secp256k1：以太坊使用的椭圆曲线，用于签名和密钥交换。
+// Discovery v5：以太坊的节点发现协议，改进自 v4，增加了加密和隐私保护（EIP-1459）。
+// ENR：节点记录格式，包含公钥、IP 等信息，通过序列号（Seq）跟踪更新。
+// Secp256k1：以太坊使用的椭圆曲线，用于签名和密钥交换。
+
 // TODO concurrent WHOAREYOU tie-breaker
 // TODO rehandshake after X packets
 // TODO 并发 WHOAREYOU 冲突解决
@@ -205,6 +206,7 @@ func NewCodec(ln *enode.LocalNode, key *ecdsa.PrivateKey, clock mclock.Clock, pr
 // Encode encodes a packet to a node. 'id' and 'addr' specify the destination node. The
 // 'challenge' parameter should be the most recently received WHOAREYOU packet from that
 // node.
+//
 // Encode 将数据包编码到目标节点。'id' 和 'addr' 指定目标节点。
 // 'challenge' 参数应为从该节点最近收到的 WHOAREYOU 数据包。
 func (c *Codec) Encode(id enode.ID, addr string, packet Packet, challenge *Whoareyou) ([]byte, Nonce, error) {

@@ -37,7 +37,7 @@ import (
 // 返回的公钥是 65 字节未压缩格式：0x04 前缀 + 32 字节 X 坐标 + 32 字节 Y 坐标。以太坊地址可通过对公钥进行 Keccak-256 哈希并取后 20 字节生成。
 // 输入签名需包含以太坊特定的消息前缀（\x19Ethereum Signed Message:\n）和长度。
 func Ecrecover(hash, sig []byte) ([]byte, error) {
-	// // 使用 secp256k1 恢复未压缩公钥
+	// 使用 secp256k1 恢复未压缩公钥
 	return secp256k1.RecoverPubkey(hash, sig)
 }
 

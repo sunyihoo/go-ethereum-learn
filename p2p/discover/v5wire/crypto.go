@@ -150,7 +150,8 @@ func deriveKeys(hash hashFn, priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey, n1, n
 }
 
 // deriveKeys 使用 ECDH（椭圆曲线 Diffie-Hellman）和 HKDF（HMAC-based Key Derivation Function）生成会话密钥，ecdh 计算共享密钥。
-// 以太坊知识点：ECDH 是以太坊节点通信中常用的密钥交换方法，HKDF 用于从共享密钥派生对称加密密钥（这里是 AES 密钥）。这是 Discovery v5 中建立安全通信的关键步骤。
+// 以太坊知识点：ECDH 是以太坊节点通信中常用的密钥交换方法，HKDF 用于从共享密钥派生对称加密密钥（这里是 AES 密钥）。
+// 这是 Discovery v5 中建立安全通信的关键步骤。
 
 // ecdh creates a shared secret.
 // ecdh 创建共享密钥
@@ -160,13 +161,14 @@ func ecdh(privkey *ecdsa.PrivateKey, pubkey *ecdsa.PublicKey) []byte {
 		return nil
 	}
 	sec := make([]byte, 33)           // (分配33字节给压缩密钥)
-	sec[0] = 0x02 | byte(secY.Bit(0)) // (根据Y奇偶性设置前缀)
+	sec[0] = 0x02 | byte(secY.Bit(0)) // (根据Y奇偶性设置前缀) 0010 | 0000 = 0010 或者 0010 | 0001 = 0011
 	math.ReadBits(secX, sec[1:])      // (编码X坐标)
 	return sec
 }
 
 // 使用 AES-GCM（Galois/Counter Mode）对数据加密和解密，提供机密性和完整性。
-// 以太坊知识点：AES-GCM 是以太坊节点通信中常用的对称加密算法，结合了加密和认证（通过认证标签）。nonce 确保每次加密唯一，防止重放攻击。
+// 以太坊知识点：AES-GCM 是以太坊节点通信中常用的对称加密算法，结合了加密和认证（通过认证标签）。
+// nonce 确保每次加密唯一，防止重放攻击。
 
 // encryptGCM encrypts pt using AES-GCM with the given key and nonce. The ciphertext is
 // appended to dest, which must not overlap with plaintext. The resulting ciphertext is 16

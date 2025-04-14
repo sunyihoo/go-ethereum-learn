@@ -318,7 +318,7 @@ func (r *ReceiptForStorage) EncodeRLP(_w io.Writer) error {
 	w.WriteUint64(r.CumulativeGasUsed)           // 写入累计燃气使用量。
 	logList := w.List()                          // 开始日志列表。
 	for _, log := range r.Logs {
-		fmt.Println(log)
+		//fmt.Println(log)
 		if err := log.EncodeRLP(w); err != nil {
 			return err
 		}
