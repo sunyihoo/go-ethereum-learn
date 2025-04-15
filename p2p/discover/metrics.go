@@ -50,6 +50,7 @@ func init() {
 
 // meteredUdpConn is a wrapper around a net.UDPConn that meters both the
 // inbound and outbound network traffic.
+//
 // meteredUdpConn 是对 net.UDPConn 的包装，用于计量入站和出站网络流量。
 type meteredUdpConn struct {
 	udpConn UDPConn // Underlying UDP connection / 底层的 UDP 连接

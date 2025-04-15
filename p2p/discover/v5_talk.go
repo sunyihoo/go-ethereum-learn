@@ -54,6 +54,7 @@ const talkHandlerLaunchTimeout = 400 * time.Millisecond
 // Note that talk handlers are expected to come up with a response very quickly, within at
 // most 200ms or so. If the handler takes longer than that, the remote end may time out
 // and wont receive the response.
+//
 // TalkRequestHandler 回调处理 TALK 请求并返回响应。
 //
 // 请注意，TALK 处理程序预期会非常快地生成响应，最多大约 200 毫秒。如果处理程序耗时超过此时间，
@@ -134,6 +135,7 @@ func (t *talkSystem) handleRequest(id enode.ID, addr netip.AddrPort, req *v5wire
 
 // wait blocks until all active requests have finished, and prevents new request
 // handlers from being launched.
+//
 // wait 阻塞直到所有活动请求完成，并阻止新的请求处理程序启动。
 func (t *talkSystem) wait() {
 	for i := 0; i < cap(t.slots); i++ {

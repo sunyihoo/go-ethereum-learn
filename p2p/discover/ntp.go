@@ -29,16 +29,19 @@ import (
 )
 
 const (
-	ntpPool = "pool.ntp.org" // ntpPool is the NTP server to query for the current time
 	// ntpPool 是用于查询当前时间的 NTP 服务器地址
-	ntpChecks = 3 // Number of measurements to do against the NTP server
+	ntpPool = "pool.ntp.org" // ntpPool is the NTP server to query for the current time
 	// ntpChecks 是对 NTP 服务器进行的时间测量次数
+	ntpChecks = 3 // Number of measurements to do against the NTP server
 )
 
-// 在以太坊客户端（如 go-ethereum）中，精确的时间同步至关重要。以太坊网络依赖时间戳来验证区块和交易。例如，区块时间戳必须在合理范围内，否则节点可能会拒绝区块。因此，检查时钟漂移是确保节点与网络一致性的重要步骤。
+// 在以太坊客户端（如 go-ethereum）中，精确的时间同步至关重要。
+// 以太坊网络依赖时间戳来验证区块和交易。例如，区块时间戳必须在合理范围内，否则节点可能会拒绝区块。
+// 因此，检查时钟漂移是确保节点与网络一致性的重要步骤。
 
 // checkClockDrift queries an NTP server for clock drifts and warns the user if
 // one large enough is detected.
+//
 // checkClockDrift 查询 NTP 服务器以检测时钟漂移，并在检测到足够大的漂移时警告用户。
 func checkClockDrift() {
 	drift, err := sntpDrift(ntpChecks)
@@ -46,13 +49,13 @@ func checkClockDrift() {
 		return
 	}
 	if drift < -driftThreshold || drift > driftThreshold {
-		log.Warn(fmt.Sprintf("System clock seems off by %v, which can prevent network connectivity", drift))
 		// 系统时钟似乎偏离了 %v，这可能会阻止网络连接
-		log.Warn("Please enable network time synchronisation in system settings.")
+		log.Warn(fmt.Sprintf("System clock seems off by %v, which can prevent network connectivity", drift))
 		// 请在系统设置中启用网络时间同步。
+		log.Warn("Please enable network time synchronisation in system settings.")
 	} else {
-		log.Debug("NTP sanity check done", "drift", drift)
 		// NTP 健全性检查完成，时钟漂移为 drift
+		log.Debug("NTP sanity check done", "drift", drift)
 	}
 }
 
@@ -62,6 +65,7 @@ func checkClockDrift() {
 //
 // Note, it executes two extra measurements compared to the number of requested
 // ones to be able to discard the two extremes as outliers.
+//
 // sntpDrift 对 NTP 服务器执行简单的时间解析并返回测量的漂移。此方法使用简化的 NTP 版本。
 // 它不够精确，但对于这些用途来说已经足够。
 //
@@ -76,16 +80,20 @@ func sntpDrift(measurements int) (time.Duration, error) {
 	// Construct the time request (empty package with only 2 fields set):
 	//   Bits 3-5: Protocol version, 3
 	//   Bits 6-8: Mode of operation, client, 3
+	//
 	// 构造时间请求（仅设置两个字段的空数据包）：
 	//   第 3-5 位：协议版本，3
 	//   第 6-8 位：操作模式，客户端，3
 	request := make([]byte, 48)
+
 	// request[0] 是第一个字节，包含协议版本和操作模式：
 	// 3<<3：将版本号 3 左移 3 位，占据第 3-5 位，表示 NTP 协议版本 3。
 	//
 	// | 3：与操作模式 3（客户端模式）进行按位或运算，占据第 6-8 位。
 	// request[0] 的二进制形式为 00011011（十进制 27），符合简化的 SNTP 请求格式。
-
+	//
+	// 00000011 << 3 = 00011000
+	// 00011000 | 00000011 = 00011011
 	request[0] = 3<<3 | 3
 
 	// Execute each of the measurements

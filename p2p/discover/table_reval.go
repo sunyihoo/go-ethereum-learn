@@ -32,6 +32,7 @@ const slowRevalidationFactor = 3 // Factor to slow down revalidation for stable 
 
 // tableRevalidation implements the node revalidation process.
 // It tracks all nodes contained in Table, and schedules sending PING to them.
+//
 // tableRevalidation 实现了节点重新验证过程。
 // 它跟踪 Table 中包含的所有节点，并调度向它们发送 PING。
 type tableRevalidation struct {
@@ -81,6 +82,7 @@ func (tr *tableRevalidation) nodeEndpointChanged(tab *Table, n *tableNode) {
 // run performs node revalidation.
 // It returns the next time it should be invoked, which is used in the Table main loop
 // to schedule a timer. However, run can be called at any time.
+//
 // run 执行节点重新验证。
 // 它返回下次应调用的时间，用于 Table 主循环中调度定时器。但 run 可随时调用。
 func (tr *tableRevalidation) run(tab *Table, now mclock.AbsTime) (nextTime mclock.AbsTime) {

@@ -29,47 +29,47 @@ import (
 // 在以太坊 Discovery v5（EIP-1459）中，节点存活通过 PING/PONG 消息验证。
 
 type BucketNode struct {
-	Node *enode.Node `json:"node"` // Node information
 	// 节点信息
-	AddedToTable time.Time `json:"addedToTable"` // Time when the node was added to the table
+	Node *enode.Node `json:"node"` // Node information
 	// 节点被添加到表的时间
-	AddedToBucket time.Time `json:"addedToBucket"` // Time when the node was added to the bucket
+	AddedToTable time.Time `json:"addedToTable"` // Time when the node was added to the table
 	// 节点被添加到桶的时间
-	Checks int `json:"checks"` // Number of liveness checks performed
+	AddedToBucket time.Time `json:"addedToBucket"` // Time when the node was added to the bucket
 	// 执行的存活检查次数
-	Live bool `json:"live"` // Whether the node is currently considered live
+	Checks int `json:"checks"` // Number of liveness checks performed
 	// 节点当前是否被认为存活
+	Live bool `json:"live"` // Whether the node is currently considered live
 }
 
 // tableNode is an entry in Table.
 // tableNode 是表中的一个条目。
 type tableNode struct {
-	*enode.Node // Embedded node information
 	// 嵌入的节点信息
-	revalList *revalidationList // Revalidation list for the node
+	*enode.Node // Embedded node information
 	// 节点的重新验证列表
-	addedToTable time.Time // first time node was added to bucket or replacement list
+	revalList *revalidationList // Revalidation list for the node
 	// 节点首次被添加到桶或替换列表的时间
-	addedToBucket time.Time // time it was added in the actual bucket
+	addedToTable time.Time // first time node was added to bucket or replacement list
 	// 节点被添加到实际桶的时间
+	addedToBucket time.Time // time it was added in the actual bucket
+	// 存活分数
 	livenessChecks uint // how often liveness was checked
-	// 存活检查的次数
-	isValidatedLive bool // true if existence of node is considered validated right now
 	// 如果节点的存活状态当前被验证为真，则为 true
+	isValidatedLive bool // true if existence of node is considered validated right now
 }
 
 func unwrapNodes(ns []*tableNode) []*enode.Node {
 	result := make([]*enode.Node, len(ns))
 	for i, n := range ns {
-		result[i] = n.Node // Extract the enode.Node from tableNode
 		// 从 tableNode 中提取 enode.Node
+		result[i] = n.Node // Extract the enode.Node from tableNode
 	}
 	return result
 }
 
 func (n *tableNode) String() string {
-	return n.Node.String() // Return the string representation of the node
 	// 返回节点的字符串表示
+	return n.Node.String() // Return the string representation of the node
 }
 
 // enode.DistCmp 使用 XOR 距离度量，是 Kademlia 算法的核心，用于衡量节点间的“接近度”。
@@ -79,10 +79,10 @@ func (n *tableNode) String() string {
 // nodesByDistance is a list of nodes, ordered by distance to target.
 // nodesByDistance 是一个按与目标距离排序的节点列表。
 type nodesByDistance struct {
-	entries []*enode.Node // List of nodes
 	// 节点列表
-	target enode.ID // Target node ID for distance calculation
+	entries []*enode.Node // List of nodes
 	// 用于距离计算的目标节点 ID
+	target enode.ID // Target node ID for distance calculation
 }
 
 // push adds the given node to the list, keeping the total size below maxElems.
@@ -94,8 +94,8 @@ func (h *nodesByDistance) push(n *enode.Node, maxElems int) {
 
 	end := len(h.entries)
 	if len(h.entries) < maxElems {
-		h.entries = append(h.entries, n) // Append if the list is not full
 		// 如果列表未满，直接追加
+		h.entries = append(h.entries, n) // Append if the list is not full
 	}
 	if ix < end {
 		// Slide existing entries down to make room.
@@ -103,14 +103,13 @@ func (h *nodesByDistance) push(n *enode.Node, maxElems int) {
 		// 将现有条目向下移动以腾出空间。
 		// 这将覆盖我们刚追加的条目。
 		copy(h.entries[ix+1:], h.entries[ix:])
-		h.entries[ix] = n // Insert the new node at the correct position
 		// 在正确位置插入新节点
+		h.entries[ix] = n // Insert the new node at the correct position
 	}
 }
 
 type nodeType interface {
-	ID() enode.ID // Interface requiring an ID method
-	// 定义需要 ID 方法的接口
+	ID() enode.ID // Interface requiring an ID method 定义需要 ID 方法的接口
 }
 
 // containsID reports whether ns contains a node with the given ID.
@@ -128,7 +127,7 @@ func containsID[N nodeType](ns []N, id enode.ID) bool {
 // deleteNode 从列表中移除一个节点。
 func deleteNode[N nodeType](list []N, id enode.ID) []N {
 	return slices.DeleteFunc(list, func(n N) bool {
-		return n.ID() == id // Delete the node matching the given ID
 		// 删除匹配给定 ID 的节点
+		return n.ID() == id // Delete the node matching the given ID
 	})
 }

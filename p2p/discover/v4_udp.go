@@ -57,21 +57,24 @@ const (
 	expiration     = 20 * time.Second       // 数据包过期时间
 	bondExpiration = 24 * time.Hour         // 绑定过期时间
 
-	maxFindnodeFailures = 5                // 节点失败次数超过此限制将被丢弃 // nodes exceeding this limit are dropped
-	ntpFailureThreshold = 32               // 连续超时时触发 NTP 检查 // Continuous timeouts after which to check NTP
-	ntpWarningCooldown  = 10 * time.Minute // NTP 警告的冷却时间 // Minimum amount of time to pass before repeating NTP warning
-	driftThreshold      = 10 * time.Second // 允许的时钟漂移 // Allowed clock drift before warning user
+	maxFindnodeFailures = 5                // nodes exceeding this limit are dropped // 节点失败次数超过此限制将被丢弃
+	ntpFailureThreshold = 32               // Continuous timeouts after which to check NTP // 连续超时时触发 NTP 检查
+	ntpWarningCooldown  = 10 * time.Minute // Minimum amount of time to pass before repeating NTP warning // NTP 警告的冷却时间
+	driftThreshold      = 10 * time.Second // Allowed clock drift before warning user // 允许的时钟漂移
 
 	// Discovery packets are defined to be no larger than 1280 bytes.
 	// Packets larger than this size will be cut at the end and treated
 	// as invalid because their hash won't match.
+	//
 	// 发现数据包定义为不超过 1280 字节。
 	// 超过此大小的数据包将被截断并视为无效，因为其哈希将不匹配。
 	maxPacketSize = 1280
 )
 
+// Wire Protocol（线路协议）是指数据在网络中传输时的字节格式和顺序。
+
 // UDPv4 implements the v4 wire protocol.
-// UDPv4 实现了 v4 线协议。
+// UDPv4 实现了 v4 线路协议。
 type UDPv4 struct {
 	conn        UDPConn
 	log         log.Logger
@@ -90,16 +93,19 @@ type UDPv4 struct {
 }
 
 // replyMatcher represents a pending reply.
-// replyMatcher 表示待处理的回复。
 //
 // Some implementations of the protocol wish to send more than one
 // reply packet to findnode. In general, any neighbors packet cannot
 // be matched up with a specific findnode packet.
-// 协议的某些实现希望向 findnode 发送多个回复数据包。一般来说，任何 neighbors 数据包都不能与特定的 findnode 数据包匹配。
 //
 // Our implementation handles this by storing a callback function for
 // each pending reply. Incoming packets from a node are dispatched
 // to all callback functions for that node.
+//
+// replyMatcher 表示待处理的回复。
+//
+// 协议的某些实现希望向 findnode 发送多个回复数据包。一般来说，任何 neighbors 数据包都不能与特定的 findnode 数据包匹配。
+//
 // 我们的实现通过为每个待处理的回复存储一个回调函数来处理这一点。来自节点的传入数据包被分派到该节点的所有回调函数。
 type replyMatcher struct {
 	// these fields must match in the reply.
@@ -116,7 +122,9 @@ type replyMatcher struct {
 	// reply was acceptable. The second return value indicates whether the callback should
 	// be removed from the pending reply queue. If it returns false, the reply is considered
 	// incomplete and the callback will be invoked again for the next matching reply.
-	// 当匹配的回复到达时调用 callback。如果返回 matched == true，则回复可接受。第二个返回值指示是否应从待处理回复队列中删除回调。如果返回 false，则回复被视为不完整，回调将为下一个匹配的回复再次调用。
+	//
+	// 当匹配的回复到达时调用 callback。如果返回 matched == true，则回复可接受。
+	// 第二个返回值指示是否应从待处理回复队列中删除回调。如果返回 false，则回复被视为不完整，回调将为下一个匹配的回复再次调用。
 	callback replyMatchFunc
 
 	// errc receives nil when the callback indicates completion or an
@@ -195,6 +203,7 @@ func (t *UDPv4) Close() {
 
 // Resolve searches for a specific node with the given ID and tries to get the most recent
 // version of the node record for it. It returns n if the node could not be resolved.
+//
 // Resolve 搜索具有给定 ID 的特定节点，并尝试获取其最新版本的节点记录。如果无法解析节点，则返回 n。
 func (t *UDPv4) Resolve(n *enode.Node) *enode.Node {
 	// Try asking directly. This works if the node is still responding on the endpoint we have.
@@ -259,6 +268,7 @@ func (t *UDPv4) ping(n *enode.Node) (seq uint64, err error) {
 
 // sendPing sends a ping message to the given node and invokes the callback
 // when the reply arrives.
+//
 // sendPing 向给定节点发送 ping 消息，并在回复到达时调用回调。
 func (t *UDPv4) sendPing(toid enode.ID, toaddr netip.AddrPort, callback func()) *replyMatcher {
 	req := t.makePing(toaddr)
@@ -346,6 +356,7 @@ func (t *UDPv4) newLookup(ctx context.Context, targetKey v4wire.Pubkey) *lookup 
 
 // findnode sends a findnode request to the given node and waits until
 // the node has sent up to k neighbors.
+//
 // findnode 向给定节点发送 findnode 请求，并等待节点发送最多 k 个邻居。
 func (t *UDPv4) findnode(toid enode.ID, toAddrPort netip.AddrPort, target v4wire.Pubkey) ([]*enode.Node, error) {
 	t.ensureBond(toid, toAddrPort)
@@ -377,7 +388,10 @@ func (t *UDPv4) findnode(toid enode.ID, toAddrPort netip.AddrPort, target v4wire
 	// active until the remote node sends enough nodes. If the remote end doesn't have
 	// enough nodes the reply matcher will time out waiting for the second reply, but
 	// there's no need for an error in that case.
-	// 确保如果节点实际响应了，调用者不会看到超时。由于 findnode 可以接收多个 neighbors 响应，回复匹配器将保持活动状态，直到远程节点发送足够数量的节点。如果远程节点没有足够的节点，回复匹配器将等待第二个回复时超时，但在这种情况下不需要错误。
+	//
+	// 确保如果节点实际响应了，调用者不会看到超时。
+	// 由于 findnode 可以接收多个 neighbors 响应，回复匹配器将保持活动状态，直到远程节点发送足够数量的节点。
+	// 如果远程节点没有足够的节点，回复匹配器将等待第二个回复时超时，但在这种情况下不需要错误。
 	err := <-rm.errc
 	if errors.Is(err, errTimeout) && rm.reply != nil {
 		err = nil
@@ -435,8 +449,9 @@ func (t *UDPv4) TableBuckets() [][]BucketNode {
 }
 
 // pending adds a reply matcher to the pending reply queue.
-// pending 将回复匹配器添加到待处理回复队列。
 // see the documentation of type replyMatcher for a detailed explanation.
+//
+// pending 将回复匹配器添加到待处理回复队列。
 // 有关详细说明，请参阅 replyMatcher 类型的文档。
 func (t *UDPv4) pending(id enode.ID, ip netip.Addr, ptype byte, callback replyMatchFunc) *replyMatcher {
 	ch := make(chan error, 1)
@@ -453,6 +468,7 @@ func (t *UDPv4) pending(id enode.ID, ip netip.Addr, ptype byte, callback replyMa
 
 // handleReply dispatches a reply packet, invoking reply matchers. It returns
 // whether any matcher considered the packet acceptable.
+//
 // handleReply 分派回复数据包，调用回复匹配器。它返回是否有任何匹配器认为数据包可接受。
 func (t *UDPv4) handleReply(from enode.ID, fromIP netip.Addr, req v4wire.Packet) bool {
 	matched := make(chan bool, 1)
@@ -471,6 +487,7 @@ func (t *UDPv4) handleReply(from enode.ID, fromIP netip.Addr, req v4wire.Packet)
 
 // loop runs in its own goroutine. it keeps track of
 // the refresh timer and the pending reply queue.
+//
 // loop 在自己的 goroutine 中运行。它跟踪刷新定时器和待处理回复队列。
 func (t *UDPv4) loop() {
 	defer t.wg.Done()
@@ -650,6 +667,7 @@ func (t *UDPv4) checkBond(id enode.ID, ip netip.AddrPort) bool {
 
 // ensureBond solicits a ping from a node if we haven't seen a ping from it for a while.
 // This ensures there is a valid endpoint proof on the remote end.
+//
 // ensureBond 如果我们有一段时间没有收到来自节点的 ping，则向节点请求 ping。
 // 这确保在远程端存在有效的端点证明。
 func (t *UDPv4) ensureBond(toid enode.ID, toaddr netip.AddrPort) {
@@ -809,7 +827,11 @@ func (t *UDPv4) verifyFindnode(h *packetHandlerV4, from netip.AddrPort, fromID e
 		// and UDP port of the target as the source address. The recipient of the findnode
 		// packet would then send a neighbors packet (which is a much bigger packet than
 		// findnode) to the victim.
-		// 如果没有端点证明 pong 存在，我们不处理数据包。这可以防止攻击向量，其中发现协议可用于在 DDOS 攻击中放大流量。恶意行为者将发送 findnode 请求，使用目标的 IP 地址和 UDP 端口作为源地址。findnode 数据包的接收者然后会向受害者发送 neighbors 数据包（比 findnode 更大的数据包）。
+		//
+		// 如果没有端点证明 pong 存在，我们不处理数据包。
+		// 这可以防止攻击向量，其中发现协议可用于在 DDOS 攻击中放大流量。
+		// 恶意行为者将发送 findnode 请求，使用目标的 IP 地址和 UDP 端口作为源地址。
+		// findnode 数据包的接收者然后会向受害者发送 neighbors 数据包（比 findnode 更大的数据包）。
 		return errUnknownNode
 	}
 	return nil

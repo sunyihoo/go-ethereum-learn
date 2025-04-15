@@ -42,21 +42,22 @@ import (
 // enode.LocalNode 表示本地节点，包含节点的 ENR（Ethereum Node Record），ENR 是 EIP-778 定义的节点信息记录格式，用于存储节点的身份、IP 地址、端口等信息。
 
 const (
-	lookupRequestLimit = 3 // max requests against a single node during lookup
 	// 查找过程中对单个节点的最大请求数
-	findnodeResultLimit = 16 // applies in FINDNODE handler
+	lookupRequestLimit = 3 // max requests against a single node during lookup
 	// 应用于 FINDNODE 处理程序
-	totalNodesResponseLimit = 5 // applies in waitForNodes
+	findnodeResultLimit = 16 // applies in FINDNODE handler
 	// 应用于 waitForNodes
+	totalNodesResponseLimit = 5 // applies in waitForNodes
 
 	respTimeoutV5 = 700 * time.Millisecond // 响应超时时间
 )
 
 // codecV5 is implemented by v5wire.Codec (and testCodec).
-// codecV5 由 v5wire.Codec（和 testCodec）实现。
 //
 // The UDPv5 transport is split into two objects: the codec object deals with
 // encoding/decoding and with the handshake; the UDPv5 object handles higher-level concerns.
+//
+// codecV5 由 v5wire.Codec（和 testCodec）实现。
 // UDPv5 传输被分为两个对象：codec 对象处理编码/解码和握手；UDPv5 对象处理更高级别的关注点。
 type codecV5 interface {
 	// Encode encodes a packet.
@@ -129,27 +130,27 @@ type sendRequest struct {
 type callV5 struct {
 	id   enode.ID
 	addr netip.AddrPort
-	node *enode.Node // This is required to perform handshakes.
 	// 这是执行握手所必需的。
+	node *enode.Node // This is required to perform handshakes.
 
-	packet       v5wire.Packet
-	responseType byte // expected packet type of response
+	packet v5wire.Packet
 	// 预期的响应数据包类型
-	reqid []byte
-	ch    chan v5wire.Packet // responses sent here
+	responseType byte // expected packet type of response
+	reqid        []byte
 	// 响应发送到这里
-	err chan error // errors sent here
+	ch chan v5wire.Packet // responses sent here
 	// 错误发送到这里
+	err chan error // errors sent here
 
 	// Valid for active calls only:
 	// 仅对活动调用有效：
-	nonce v5wire.Nonce // nonce of request packet
 	// 请求数据包的 nonce
-	handshakeCount int // # times we attempted handshake for this call
+	nonce v5wire.Nonce // nonce of request packet
 	// 为此调用尝试握手的次数
-	challenge *v5wire.Whoareyou // last sent handshake challenge
+	handshakeCount int // # times we attempted handshake for this call
 	// 最后发送的握手挑战
-	timeout mclock.Timer
+	challenge *v5wire.Whoareyou // last sent handshake challenge
+	timeout   mclock.Timer
 }
 
 // callTimeout is the response timeout event of a call.
@@ -286,7 +287,9 @@ func (t *UDPv5) LocalNode() *enode.LocalNode {
 // RegisterTalkHandler adds a handler for 'talk requests'. The handler function is called
 // whenever a request for the given protocol is received and should return the response
 // data or nil.
-// RegisterTalkHandler 为“talk 请求”添加处理程序。每当收到给定协议的请求时，都会调用处理程序函数，并应返回响应数据或 nil。
+//
+// RegisterTalkHandler 为“talk 请求”添加处理程序。
+// 每当收到给定协议的请求时，都会调用处理程序函数，并应返回响应数据或 nil。
 func (t *UDPv5) RegisterTalkHandler(protocol string, handler TalkRequestHandler) {
 	t.talk.register(protocol, handler)
 }
@@ -334,6 +337,7 @@ func (t *UDPv5) RandomNodes() enode.Iterator {
 
 // Lookup performs a recursive lookup for the given target.
 // It returns the closest nodes to target.
+//
 // Lookup 对给定目标执行递归查找。
 // 它返回最接近目标的节点。
 func (t *UDPv5) Lookup(target enode.ID) []*enode.Node {
@@ -342,6 +346,7 @@ func (t *UDPv5) Lookup(target enode.ID) []*enode.Node {
 
 // lookupRandom looks up a random target.
 // This is needed to satisfy the transport interface.
+//
 // lookupRandom 查找随机目标。
 // 这是满足传输接口所必需的。
 func (t *UDPv5) lookupRandom() []*enode.Node {
@@ -350,6 +355,7 @@ func (t *UDPv5) lookupRandom() []*enode.Node {
 
 // lookupSelf looks up our own node ID.
 // This is needed to satisfy the transport interface.
+//
 // lookupSelf 查找我们自己的节点 ID。
 // 这是满足传输接口所必需的。
 func (t *UDPv5) lookupSelf() []*enode.Node {
@@ -369,6 +375,7 @@ func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
 }
 
 // lookupWorker performs FINDNODE calls against a single node during lookup.
+//
 // lookupWorker 在查找期间对单个节点执行 FINDNODE 调用。
 func (t *UDPv5) lookupWorker(destNode *enode.Node, target enode.ID) ([]*enode.Node, error) {
 	var (
@@ -392,8 +399,10 @@ func (t *UDPv5) lookupWorker(destNode *enode.Node, target enode.ID) ([]*enode.No
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
 // It chooses distances adjacent to logdist(target, dest), e.g. for a target
 // with logdist(target, dest) = 255 the result is [255, 256, 254].
+//
 // lookupDistances 计算对 dest 的 FINDNODE 调用的距离参数。
-// 它选择与 logdist(target, dest) 相邻的距离，例如，对于 logdist(target, dest) = 255 的目标，结果为 [255, 256, 254]。
+// 它选择与 logdist(target, dest) 相邻的距离，
+// 例如，对于 logdist(target, dest) = 255 的目标，结果为 [255, 256, 254]。
 func lookupDistances(target, dest enode.ID) (dists []uint) {
 	td := enode.LogDist(target, dest)
 	dists = append(dists, uint(td))
@@ -508,7 +517,9 @@ func (t *UDPv5) verifyResponseNode(c *callV5, r *enr.Record, distances []uint, s
 
 // callToNode sends the given call and sets up a handler for response packets (of message
 // type responseType). Responses are dispatched to the call's response channel.
-// callToNode 发送给定调用并为响应数据包（消息类型 responseType）设置处理程序。响应被分派到调用的响应通道。
+//
+// callToNode 发送给定调用并为响应数据包（消息类型 responseType）设置处理程序。
+// 响应被分派到调用的响应通道。
 func (t *UDPv5) callToNode(n *enode.Node, responseType byte, req v5wire.Packet) *callV5 {
 	addr, _ := n.UDPEndpoint()
 	c := &callV5{id: n.ID(), addr: addr, node: n}
@@ -570,19 +581,25 @@ func (t *UDPv5) callDone(c *callV5) {
 // I WHOAREYOU` 握手机制用于验证节点身份，防止未授权访问，是 Discovery v5 的安全特性之一（EIP-868）。
 
 // dispatch runs in its own goroutine, handles incoming packets and deals with calls.
-// dispatch 在自己的 goroutine 中运行，处理传入的数据包和调用。
 //
 // For any destination node there is at most one 'active call', stored in the t.activeCall*
 // maps. A call is made active when it is sent. The active call can be answered by a
 // matching response, in which case c.ch receives the response; or by timing out, in which case
 // c.err receives the error. When the function that created the call signals the active
 // call is done through callDone, the next call from the call queue is started.
-// 对于任何目标节点，最多只有一个“活动调用”，存储在 t.activeCall* 映射中。调用在发送时变为活动状态。活动调用可以通过匹配的响应来回答，此时 c.ch 接收响应；或者通过超时，此时 c.err 接收错误。当创建调用的函数通过 callDone 信号表示活动调用完成时，从调用队列中启动下一个调用。
 //
 // Calls may also be answered by a WHOAREYOU packet referencing the call packet's authTag.
 // When that happens the call is simply re-sent to complete the handshake. We allow one
 // handshake attempt per call.
-// 调用也可能被引用调用数据包 authTag 的 WHOAREYOU 数据包回答。当这种情况发生时，调用会被重新发送以完成握手。我们允许每个调用进行一次握手尝试。
+//
+// dispatch 在自己的 goroutine 中运行，处理传入的数据包和调用。
+//
+// 对于任何目标节点，最多只有一个“活动调用”，存储在 t.activeCall*map 中。
+// 调用在发送时变为活动状态。活动调用可以通过匹配的响应来回答，此时 c.ch 接收响应；
+// 或者通过超时，此时 c.err 接收错误。当创建调用的函数通过 callDone 信号表示活动调用完成时，从调用队列中启动下一个调用。
+//
+// 调用也可能被引用调用数据包 authTag 的 WHOAREYOU 数据包回答。
+// 当这种情况发生时，调用会被重新发送以完成握手。我们允许每个调用进行一次握手尝试。
 func (t *UDPv5) dispatch() {
 	defer t.wg.Done()
 
@@ -679,6 +696,7 @@ func (t *UDPv5) sendNextCall(id enode.ID) {
 
 // sendCall encodes and sends a request packet to the call's recipient node.
 // This performs a handshake if needed.
+//
 // sendCall 对请求数据包进行编码并发送到调用的接收者节点。
 // 如果需要，执行握手。
 func (t *UDPv5) sendCall(c *callV5) {
@@ -697,6 +715,7 @@ func (t *UDPv5) sendCall(c *callV5) {
 
 // sendResponse sends a response packet to the given node.
 // This doesn't trigger a handshake even if no keys are available.
+//
 // sendResponse 向给定节点发送响应数据包。
 // 即使没有可用的密钥，也不会触发握手。
 func (t *UDPv5) sendResponse(toID enode.ID, toAddr netip.AddrPort, packet v5wire.Packet) error {
@@ -967,8 +986,9 @@ func (t *UDPv5) collectTableNodes(rip netip.Addr, distances []uint, limit int) [
 		checkLive := !t.tab.cfg.NoFindnodeLivenessCheck
 		for _, n := range t.tab.appendBucketNodes(dist, bn[:0], checkLive) {
 			// Apply some pre-checks to avoid sending invalid nodes.
-			// 应用一些预检查以避免发送无效节点。
 			// Note liveness is checked by appendLiveNodes.
+			//
+			// 应用一些预检查以避免发送无效节点。
 			// 注意 appendLiveNodes 检查存活状态。
 			if netutil.CheckRelayAddr(rip, n.IPAddr()) != nil {
 				continue
@@ -993,7 +1013,10 @@ func packNodes(reqid []byte, nodes []*enode.Node) []*v5wire.Nodes {
 	// packet size is 1280, and out of this ~80 bytes will be taken up by the packet
 	// frame. So limiting to 1000 bytes here leaves 200 bytes for other fields of the
 	// NODES message, which is a lot.
-	// 此限制表示输出数据包中可用于节点的可用空间。最大数据包大小为 1280 字节，其中约 80 字节将由数据包帧占用。因此，此处限制为 1000 字节，为 NODES 消息的其他字段留下了 200 字节，这已经很多了。
+	//
+	// 此限制表示输出数据包中可用于节点的可用空间。
+	// 最大数据包大小为 1280 字节，其中约 80 字节将由数据包帧占用。
+	// 因此，此处限制为 1000 字节，为 NODES 消息的其他字段留下了 200 字节，这已经很多了。
 	const sizeLimit = 1000
 
 	var resp []*v5wire.Nodes

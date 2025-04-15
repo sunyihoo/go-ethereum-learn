@@ -27,6 +27,7 @@ import (
 // lookup performs a network search for nodes close to the given target. It approaches the
 // target by querying nodes that are closer to it on each iteration. The given target does
 // not need to be an actual node identifier.
+//
 // lookup 执行网络搜索，查找接近给定目标的节点。它通过在每次迭代中查询更接近目标的节点来接近目标。
 // 给定的目标不需要是实际的节点标识符。
 type lookup struct {
@@ -71,6 +72,7 @@ func (it *lookup) run() []*enode.Node {
 
 // advance advances the lookup until any new nodes have been found.
 // It returns false when the lookup has ended.
+//
 // advance 推进查找直到找到任何新节点。
 // 当查找结束时返回 false。
 func (it *lookup) advance() bool {
@@ -164,6 +166,7 @@ func (it *lookup) query(n *enode.Node, reply chan<- []*enode.Node) {
 
 // lookupIterator performs lookup operations and iterates over all seen nodes.
 // When a lookup finishes, a new one is created through nextLookup.
+//
 // lookupIterator 执行查找操作并迭代所有看到的节点。
 // 当一个查找完成时，通过 nextLookup 创建一个新的查找。
 type lookupIterator struct {
