@@ -111,6 +111,7 @@ func ParseV4(rawurl string) (*Node, error) {
 
 // NewV4 creates a node from discovery v4 node information. The record
 // contained in the node has a zero-length signature.
+//
 // NewV4 从 discovery v4 节点信息创建一个节点。节点中包含的记录具有零长度签名。
 func NewV4(pubkey *ecdsa.PublicKey, ip net.IP, tcp, udp int) *Node {
 	var r enr.Record
