@@ -70,6 +70,7 @@ func (ct *clientTree) syncAll(dest map[string]entry) error {
 
 // syncRandom retrieves a single entry of the tree. The Node return value
 // is non-nil if the entry was a node.
+//
 // syncRandom 检索树的单个条目。如果条目是节点，则返回的 Node 不为 nil。
 func (ct *clientTree) syncRandom(ctx context.Context) (n *enode.Node, err error) {
 	if ct.rootUpdateDue() { // Check if root update is needed / 检查是否需要更新根
@@ -97,6 +98,7 @@ func (ct *clientTree) syncRandom(ctx context.Context) (n *enode.Node, err error)
 	// Sync next random entry in ENR tree. Once every node has been visited, we simply
 	// start over. This is fine because entries are cached internally by the client LRU
 	// also by DNS resolvers.
+	//
 	// 同步 ENR 树中的下一个随机条目。所有节点访问一遍后，重新开始。
 	// 这是可以的，因为条目会在客户端 LRU 和 DNS 解析器中缓存。
 	if ct.enrs.done() {
@@ -111,6 +113,7 @@ func (ct *clientTree) canSyncRandom() bool {
 	// Note: the check for non-zero leaf count is very important here.
 	// If we're done syncing all nodes, and no leaves were found, the tree
 	// is empty and we can't use it for sync.
+	//
 	// 注意：这里检查非零叶子计数非常重要。
 	// 如果我们完成了所有节点的同步，但没有找到叶子，则树为空，无法用于同步。
 	return ct.rootUpdateDue() || !ct.links.done() || !ct.enrs.done() || ct.enrs.leaves != 0
@@ -220,6 +223,7 @@ func (ct *clientTree) nextScheduledRootCheck() mclock.AbsTime {
 // slowdownRootUpdate applies a delay to root resolution if is tried
 // too frequently. This avoids busy polling when the client is offline.
 // Returns true if the timeout passed, false if sync was canceled.
+//
 // slowdownRootUpdate 如果尝试过于频繁，则对根解析应用延迟。
 // 这避免了客户端离线时的忙碌轮询。
 // 如果超时通过则返回 true，如果同步取消则返回 false。

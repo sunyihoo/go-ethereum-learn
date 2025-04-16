@@ -57,6 +57,7 @@ func (t *Tree) Sign(key *ecdsa.PrivateKey, domain string) (url string, err error
 
 // SetSignature verifies the given signature and assigns it as the tree's current
 // signature if valid.
+//
 // SetSignature 验证给定的签名，如果有效则将其设置为树的当前签名。
 func (t *Tree) SetSignature(pubkey *ecdsa.PublicKey, signature string) error {
 	sig, err := b64format.DecodeString(signature) // Decode base64 signature / 解码 base64 签名

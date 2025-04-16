@@ -131,6 +131,7 @@ func (c *Client) SyncTree(url string) (*Tree, error) {
 
 // NewIterator creates an iterator that visits all nodes at the
 // given tree URLs.
+//
 // NewIterator 创建一个迭代器，访问给定树 URL 中的所有节点。
 func (c *Client) NewIterator(urls ...string) (enode.Iterator, error) {
 	it := c.newRandomIterator()
@@ -174,6 +175,7 @@ func parseAndVerifyRoot(txt string, loc *linkEntry) (rootEntry, error) {
 
 // resolveEntry retrieves an entry from the cache or fetches it from the network
 // if it isn't cached.
+//
 // resolveEntry 从缓存中检索条目，如果未缓存则从网络获取。
 func (c *Client) resolveEntry(ctx context.Context, domain, hash string) (entry, error) {
 	if err := c.ratelimit.Wait(ctx); err != nil {
