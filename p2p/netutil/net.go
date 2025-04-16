@@ -83,6 +83,7 @@ type Netlist []netip.Prefix
 
 // ParseNetlist parses a comma-separated list of CIDR masks.
 // Whitespace and extra commas are ignored.
+//
 // ParseNetlist 解析以逗号分隔的 CIDR 掩码列表。
 // 忽略空格和多余的逗号。
 func ParseNetlist(s string) (*Netlist, error) {
@@ -131,6 +132,7 @@ func (l *Netlist) UnmarshalTOML(fn func(interface{}) error) error {
 
 // Add parses a CIDR mask and appends it to the list. It panics for invalid masks and is
 // intended to be used for setting up static lists.
+//
 // Add 解析 CIDR 掩码并将其追加到列表中。对于无效掩码会引发 panic，旨在用于设置静态列表。
 func (l *Netlist) Add(cidr string) {
 	prefix, err := netip.ParsePrefix(cidr)
@@ -180,6 +182,7 @@ func AddrIsLAN(ip netip.Addr) bool {
 
 // IsSpecialNetwork reports whether an IP is located in a special-use network range
 // This includes broadcast, multicast and documentation addresses.
+//
 // IsSpecialNetwork 报告 IP 是否位于特殊用途网络范围内，包括广播、多播和文档地址。
 func IsSpecialNetwork(ip net.IP) bool {
 	return AddrIsSpecialNetwork(IPToAddr(ip))
@@ -187,6 +190,7 @@ func IsSpecialNetwork(ip net.IP) bool {
 
 // AddrIsSpecialNetwork reports whether an IP is located in a special-use network range
 // This includes broadcast, multicast and documentation addresses.
+//
 // AddrIsSpecialNetwork 报告 IP 是否位于特殊用途网络范围内，包括广播、多播和文档地址。
 func AddrIsSpecialNetwork(ip netip.Addr) bool {
 	if ip.Is4In6() {
@@ -291,6 +295,7 @@ func sameNet(bits uint, ip, other net.IP) bool {
 
 // DistinctNetSet tracks IPs, ensuring that at most N of them
 // fall into the same network range.
+//
 // DistinctNetSet 跟踪 IP，确保同一网络范围内最多有 N 个 IP。
 type DistinctNetSet struct {
 	Subnet  uint                  // 公共前缀位数
@@ -300,6 +305,7 @@ type DistinctNetSet struct {
 
 // Add adds an IP address to the set. It returns false (and doesn't add the IP) if the
 // number of existing IPs in the defined range exceeds the limit.
+//
 // Add 将 IP 地址添加到集合中。如果定义范围内的现有 IP 数量超过限制，则返回 false（且不添加 IP）。
 func (s *DistinctNetSet) Add(ip net.IP) bool {
 	return s.AddAddr(IPToAddr(ip))
@@ -307,6 +313,7 @@ func (s *DistinctNetSet) Add(ip net.IP) bool {
 
 // AddAddr adds an IP address to the set. It returns false (and doesn't add the IP) if the
 // number of existing IPs in the defined range exceeds the limit.
+//
 // AddAddr 将 IP 地址添加到集合中。如果定义范围内的现有 IP 数量超过限制，则返回 false（且不添加 IP）。
 func (s *DistinctNetSet) AddAddr(ip netip.Addr) bool {
 	key := s.key(ip)

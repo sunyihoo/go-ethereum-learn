@@ -42,6 +42,7 @@ import (
 
 // IPTracker predicts the external endpoint, i.e. IP address and port, of the local host
 // based on statements made by other hosts.
+//
 // IPTracker 根据其他主机的声明预测本地主机的外部端点，即 IP 地址和端口。
 type IPTracker struct {
 	window          time.Duration                 // 时间窗口，用于保留过去的网络事件
@@ -66,6 +67,7 @@ type ipStatement struct {
 // before any prediction is made. Higher values for these parameters decrease 'flapping' of
 // predictions as network conditions change. Window duration values should typically be in
 // the range of minutes.
+//
 // NewIPTracker 创建一个 IP 跟踪器。
 //
 // 窗口参数配置保留的过去网络事件的数量。minStatements 参数强制要求在进行任何预测前必须记录的最小声明数量。
@@ -84,6 +86,7 @@ func NewIPTracker(window, contactWindow time.Duration, minStatements int) *IPTra
 // PredictFullConeNAT checks whether the local host is behind full cone NAT. It predicts by
 // checking whether any statement has been received from a node we didn't contact before
 // the statement was made.
+//
 // PredictFullConeNAT 检查本地主机是否位于全锥形 NAT 后面。它通过检查是否从我们未在声明前联系过的节点接收到声明来进行预测。
 func (it *IPTracker) PredictFullConeNAT() bool {
 	now := it.clock.Now()
@@ -135,6 +138,7 @@ func (it *IPTracker) AddStatement(host netip.Addr, endpoint netip.AddrPort) {
 
 // AddContact records that a packet containing our endpoint information has been sent to a
 // certain host.
+//
 // AddContact 记录已将包含我们端点信息的数据包发送到某个主机。
 func (it *IPTracker) AddContact(host netip.Addr) {
 	now := it.clock.Now()
@@ -144,9 +148,11 @@ func (it *IPTracker) AddContact(host netip.Addr) {
 	}
 }
 
+// gcStatements 从 IPTracker 的 statements 映射中移除过期的语句。
+// 超过指定窗口时间的语句将被删除，以保持映射大小可控。
 func (it *IPTracker) gcStatements(now mclock.AbsTime) {
-	it.lastStatementGC = now
-	cutoff := now.Add(-it.window)
+	it.lastStatementGC = now      // 表示最近一次语句垃圾回收的时间。
+	cutoff := now.Add(-it.window) // 计算过期时间点 cutoff，将当前时间减去窗口时间，得到过期时间点。任何早于 cutoff 的语句将被视为过期。
 	for host, s := range it.statements {
 		if s.time < cutoff {
 			delete(it.statements, host)
@@ -154,9 +160,11 @@ func (it *IPTracker) gcStatements(now mclock.AbsTime) {
 	}
 }
 
+// gcContact 从 IPTracker 的 contact 映射中移除过期的联系记录。
+// 超过指定联系窗口时间的联系记录将被删除，以保持映射大小可控。
 func (it *IPTracker) gcContact(now mclock.AbsTime) {
-	it.lastContactGC = now
-	cutoff := now.Add(-it.contactWindow)
+	it.lastContactGC = now               // 表示最近一次联系记录垃圾回收的时间。
+	cutoff := now.Add(-it.contactWindow) // 将当前时间减去窗口时间，得到过期时间点。
 	for host, ct := range it.contact {
 		if ct < cutoff {
 			delete(it.contact, host)

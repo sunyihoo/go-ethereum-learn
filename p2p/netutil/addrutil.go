@@ -29,6 +29,7 @@ import (
 
 // AddrAddr gets the IP address contained in addr. The result will be invalid if the
 // address type is unsupported.
+//
 // AddrAddr 获取 addr 中包含的 IP 地址。如果地址类型不受支持，结果将无效。
 func AddrAddr(addr net.Addr) netip.Addr {
 	switch a := addr.(type) {
@@ -49,6 +50,7 @@ func AddrAddr(addr net.Addr) netip.Addr {
 
 // IPToAddr converts net.IP to netip.Addr. Note that unlike netip.AddrFromSlice, this
 // function will always ensure that the resulting Addr is IPv4 when the input is.
+//
 // IPToAddr 将 net.IP 转换为 netip.Addr。请注意，与 netip.AddrFromSlice 不同，
 // 此函数将始终确保当输入为 IPv4 时，结果 Addr 也是 IPv4。
 func IPToAddr(ip net.IP) netip.Addr {
