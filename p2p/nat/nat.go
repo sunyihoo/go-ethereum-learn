@@ -43,7 +43,8 @@ import (
 
 // Interface An implementation of nat.Interface can map local ports to ports
 // accessible from the Internet.
-// 接口 nat.Interface 的实现可以将本地端口映射到互联网可访问的端口。
+//
+// Interface 接口 nat.Interface 的实现可以将本地端口映射到互联网可访问的端口。
 type Interface interface {
 	// These methods manage a mapping between a port on the local
 	// machine to a port that can be connected to from the internet.
@@ -51,6 +52,7 @@ type Interface interface {
 	// protocol is "UDP" or "TCP". Some implementations allow setting
 	// a display name for the mapping. The mapping may be removed by
 	// the gateway when its lifetime ends.
+	//
 	// 这些方法管理本地机器上的端口与互联网可连接端口之间的映射。
 	//
 	// protocol 是 "UDP" 或 "TCP"。一些实现允许设置映射的显示名称。映射在生命周期结束后可能会被网关移除。
@@ -59,6 +61,7 @@ type Interface interface {
 
 	// ExternalIP should return the external (Internet-facing)
 	// address of the gateway device.
+	//
 	// ExternalIP 应返回网关设备的外部（面向互联网的）地址。
 	ExternalIP() (net.IP, error)
 
@@ -90,32 +93,32 @@ type Interface interface {
 //	"pmp:192.168.0.1"    使用 NAT-PMP 并使用给定的网关地址
 func Parse(spec string) (Interface, error) {
 	var (
-		before, after, found = strings.Cut(spec, ":")  // 分割字符串为前缀和后缀 / Split string into prefix and suffix
-		mech                 = strings.ToLower(before) // 将机制转换为小写 / Convert mechanism to lowercase
-		ip                   net.IP                    // IP 地址 / IP address
+		before, after, found = strings.Cut(spec, ":")  // 分割字符串为前缀和后缀
+		mech                 = strings.ToLower(before) // 将机制转换为小写
+		ip                   net.IP                    // IP 地址
 	)
 	if found {
-		ip = net.ParseIP(after) // 解析 IP 地址 / Parse IP address
+		ip = net.ParseIP(after) // 解析 IP 地址
 		if ip == nil {
-			return nil, errors.New("invalid IP address") // 如果 IP 无效则返回错误 / Return error if IP is invalid
+			return nil, errors.New("invalid IP address") // 如果 IP 无效则返回错误
 		}
 	}
 	switch mech {
 	case "", "none", "off":
-		return nil, nil // 返回空接口 / Return nil interface
+		return nil, nil // 返回空接口
 	case "any", "auto", "on":
-		return Any(), nil // 返回自动检测的接口 / Return auto-detected interface
+		return Any(), nil // 返回自动检测的接口
 	case "extip", "ip":
 		if ip == nil {
-			return nil, errors.New("missing IP address") // 如果缺少 IP 则返回错误 / Return error if IP is missing
+			return nil, errors.New("missing IP address") // 如果缺少 IP 则返回错误
 		}
-		return ExtIP(ip), nil // 返回外部 IP 接口 / Return ExtIP interface
+		return ExtIP(ip), nil // 返回外部 IP 接口
 	case "upnp":
-		return UPnP(), nil // 返回 UPnP 接口 / Return UPnP interface
+		return UPnP(), nil // 返回 UPnP 接口
 	case "pmp", "natpmp", "nat-pmp":
-		return PMP(ip), nil // 返回 NAT-PMP 接口 / Return NAT-PMP interface
+		return PMP(ip), nil // 返回 NAT-PMP 接口
 	default:
-		return nil, fmt.Errorf("unknown mechanism %q", before) // 返回未知机制错误 / Return unknown mechanism error
+		return nil, fmt.Errorf("unknown mechanism %q", before) // 返回未知机制错误
 	}
 }
 
@@ -130,35 +133,36 @@ const (
 //
 // Note that Map does not handle the situation where the NAT interface assigns a different
 // external port than the requested one.
+//
 // Map 在 m 上添加端口映射并保持其活动，直到 c 关闭。
 // 此函数通常在其自己的 goroutine 中调用。
 //
 // 注意，Map 不处理 NAT 接口分配与请求不同的外部端口的情况。
 func Map(m Interface, c <-chan struct{}, protocol string, extport, intport int, name string) {
-	log := log.New("proto", protocol, "extport", extport, "intport", intport, "interface", m) // 创建日志记录器 / Create logger
-	refresh := time.NewTimer(DefaultMapTimeout)                                               // 创建刷新定时器 / Create refresh timer
+	log := log.New("proto", protocol, "extport", extport, "intport", intport, "interface", m) // 创建日志记录器
+	refresh := time.NewTimer(DefaultMapTimeout)                                               // 创建刷新定时器
 	defer func() {
-		refresh.Stop()                              // 停止定时器 / Stop timer
-		log.Debug("Deleting port mapping")          // 记录删除映射 / Log deleting mapping
-		m.DeleteMapping(protocol, extport, intport) // 删除端口映射 / Delete port mapping
+		refresh.Stop()                              // 停止定时器
+		log.Debug("Deleting port mapping")          // 记录删除映射
+		m.DeleteMapping(protocol, extport, intport) // 删除端口映射
 	}()
-	if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil { // 添加初始映射 / Add initial mapping
-		log.Debug("Couldn't add port mapping", "err", err) // 如果失败则记录错误 / Log error if failed
+	if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil { // 添加初始映射
+		log.Debug("Couldn't add port mapping", "err", err) // 如果失败则记录错误
 	} else {
-		log.Info("Mapped network port") // 记录成功映射 / Log successful mapping
+		log.Info("Mapped network port") // 记录成功映射
 	}
 	for {
 		select {
-		case _, ok := <-c: // 监听关闭信号 / Listen for close signal
+		case _, ok := <-c: // 监听关闭信号
 			if !ok {
-				return // 如果通道关闭则返回 / Return if channel closed
+				return // 如果通道关闭则返回
 			}
-		case <-refresh.C: // 定时刷新 / Periodic refresh
-			log.Trace("Refreshing port mapping")                                                         // 记录刷新 / Log refresh
-			if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil { // 刷新映射 / Refresh mapping
-				log.Debug("Couldn't add port mapping", "err", err) // 如果失败则记录错误 / Log error if failed
+		case <-refresh.C: // 定时刷新
+			log.Trace("Refreshing port mapping")                                                         // 记录刷新
+			if _, err := m.AddMapping(protocol, extport, intport, name, DefaultMapTimeout); err != nil { // 刷新映射
+				log.Debug("Couldn't add port mapping", "err", err) // 如果失败则记录错误
 			}
-			refresh.Reset(DefaultMapTimeout) // 重置定时器 / Reset timer
+			refresh.Reset(DefaultMapTimeout) // 重置定时器
 		}
 	}
 }
@@ -166,57 +170,62 @@ func Map(m Interface, c <-chan struct{}, protocol string, extport, intport int, 
 // ExtIP assumes that the local machine is reachable on the given
 // external IP address, and that any required ports were mapped manually.
 // Mapping operations will not return an error but won't actually do anything.
+//
 // ExtIP 假设本地机器在给定的外部 IP 地址上可达，并且任何所需的端口已手动映射。
 // 映射操作不会返回错误，但实际上不会执行任何操作。
 type ExtIP net.IP
 
-func (n ExtIP) ExternalIP() (net.IP, error) { return net.IP(n), nil }                      // 返回外部 IP / Return external IP
-func (n ExtIP) String() string              { return fmt.Sprintf("ExtIP(%v)", net.IP(n)) } // 返回字符串表示 / Return string representation
+func (n ExtIP) ExternalIP() (net.IP, error) { return net.IP(n), nil }                      // 返回外部 IP
+func (n ExtIP) String() string              { return fmt.Sprintf("ExtIP(%v)", net.IP(n)) } // 返回字符串表示
 
 // These do nothing.
 // 这些方法不执行任何操作。
+
 func (ExtIP) AddMapping(protocol string, extport, intport int, name string, lifetime time.Duration) (uint16, error) {
-	return uint16(extport), nil // 返回外部端口，不执行映射 / Return extport, no mapping
+	return uint16(extport), nil // 返回外部端口，不执行映射
 }
-func (ExtIP) DeleteMapping(string, int, int) error { return nil } // 不执行删除 / No deletion
+func (ExtIP) DeleteMapping(string, int, int) error { return nil } // 不执行删除
 
 // Any returns a port mapper that tries to discover any supported
 // mechanism on the local network.
+//
 // Any 返回一个端口映射器，尝试发现本地网络上支持的任何机制。
 func Any() Interface {
 	// TODO: attempt to discover whether the local machine has an
-	// Internet-class address. Return ExtIP in this case.
 	// TODO：尝试发现本地机器是否具有互联网级地址，在此情况下返回 ExtIP。
-	return startautodisc("UPnP or NAT-PMP", func() Interface { // 启动自动发现 / Start autodiscovery
-		found := make(chan Interface, 2)        // 创建发现通道 / Create discovery channel
-		go func() { found <- discoverUPnP() }() // 并发发现 UPnP / Discover UPnP concurrently
-		go func() { found <- discoverPMP() }()  // 并发发现 NAT-PMP / Discover NAT-PMP concurrently
-		for i := 0; i < cap(found); i++ {       // 检查所有结果 / Check all results
+	// Internet-class address. Return ExtIP in this case.
+	return startautodisc("UPnP or NAT-PMP", func() Interface { // 启动自动发现
+		found := make(chan Interface, 2)        // 创建发现通道
+		go func() { found <- discoverUPnP() }() // 并发发现 UPnP
+		go func() { found <- discoverPMP() }()  // 并发发现 NAT-PMP
+		for i := 0; i < cap(found); i++ {       // 检查所有结果
 			if c := <-found; c != nil {
-				return c // 返回第一个成功的机制 / Return first successful mechanism
+				return c // 返回第一个成功的机制
 			}
 		}
-		return nil // 如果都失败则返回 nil / Return nil if all fail
+		return nil // 如果都失败则返回 nil
 	})
 }
 
 // UPnP returns a port mapper that uses UPnP. It will attempt to
 // discover the address of your router using UDP broadcasts.
+//
 // UPnP 返回一个使用 UPnP 的端口映射器。它将尝试使用 UDP 广播发现路由器的地址。
 func UPnP() Interface {
-	return startautodisc("UPnP", discoverUPnP) // 启动 UPnP 自动发现 / Start UPnP autodiscovery
+	return startautodisc("UPnP", discoverUPnP) // 启动 UPnP 自动发现
 }
 
 // PMP returns a port mapper that uses NAT-PMP. The provided gateway
 // address should be the IP of your router. If the given gateway
 // address is nil, PMP will attempt to auto-discover the router.
+//
 // PMP 返回一个使用 NAT-PMP 的端口映射器。提供的网关地址应为路由器的 IP。
 // 如果给定的网关地址为 nil，PMP 将尝试自动发现路由器。
 func PMP(gateway net.IP) Interface {
 	if gateway != nil {
-		return &pmp{gw: gateway, c: natpmp.NewClient(gateway)} // 使用指定网关创建 NAT-PMP / Create NAT-PMP with specified gateway
+		return &pmp{gw: gateway, c: natpmp.NewClient(gateway)} // 使用指定网关创建 NAT-PMP
 	}
-	return startautodisc("NAT-PMP", discoverPMP) // 启动 NAT-PMP 自动发现 / Start NAT-PMP autodiscovery
+	return startautodisc("NAT-PMP", discoverPMP) // 启动 NAT-PMP 自动发现
 }
 
 // autodisc represents a port mapping mechanism that is still being
@@ -226,65 +235,67 @@ func PMP(gateway net.IP) Interface {
 //
 // This type is useful because discovery can take a while but we
 // want return an Interface value from UPnP, PMP and Auto immediately.
+//
 // autodisc 表示仍在自动发现的端口映射机制。对此类型的 Interface 方法的调用将等待发现完成，
 // 然后在发现的机制上调用该方法。
 //
 // 此类型很有用，因为发现可能需要一段时间，但我们希望从 UPnP、PMP 和 Auto 立即返回 Interface 值。
 type autodisc struct {
 	what string           // type of interface being autodiscovered / 正在自动发现的接口类型
-	once sync.Once        // ensures discovery happens once / 确保发现只发生一次
-	doit func() Interface // discovery function / 发现函数
+	once sync.Once        // 确保发现只发生一次
+	doit func() Interface // 发现函数
 
-	mu    sync.Mutex // protects found / 保护 found
-	found Interface  // discovered mechanism / 已发现的机制
+	mu    sync.Mutex // 保护 found
+	found Interface  // 已发现的机制
 }
 
+// 开始自动发现
 func startautodisc(what string, doit func() Interface) Interface {
 	// TODO: monitor network configuration and rerun doit when it changes.
 	// TODO：监控网络配置并在发生变化时重新运行 doit。
-	return &autodisc{what: what, doit: doit} // 返回自动发现对象 / Return autodiscovery object
+	return &autodisc{what: what, doit: doit} // 返回自动发现对象
 }
 
 func (n *autodisc) AddMapping(protocol string, extport, intport int, name string, lifetime time.Duration) (uint16, error) {
-	if err := n.wait(); err != nil { // 等待发现完成 / Wait for discovery
+	if err := n.wait(); err != nil { // 等待发现完成
 		return 0, err
 	}
-	return n.found.AddMapping(protocol, extport, intport, name, lifetime) // 调用已发现机制的 AddMapping / Call AddMapping on discovered mechanism
+	return n.found.AddMapping(protocol, extport, intport, name, lifetime) // 调用已发现机制的 AddMapping
 }
 
 func (n *autodisc) DeleteMapping(protocol string, extport, intport int) error {
-	if err := n.wait(); err != nil { // 等待发现完成 / Wait for discovery
+	if err := n.wait(); err != nil { // 等待发现完成 /
 		return err
 	}
-	return n.found.DeleteMapping(protocol, extport, intport) // 调用已发现机制的 DeleteMapping / Call DeleteMapping on discovered mechanism
+	return n.found.DeleteMapping(protocol, extport, intport) // 调用已发现机制的 DeleteMapping
 }
 
 func (n *autodisc) ExternalIP() (net.IP, error) {
-	if err := n.wait(); err != nil { // 等待发现完成 / Wait for discovery
+	if err := n.wait(); err != nil { // 等待发现完成
 		return nil, err
 	}
-	return n.found.ExternalIP() // 调用已发现机制的 ExternalIP / Call ExternalIP on discovered mechanism
+	return n.found.ExternalIP() // 调用已发现机制的 ExternalIP
 }
 
 func (n *autodisc) String() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.found == nil {
-		return n.what // 返回正在发现的类型 / Return type being discovered
+		return n.what // 返回正在发现的类型
 	}
-	return n.found.String() // 返回已发现机制的名称 / Return discovered mechanism's name
+	return n.found.String() // 返回已发现机制的名称
 }
 
 // wait blocks until auto-discovery has been performed.
 // wait 阻塞直到自动发现完成。
 func (n *autodisc) wait() error {
-	n.once.Do(func() { // 只执行一次发现 / Perform discovery once
+	n.once.Do(func() { // 只执行一次发现
 		n.mu.Lock()
-		n.found = n.doit() // 执行发现函数 / Execute discovery function
+		n.found = n.doit() // 执行发现函数
 		n.mu.Unlock()
 	})
 	if n.found == nil {
-		return fmt.Errorf("no %s router discovered", n.what) // 如果未发现则返回错误 / Return error if not discovered
+		return fmt.Errorf("no %s router discovered", n.what) // 如果未发现则返回错误
 	}
 	return nil
 }
