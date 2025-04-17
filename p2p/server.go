@@ -49,6 +49,7 @@ const (
 	// This is the fairness knob for the discovery mixer. When looking for peers, we'll
 	// wait this long for a single source of candidates before moving on and trying other
 	// sources.
+	//
 	// 这是发现混合器的公平旋钮。在寻找对等方时，我们会等待单一候选源这么长时间，然后再尝试其他源。
 	discmixTimeout = 5 * time.Second
 
@@ -63,6 +64,7 @@ const (
 
 	// Maximum time allowed for reading a complete message.
 	// This is effectively the amount of time a connection can be idle.
+	//
 	// 读取完整消息允许的最长时间。
 	// 这实际上是连接可以空闲的时间。
 	frameReadTimeout = 30 * time.Second
@@ -93,6 +95,7 @@ type Config struct {
 	// MaxPendingPeers is the maximum number of peers that can be pending in the
 	// handshake phase, counted separately for inbound and outbound connections.
 	// Zero defaults to preset values.
+	//
 	// MaxPendingPeers 是在握手阶段可以挂起的最大对等方数量，入站和出站连接分别计数。
 	// 零默认使用预设值。
 	MaxPendingPeers int `toml:",omitempty"`
@@ -100,6 +103,7 @@ type Config struct {
 	// DialRatio controls the ratio of inbound to dialed connections.
 	// Example: a DialRatio of 2 allows 1/2 of connections to be dialed.
 	// Setting DialRatio to zero defaults it to 3.
+	//
 	// DialRatio 控制入站连接与拨号连接的比例。
 	// 例如：DialRatio 为 2 允许 1/2 的连接被拨号。
 	// 将 DialRatio 设置为零默认使用 3。
@@ -107,6 +111,7 @@ type Config struct {
 
 	// NoDiscovery can be used to disable the peer discovery mechanism.
 	// Disabling is useful for protocol debugging (manual topology).
+	//
 	// NoDiscovery 可用于禁用对等方发现机制。
 	// 禁用对于协议调试（手动拓扑）很有用。
 	NoDiscovery bool
@@ -148,18 +153,21 @@ type Config struct {
 	// Connectivity can be restricted to certain IP networks.
 	// If this option is set to a non-nil value, only hosts which match one of the
 	// IP networks contained in the list are considered.
+	//
 	// 连接性可以限制到某些 IP 网络。
 	// 如果此选项设置为非 nil 值，则仅考虑与列表中包含的 IP 网络之一匹配的主机。
 	NetRestrict *netutil.Netlist `toml:",omitempty"`
 
 	// NodeDatabase is the path to the database containing the previously seen
 	// live nodes in the network.
+	//
 	// NodeDatabase 是包含网络中先前看到的活动节点的数据库的路径。
 	NodeDatabase string `toml:",omitempty"`
 
 	// Protocols should contain the protocols supported
 	// by the server. Matching protocols are launched for
 	// each peer.
+	//
 	// Protocols 应包含服务器支持的协议。
 	// 为每个对等方启动匹配的协议。
 	Protocols []Protocol `toml:"-" json:"-"`
@@ -170,6 +178,7 @@ type Config struct {
 	// If the port is zero, the operating system will pick a port. The
 	// ListenAddr field will be updated with the actual address when
 	// the server is started.
+	//
 	// 如果 ListenAddr 设置为非 nil 地址，服务器将监听传入连接。
 	//
 	// 如果端口为零，操作系统将选择一个端口。
@@ -178,17 +187,20 @@ type Config struct {
 
 	// If DiscAddr is set to a non-nil value, the server will use ListenAddr
 	// for TCP and DiscAddr for the UDP discovery protocol.
+	//
 	// 如果 DiscAddr 设置为非 nil 值，服务器将为 TCP 使用 ListenAddr，为 UDP 发现协议使用 DiscAddr。
 	DiscAddr string
 
 	// If set to a non-nil value, the given NAT port mapper
 	// is used to make the listening port available to the
 	// Internet.
+	//
 	// 如果设置为非 nil 值，则使用给定的 NAT 端口映射器使监听端口可用于 Internet。
 	NAT nat.Interface `toml:",omitempty"`
 
 	// If Dialer is set to a non-nil value, the given Dialer
 	// is used to dial outbound peer connections.
+	//
 	// 如果 Dialer 设置为非 nil 值，则使用给定的 Dialer 拨号出站对等方连接。
 	Dialer NodeDialer `toml:"-"`
 
@@ -277,6 +289,7 @@ const (
 
 // conn wraps a network connection with information gathered
 // during the two handshakes.
+//
 // conn 用两次握手期间收集的信息包装网络连接。
 type conn struct {
 	fd net.Conn
@@ -296,11 +309,13 @@ type transport interface {
 	// The MsgReadWriter can only be used after the encryption
 	// handshake has completed. The code uses conn.id to track this
 	// by setting it to a non-nil value after the encryption handshake.
+	//
 	// 加密握手完成后才能使用 MsgReadWriter。代码通过在加密握手后将 conn.id 设置为非 nil 值来跟踪这一点。
 	MsgReadWriter
 	// transports must provide Close because we use MsgPipe in some of
 	// the tests. Closing the actual network connection doesn't do
 	// anything in those tests because MsgPipe doesn't use it.
+	//
 	// transports 必须提供 Close，因为我们在一些测试中使用 MsgPipe。关闭实际的网络连接在这些测试中不起作用，因为 MsgPipe 不使用它。
 	close(err error)
 }
@@ -316,15 +331,19 @@ func (c *conn) String() string {
 
 func (f connFlag) String() string {
 	s := ""
+	// f & 1000
 	if f&trustedConn != 0 {
 		s += "-trusted"
 	}
+	// f & 0001
 	if f&dynDialedConn != 0 {
 		s += "-dyndial"
 	}
+	// f & 0010
 	if f&staticDialedConn != 0 {
 		s += "-staticdial"
 	}
+	// f & 0100
 	if f&inboundConn != 0 {
 		s += "-inbound"
 	}
@@ -385,6 +404,7 @@ func (srv *Server) PeerCount() int {
 // AddPeer adds the given node to the static node set. When there is room in the peer set,
 // the server will connect to the node. If the connection fails for any reason, the server
 // will attempt to reconnect the peer.
+//
 // AddPeer 将给定节点添加到静态节点集。当对等方集中有空间时，
 // 服务器将连接到该节点。如果连接因任何原因失败，服务器将尝试重新连接对等方。
 func (srv *Server) AddPeer(node *enode.Node) {
@@ -396,6 +416,7 @@ func (srv *Server) AddPeer(node *enode.Node) {
 //
 // This method blocks until all protocols have exited and the peer is removed. Do not use
 // RemovePeer in protocol implementations, call Disconnect on the Peer instead.
+//
 // RemovePeer 从静态节点集中移除节点。如果该节点当前作为对等方连接，也会断开连接。
 //
 // 此方法会阻塞，直到所有协议退出且对等方被移除。不要在协议实现中使用 RemovePeer，而是调用 Peer 上的 Disconnect。
@@ -428,6 +449,7 @@ func (srv *Server) RemovePeer(node *enode.Node) {
 
 // AddTrustedPeer adds the given node to a reserved trusted list which allows the
 // node to always connect, even if the slot are full.
+// sss
 // AddTrustedPeer 将给定节点添加到保留的受信任列表中，允许节点始终连接，即使插槽已满。
 func (srv *Server) AddTrustedPeer(node *enode.Node) {
 	select {
@@ -478,6 +500,7 @@ func (srv *Server) DiscoveryV5() *discover.UDPv5 {
 
 // Stop terminates the server and all active peer connections.
 // It blocks until all active connections have been closed.
+//
 // Stop 终止服务器和所有活动对等方连接。
 // 它会阻塞，直到所有活动连接都已关闭。
 func (srv *Server) Stop() {
@@ -499,6 +522,7 @@ func (srv *Server) Stop() {
 
 // sharedUDPConn implements a shared connection. Write sends messages to the underlying connection while read returns
 // messages that were found unprocessable and sent to the unhandled channel by the primary listener.
+//
 // sharedUDPConn 实现共享连接。Write 将消息发送到底层连接，而 read 返回被发现无法处理并由主监听器发送到 unhandled 通道的消息。
 type sharedUDPConn struct {
 	*net.UDPConn
@@ -528,6 +552,7 @@ func (s *sharedUDPConn) Close() error {
 
 // Start starts running the server.
 // Servers can not be re-used after stopping.
+//
 // Start 开始运行服务器。
 // 服务器在停止后不能重复使用。
 func (srv *Server) Start() (err error) {
@@ -809,6 +834,7 @@ func (srv *Server) run() {
 	)
 	// Put trusted nodes into a map to speed up checks.
 	// Trusted peers are loaded on startup or added via AddTrustedPeer RPC.
+	//
 	// 将受信任节点放入地图以加速检查。
 	// 受信任对等方在启动时加载或通过 AddTrustedPeer RPC 添加。
 	for _, n := range srv.TrustedNodes {
@@ -1055,6 +1081,7 @@ func (srv *Server) checkInboundConn(remoteIP netip.Addr) error {
 // SetupConn runs the handshakes and attempts to add the connection
 // as a peer. It returns when the connection has been added as a peer
 // or the handshakes have failed.
+//
 // SetupConn 运行握手并尝试将连接添加为对等方。
 // 当连接已添加为对等方或握手失败时返回。
 func (srv *Server) SetupConn(fd net.Conn, flags connFlag, dialDest *enode.Node) error {
@@ -1148,6 +1175,7 @@ func nodeFromConn(pubkey *ecdsa.PublicKey, conn net.Conn) *enode.Node {
 
 // checkpoint sends the conn to run, which performs the
 // post-handshake checks for the stage (posthandshake, addpeer).
+//
 // checkpoint 将 conn 发送到 run，run 执行阶段（posthandshake, addpeer）的握手后检查。
 func (srv *Server) checkpoint(c *conn, stage chan<- *conn) error {
 	select {
@@ -1190,6 +1218,7 @@ func (srv *Server) runPeer(p *Peer) {
 	// Announce disconnect on the main loop to update the peer set.
 	// The main loop waits for existing peers to be sent on srv.delpeer
 	// before returning, so this send should not select on srv.quit.
+	//
 	// 在主循环上宣布断开连接以更新对等方集。
 	// 主循环等待现有对等方在 srv.delpeer 上发送后才返回，因此此发送不应在 srv.quit 上选择。
 	srv.delpeer <- peerDrop{p, err, remoteRequested}
@@ -1198,6 +1227,7 @@ func (srv *Server) runPeer(p *Peer) {
 	// after the send to delpeer so subscribers have a consistent view of
 	// the peer set (i.e. Server.Peers() doesn't include the peer when the
 	// event is received).
+	//
 	// 向外部订阅者广播对等方丢弃。这需要在发送到 delpeer 之后，以便订阅者对对等方集有一致的视图（即 Server.Peers() 在接收到事件时不包括该对等方）。
 	srv.peerFeed.Send(&PeerEvent{
 		Type:          PeerEventTypeDrop,

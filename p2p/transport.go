@@ -58,103 +58,106 @@ const (
 
 // rlpxTransport is the transport used by actual (non-test) connections.
 // It wraps an RLPx connection with locks and read/write deadlines.
+//
 // rlpxTransport 是实际（非测试）连接使用的传输层。
 // 它包装了一个 RLPx 连接，并添加了锁和读写截止时间。
 type rlpxTransport struct {
-	rmu, wmu sync.Mutex   // 读写互斥锁 / Read and write mutexes
-	wbuf     bytes.Buffer // 写入缓冲区 / Write buffer
-	conn     *rlpx.Conn   // RLPx 连接 / RLPx connection
+	rmu, wmu sync.Mutex   // 读写互斥锁
+	wbuf     bytes.Buffer // 写入缓冲区
+	conn     *rlpx.Conn   // RLPx 连接
 }
 
 func newRLPX(conn net.Conn, dialDest *ecdsa.PublicKey) transport {
+	// 创建新的 RLPx 传输实例
 	return &rlpxTransport{conn: rlpx.NewConn(conn, dialDest)}
-	// 创建新的 RLPx 传输实例 / Create a new RLPx transport instance
 }
 
 func (t *rlpxTransport) ReadMsg() (Msg, error) {
-	t.rmu.Lock()         // 加读锁 / Lock for reading
-	defer t.rmu.Unlock() // 延迟解锁 / Defer unlock
+	t.rmu.Lock()         // 加读锁
+	defer t.rmu.Unlock() // 延迟解锁
 
 	var msg Msg
-	t.conn.SetReadDeadline(time.Now().Add(frameReadTimeout)) // 设置读取截止时间 / Set read deadline
-	code, data, wireSize, err := t.conn.Read()               // 读取消息 / Read message
+	t.conn.SetReadDeadline(time.Now().Add(frameReadTimeout)) // 设置读取截止时间
+	code, data, wireSize, err := t.conn.Read()               // 读取消息
 	if err == nil {
 		// Protocol messages are dispatched to subprotocol handlers asynchronously,
 		// but package rlpx may reuse the returned 'data' buffer on the next call
 		// to Read. Copy the message data to avoid this being an issue.
+		//
 		// 协议消息异步分派到子协议处理程序，
 		// 但 rlpx 包可能在下次调用 Read 时重用返回的 'data' 缓冲区。
 		// 复制消息数据以避免这个问题。
-		data = common.CopyBytes(data) // 复制数据 / Copy data
+		data = common.CopyBytes(data) // 复制数据
 		msg = Msg{
-			ReceivedAt: time.Now(),            // 设置接收时间 / Set received time
-			Code:       code,                  // 设置消息代码 / Set message code
-			Size:       uint32(len(data)),     // 设置消息大小 / Set message size
-			meterSize:  uint32(wireSize),      // 设置传输大小 / Set wire size
-			Payload:    bytes.NewReader(data), // 创建 payload 读取器 / Create payload reader
+			ReceivedAt: time.Now(),            // 设置接收时间
+			Code:       code,                  // 设置消息代码
+			Size:       uint32(len(data)),     // 设置消息大小
+			meterSize:  uint32(wireSize),      // 设置传输大小
+			Payload:    bytes.NewReader(data), // 创建 payload 读取器
 		}
 	}
 	return msg, err
 }
 
 func (t *rlpxTransport) WriteMsg(msg Msg) error {
-	t.wmu.Lock()         // 加写锁 / Lock for writing
-	defer t.wmu.Unlock() // 延迟解锁 / Defer unlock
+	t.wmu.Lock()         // 加写锁
+	defer t.wmu.Unlock() // 延迟解锁
 
 	// Copy message data to write buffer.
 	// 将消息数据复制到写入缓冲区。
-	t.wbuf.Reset() // 重置缓冲区 / Reset buffer
+	t.wbuf.Reset() // 重置缓冲区
 	if _, err := io.CopyN(&t.wbuf, msg.Payload, int64(msg.Size)); err != nil {
-		return err // 复制失败返回错误 / Return error if copy fails
+		return err // 复制失败返回错误
 	}
 
 	// Write the message.
 	// 写入消息。
-	t.conn.SetWriteDeadline(time.Now().Add(frameWriteTimeout)) // 设置写入截止时间 / Set write deadline
-	size, err := t.conn.Write(msg.Code, t.wbuf.Bytes())        // 写入消息 / Write message
+	t.conn.SetWriteDeadline(time.Now().Add(frameWriteTimeout)) // 设置写入截止时间
+	size, err := t.conn.Write(msg.Code, t.wbuf.Bytes())        // 写入消息
 	if err != nil {
-		return err // 写入失败返回错误 / Return error if write fails
+		return err // 写入失败返回错误
 	}
 
 	// Set metrics.
 	// 设置指标。
 	msg.meterSize = size
 	if metrics.Enabled() && msg.meterCap.Name != "" { // don't meter non-subprotocol messages
-		// 如果指标启用且消息属于子协议，则记录 / Record if metrics enabled and message is subprotocol
+		// 如果指标启用且消息属于子协议，则记录
 		m := fmt.Sprintf("%s/%s/%d/%#02x", egressMeterName, msg.meterCap.Name, msg.meterCap.Version, msg.meterCode)
-		metrics.GetOrRegisterMeter(m, nil).Mark(int64(msg.meterSize)) // 记录数据量 / Record data size
-		metrics.GetOrRegisterMeter(m+"/packets", nil).Mark(1)         // 记录数据包计数 / Record packet count
+		metrics.GetOrRegisterMeter(m, nil).Mark(int64(msg.meterSize)) // 记录数据量
+		metrics.GetOrRegisterMeter(m+"/packets", nil).Mark(1)         // 记录数据包计数
 	}
 	return nil
 }
 
 func (t *rlpxTransport) close(err error) {
-	t.wmu.Lock()         // 加写锁 / Lock for writing
-	defer t.wmu.Unlock() // 延迟解锁 / Defer unlock
+	t.wmu.Lock()         // 加写锁
+	defer t.wmu.Unlock() // 延迟解锁
 
 	// Tell the remote end why we're disconnecting if possible.
 	// We only bother doing this if the underlying connection supports
 	// setting a timeout tough.
+	//
 	// 如果可能，告诉远程端我们断开的原因。
 	// 只有在底层连接支持设置超时的情况下才这样做。
 	if reason, ok := err.(DiscReason); ok && reason != DiscNetworkError {
-		// 我们不使用 WriteMsg 函数，因为我们想要自定义截止时间
 		// We do not use the WriteMsg func since we want a custom deadline
-		deadline := time.Now().Add(discWriteTimeout) // 设置断开写入截止时间 / Set disconnect write deadline
+		// 我们不使用 WriteMsg 函数，因为我们想要自定义截止时间
+		deadline := time.Now().Add(discWriteTimeout) // 设置断开写入截止时间
 		if err := t.conn.SetWriteDeadline(deadline); err == nil {
 			// Connection supports write deadline.
 			// 连接支持写入截止时间。
-			t.wbuf.Reset()                        // 重置缓冲区 / Reset buffer
-			rlp.Encode(&t.wbuf, []any{reason})    // 编码断开原因 / Encode disconnect reason
-			t.conn.Write(discMsg, t.wbuf.Bytes()) // 写入断开消息 / Write disconnect message
+			t.wbuf.Reset()                        // 重置缓冲区
+			rlp.Encode(&t.wbuf, []any{reason})    // 编码断开原因
+			t.conn.Write(discMsg, t.wbuf.Bytes()) // 写入断开消息
 		}
 	}
-	t.conn.Close() // 关闭连接 / Close connection
+	t.conn.Close() // 关闭连接
 }
 
 func (t *rlpxTransport) doEncHandshake(prv *ecdsa.PrivateKey) (*ecdsa.PublicKey, error) {
-	t.conn.SetDeadline(time.Now().Add(handshakeTimeout)) // 设置握手截止时间 / Set handshake deadline
-	return t.conn.Handshake(prv)                         // 执行加密握手 / Perform encryption handshake
+	t.conn.SetDeadline(time.Now().Add(handshakeTimeout)) // 设置握手截止时间
+	return t.conn.Handshake(prv)                         // 执行加密握手
 }
 
 func (t *rlpxTransport) doProtoHandshake(our *protoHandshake) (their *protoHandshake, err error) {
@@ -162,17 +165,17 @@ func (t *rlpxTransport) doProtoHandshake(our *protoHandshake) (their *protoHands
 	// returning the handshake read error. If the remote side
 	// disconnects us early with a valid reason, we should return it
 	// as the error so it can be tracked elsewhere.
+	//
 	// 我们的握手写入是并发进行的，我们优先返回读取错误。
 	// 如果远程端提前断开并提供有效原因，我们应将其作为错误返回，以便在其他地方跟踪。
 	werr := make(chan error, 1)
-	go func() { werr <- Send(t, handshakeMsg, our) }() // 并发发送我们的握手 / Concurrently send our handshake
+	go func() { werr <- Send(t, handshakeMsg, our) }() // 并发发送我们的握手
 	if their, err = readProtocolHandshake(t); err != nil {
-		<-werr // make sure the write terminates too
-		// 确保写入也终止 / Ensure write terminates
+		<-werr // make sure the write terminates too 确保写入也终止
 		return nil, err
 	}
 	if err := <-werr; err != nil {
-		return nil, fmt.Errorf("write error: %v", err) // 返回写入错误 / Return write error
+		return nil, fmt.Errorf("write error: %v", err) // 返回写入错误
 	}
 	// If the protocol version supports Snappy encoding, upgrade immediately
 	// 如果协议版本支持 Snappy 编码，立即升级
@@ -182,33 +185,34 @@ func (t *rlpxTransport) doProtoHandshake(our *protoHandshake) (their *protoHands
 }
 
 func readProtocolHandshake(rw MsgReader) (*protoHandshake, error) {
-	msg, err := rw.ReadMsg() // 读取消息 / Read message
+	msg, err := rw.ReadMsg() // 读取消息
 	if err != nil {
 		return nil, err
 	}
-	if msg.Size > baseProtocolMaxMsgSize { // 检查消息大小 / Check message size
+	if msg.Size > baseProtocolMaxMsgSize { // 检查消息大小
 		return nil, errors.New("message too big")
 		// 消息过大 / Message too big
 	}
-	if msg.Code == discMsg { // 检查是否为断开消息 / Check if disconnect message
+	if msg.Code == discMsg { // 检查是否为断开消息
 		// Disconnect before protocol handshake is valid according to the
 		// spec and we send it ourself if the post-handshake checks fail.
+		//
 		// 在协议握手之前断开是有效的，根据规范，
 		// 如果握手后检查失败，我们会自己发送它。
-		r := decodeDisconnectMessage(msg.Payload) // 解码断开原因 / Decode disconnect reason
+		r := decodeDisconnectMessage(msg.Payload) // 解码断开原因
 		return nil, r
 	}
-	if msg.Code != handshakeMsg { // 检查是否为握手消息 / Check if handshake message
+	if msg.Code != handshakeMsg { // 检查是否为握手消息
+		// 预期握手消息，收到其他
 		return nil, fmt.Errorf("expected handshake, got %x", msg.Code)
-		// 预期握手消息，收到其他 / Expected handshake, got other
 	}
 	var hs protoHandshake
-	if err := msg.Decode(&hs); err != nil { // 解码握手消息 / Decode handshake message
+	if err := msg.Decode(&hs); err != nil { // 解码握手消息
 		return nil, err
 	}
-	if len(hs.ID) != 64 || !bitutil.TestBytes(hs.ID) { // 验证 ID / Validate ID
+	if len(hs.ID) != 64 || !bitutil.TestBytes(hs.ID) { // 验证 ID
+		// 无效身份
 		return nil, DiscInvalidIdentity
-		// 无效身份 / Invalid identity
 	}
 	return &hs, nil
 }

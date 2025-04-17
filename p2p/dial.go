@@ -368,6 +368,7 @@ func (d *dialScheduler) readNodes(it enode.Iterator) {
 // logStats prints dialer statistics to the log. The message is suppressed when enough
 // peers are connected because users should only see it while their client is starting up
 // or comes back online.
+//
 // logStats 将 dialer 统计信息打印到日志中。当连接了足够的 peer 时，消息会被抑制，
 // 因为用户应该只在客户端启动或重新上线时看到它。
 func (d *dialScheduler) logStats() {
@@ -384,6 +385,7 @@ func (d *dialScheduler) logStats() {
 
 // rearmHistoryTimer configures d.historyTimer to fire when the
 // next item in d.history expires.
+//
 // rearmHistoryTimer 配置 d.historyTimer 以在 d.history 中的下一个项目过期时触发。
 func (d *dialScheduler) rearmHistoryTimer() {
 	if len(d.history) == 0 {
@@ -404,6 +406,7 @@ func (d *dialScheduler) expireHistory() {
 
 // freeDialSlots returns the number of free dial slots. The result can be negative
 // when peers are connected while their task is still running.
+//
 // freeDialSlots 返回可用拨号槽位的数量。当 peer 连接时但其任务仍在运行时，结果可能为负。
 func (d *dialScheduler) freeDialSlots() int {
 	slots := (d.maxDialPeers - d.dialPeers) * 2
@@ -424,6 +427,7 @@ func (d *dialScheduler) checkDial(n *enode.Node) error {
 		// This check can trigger if a non-TCP node is found
 		// by discovery. If there is no IP, the node is a static
 		// node and the actual endpoint will be resolved later in dialTask.
+		//
 		// 如果通过发现找到一个非 TCP 节点，则此检查可能会触发。
 		// 如果没有 IP，则该节点是静态节点，实际端点将在 dialTask 中稍后解析。
 		return errNoPort
@@ -456,6 +460,7 @@ func (d *dialScheduler) startStaticDials(n int) (started int) {
 }
 
 // updateStaticPool attempts to move the given static dial back into staticPool.
+//
 // updateStaticPool 尝试将给定的静态拨号移回 staticPool。
 func (d *dialScheduler) updateStaticPool(id enode.ID) {
 	task, ok := d.static[id]
@@ -474,6 +479,7 @@ func (d *dialScheduler) addToStaticPool(task *dialTask) {
 
 // removeFromStaticPool removes the task at idx from staticPool. It does that by moving the
 // current last element of the pool to idx and then shortening the pool by one.
+//
 // removeFromStaticPool 从 staticPool 中移除 idx 处的任务。
 // 它通过将池中的当前最后一个元素移动到 idx 处，然后将池缩短一个来实现。
 func (d *dialScheduler) removeFromStaticPool(idx int) {
@@ -488,6 +494,7 @@ func (d *dialScheduler) removeFromStaticPool(idx int) {
 
 // dnsResolveHostname updates the given node from its DNS hostname.
 // This is used to resolve static dial targets.
+//
 // dnsResolveHostname 从其 DNS 主机名更新给定节点。这用于解析静态拨号目标。
 func (d *dialScheduler) dnsResolveHostname(n *enode.Node) (*enode.Node, error) {
 	if n.Hostname() == "" {
@@ -535,6 +542,7 @@ func (d *dialScheduler) dnsResolveHostname(n *enode.Node) (*enode.Node, error) {
 	// dial target. And nodes will usually only have a DNS hostname if they came from a
 	// enode:// URL, which has no signature anyway. If it ever becomes a problem, the
 	// resolved IP could also be stored into dialTask instead of the node.
+	//
 	// 更新节点。注意，这会使 ENR 签名无效，因为我们使用 SignNull 创建修改后的副本。
 	// 但这应该没问题，因为我们只是将节点用作拨号目标。
 	// 而且节点通常只有在来自 enode:// URL 时才会有 DNS 主机名，而 enode:// URL 本身就没有签名。
@@ -637,6 +645,7 @@ func (t *dialTask) isStatic() bool {
 // Resolve operations are throttled with backoff to avoid flooding the
 // discovery network with useless queries for nodes that don't exist.
 // The backoff delay resets when the node is found.
+//
 // resolve 尝试使用发现来查找目标的当前端点。
 // 解析操作会通过退避进行节流，以避免用无用的查询淹没发现网络。
 // 当节点被找到时，退避延迟重置。

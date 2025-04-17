@@ -103,6 +103,7 @@ func markDialError(err error) {
 
 // meteredConn is a wrapper around a net.Conn that meters both the
 // inbound and outbound network traffic.
+//
 // meteredConn 是 net.Conn 的包装器，用于度量入站和出站网络流量。
 type meteredConn struct {
 	net.Conn
@@ -111,6 +112,7 @@ type meteredConn struct {
 // newMeteredConn creates a new metered connection, bumps the ingress or egress
 // connection meter and also increases the metered peer count. If the metrics
 // system is disabled, function returns the original connection.
+//
 // newMeteredConn 创建一个新的 metered 连接，增加入站或出站连接度量，并增加 metered peer 计数。
 // 如果度量系统被禁用，函数返回原始连接。
 func newMeteredConn(conn net.Conn) net.Conn {
@@ -122,6 +124,7 @@ func newMeteredConn(conn net.Conn) net.Conn {
 
 // Read delegates a network read to the underlying connection, bumping the common
 // and the peer ingress traffic meters along the way.
+//
 // Read 将网络读取委托给底层连接，并在过程中增加通用和 peer 入站流量度量。
 func (c *meteredConn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
@@ -131,6 +134,7 @@ func (c *meteredConn) Read(b []byte) (n int, err error) {
 
 // Write delegates a network write to the underlying connection, bumping the common
 // and the peer egress traffic meters along the way.
+//
 // Write 将网络写入委托给底层连接，并在过程中增加通用和 peer 出站流量度量。
 func (c *meteredConn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)

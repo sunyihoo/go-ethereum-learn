@@ -55,6 +55,7 @@ type Protocol struct {
 	// The peer connection is closed when Start returns. It should return
 	// any protocol-level error (such as an I/O error) that is
 	// encountered.
+	//
 	// Run 在与对等节点协商协议后在一个新的 goroutine 中被调用。
 	// 它应从 rw 读取和写入消息。每条消息的 Payload 必须被完全消费。
 	//
@@ -69,6 +70,7 @@ type Protocol struct {
 	// PeerInfo is an optional helper method to retrieve protocol specific metadata
 	// about a certain peer in the network. If an info retrieval function is set,
 	// but returns nil, it is assumed that the protocol handshake is still running.
+	//
 	// PeerInfo 是一个可选的辅助方法，用于检索网络中某个对等节点的协议特定元数据。
 	// 如果设置了信息检索函数但返回 nil，则假定协议握手仍在进行。
 	PeerInfo func(id enode.ID) interface{}
@@ -76,6 +78,7 @@ type Protocol struct {
 	// DialCandidates, if non-nil, is a way to tell Server about protocol-specific nodes
 	// that should be dialed. The server continuously reads nodes from the iterator and
 	// attempts to create connections to them.
+	//
 	// DialCandidates 如果非 nil，是告诉服务器关于应拨号的协议特定节点的一种方式。
 	// 服务器会持续从迭代器中读取节点并尝试与它们建立连接。
 	DialCandidates enode.Iterator
@@ -85,21 +88,19 @@ type Protocol struct {
 	Attributes []enr.Entry
 }
 
+// 返回协议的能力
 func (p Protocol) cap() Cap {
-	// Returns the capability of the protocol
-	// 返回协议的能力
 	return Cap{p.Name, p.Version}
 }
 
 // Cap is the structure of a peer capability.
 // Cap 是对等节点能力的结构体。
 type Cap struct {
-	Name    string // Protocol name / 协议名称
-	Version uint   // Protocol version / 协议版本
+	Name    string // 协议名称
+	Version uint   // 协议版本
 }
 
 func (cap Cap) String() string {
-	// Returns a string representation of the capability
 	// 返回能力的字符串表示
 	return fmt.Sprintf("%s/%d", cap.Name, cap.Version)
 }
@@ -107,12 +108,10 @@ func (cap Cap) String() string {
 // Cmp defines the canonical sorting order of capabilities.
 // Cmp 定义了能力的规范排序顺序。
 func (cap Cap) Cmp(other Cap) int {
+	// 如果名称相同，则比较版本
 	if cap.Name == other.Name {
-		// Compare versions if names are the same
-		// 如果名称相同，则比较版本
 		return cmp.Compare(cap.Version, other.Version)
 	}
-	// Otherwise compare names
 	// 否则比较名称
 	return strings.Compare(cap.Name, other.Name)
 }

@@ -41,9 +41,9 @@ func newPeerError(code int, format string, v ...interface{}) *peerError {
 	// 从映射中查找错误描述
 	desc, ok := errorToString[code]
 	if !ok {
-		panic("invalid error code") // 如果错误代码无效，则抛出panic / 如果错误代码无效，则抛出panic
+		panic("invalid error code") // 如果错误代码无效，则抛出panic
 	}
-	err := &peerError{code, desc} // Create a new peerError instance / 创建一个新的peerError实例
+	err := &peerError{code, desc} // Create a new peerError instance
 	if format != "" {
 		// Append formatted message if provided
 		// 如果提供了格式化字符串，则追加格式化消息
@@ -53,29 +53,29 @@ func newPeerError(code int, format string, v ...interface{}) *peerError {
 }
 
 func (pe *peerError) Error() string {
-	return pe.message // Return the error message / 返回错误信息
+	return pe.message //返回错误信息
 }
 
-var errProtocolReturned = errors.New("protocol returned") // Define a protocol return error / 定义协议返回错误
+var errProtocolReturned = errors.New("protocol returned") //定义协议返回错误
 
-type DiscReason uint8 // Define a type for disconnection reasons / 定义一个用于断开原因的类型
+type DiscReason uint8 // 定义一个用于断开原因的类型
 
 const (
-	DiscRequested           DiscReason         = iota // Requested disconnection / 请求断开
-	DiscNetworkError                                  // Network error / 网络错误
-	DiscProtocolError                                 // Protocol breach / 协议违反
-	DiscUselessPeer                                   // Useless peer / 无用对等节点
-	DiscTooManyPeers                                  // Too many peers / 过多对等节点
-	DiscAlreadyConnected                              // Already connected / 已连接
-	DiscIncompatibleVersion                           // Incompatible version / 版本不兼容
-	DiscInvalidIdentity                               // Invalid identity / 无效身份
-	DiscQuitting                                      // Client quitting / 客户端退出
-	DiscUnexpectedIdentity                            // Unexpected identity / 意外身份
-	DiscSelf                                          // Connected to self / 连接到自身
-	DiscReadTimeout                                   // Read timeout / 读取超时
-	DiscSubprotocolError    = DiscReason(0x10)        // Subprotocol error / 子协议错误
+	DiscRequested           DiscReason         = iota // 请求断开
+	DiscNetworkError                                  // 网络错误
+	DiscProtocolError                                 // 协议违反
+	DiscUselessPeer                                   // 无用对等节点
+	DiscTooManyPeers                                  // 过多对等节点
+	DiscAlreadyConnected                              // 已连接
+	DiscIncompatibleVersion                           // 版本不兼容
+	DiscInvalidIdentity                               // 无效身份
+	DiscQuitting                                      // 客户端退出
+	DiscUnexpectedIdentity                            // 意外身份
+	DiscSelf                                          // 连接到自身
+	DiscReadTimeout                                   // 读取超时
+	DiscSubprotocolError    = DiscReason(0x10)        // 子协议错误
 
-	DiscInvalid = 0xff // Invalid disconnect reason / 无效断开原因
+	DiscInvalid = 0xff // 无效断开原因
 )
 
 var discReasonToString = [...]string{
@@ -95,36 +95,35 @@ var discReasonToString = [...]string{
 	DiscInvalid:             "invalid disconnect reason",         // 无效断开原因
 }
 
+// 返回断开原因的字符串表示
 func (d DiscReason) String() string {
-	// Return string representation of the disconnect reason
-	// 返回断开原因的字符串表示
 	if len(discReasonToString) <= int(d) || discReasonToString[d] == "" {
-		return fmt.Sprintf("unknown disconnect reason %d", d) // Unknown reason / 未知原因
+		return fmt.Sprintf("unknown disconnect reason %d", d) //未知原因
 	}
 	return discReasonToString[d]
 }
 
+// 将断开原因作为错误返回
 func (d DiscReason) Error() string {
-	return d.String() // Return the disconnect reason as an error / 将断开原因作为错误返回
+	return d.String()
 }
 
+// 将错误映射到断开原因
 func discReasonForError(err error) DiscReason {
-	// Map an error to a disconnect reason
-	// 将错误映射到断开原因
 	if reason, ok := err.(DiscReason); ok {
-		return reason // Direct DiscReason type / 直接的DiscReason类型
+		return reason // 直接的DiscReason类型
 	}
 	if errors.Is(err, errProtocolReturned) {
-		return DiscQuitting // Protocol returned maps to quitting / 协议返回映射到退出
+		return DiscQuitting // 协议返回映射到退出
 	}
 	peerError, ok := err.(*peerError)
 	if ok {
 		switch peerError.code {
 		case errInvalidMsgCode, errInvalidMsg:
-			return DiscProtocolError // Invalid message errors map to protocol error / 无效消息错误映射到协议错误
+			return DiscProtocolError // 无效消息错误映射到协议错误
 		default:
-			return DiscSubprotocolError // Default to subprotocol error / 默认到子协议错误
+			return DiscSubprotocolError // 默认到子协议错误
 		}
 	}
-	return DiscSubprotocolError // Fallback to subprotocol error / 回退到子协议错误
+	return DiscSubprotocolError // 回退到子协议错误
 }

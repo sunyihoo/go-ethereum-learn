@@ -33,25 +33,26 @@ import (
 // ENR（EIP-778）：端口和 IP 信息存储在 ENR 中，供其他节点查询。
 
 const (
-	portMapDuration        = 10 * time.Minute // Port mapping duration / 端口映射持续时间
-	portMapRefreshInterval = 8 * time.Minute  // Port mapping refresh interval / 端口映射刷新间隔
-	portMapRetryInterval   = 5 * time.Minute  // Port mapping retry interval / 端口映射重试间隔
-	extipRetryInterval     = 2 * time.Minute  // External IP retry interval / 外部 IP 重试间隔
+	portMapDuration        = 10 * time.Minute // 端口映射持续时间
+	portMapRefreshInterval = 8 * time.Minute  // 端口映射刷新间隔
+	portMapRetryInterval   = 5 * time.Minute  // 端口映射重试间隔
+	extipRetryInterval     = 2 * time.Minute  // 外部 IP 重试间隔
 )
 
 type portMapping struct {
-	protocol string // Protocol type (TCP/UDP) / 协议类型（TCP/UDP）
-	name     string // Mapping name / 映射名称
-	port     int    // Internal port / 内部端口
+	protocol string // 协议类型（TCP/UDP）
+	name     string // 映射名称
+	port     int    // 内部端口
 
 	// for use by the portMappingLoop goroutine:
 	// 供 portMappingLoop goroutine 使用：
-	extPort  int            // the mapped port returned by the NAT interface / NAT 接口返回的映射端口
-	nextTime mclock.AbsTime // Next scheduled time for refresh or retry / 下次刷新或重试的计划时间
+	extPort  int            //  the mapped port returned by the NAT interface / NAT 接口返回的映射端口
+	nextTime mclock.AbsTime // 下次刷新或重试的计划时间
 }
 
 // setupPortMapping starts the port mapping loop if necessary.
 // Note: this needs to be called after the LocalNode instance has been set on the server.
+//
 // setupPortMapping 在必要时启动端口映射循环。
 // 注意：这需要在服务器上设置 LocalNode 实例后调用。
 func (srv *Server) setupPortMapping() {
@@ -59,8 +60,9 @@ func (srv *Server) setupPortMapping() {
 	// listening is enabled, and one more for enabling UDP port mapping if discovery is
 	// enabled. We make it buffered to avoid blocking setup while a mapping request is in
 	// progress.
-	// portMappingRegister 将接收最多两个值：如果启用了监听，则为 TCP 端口一个值；
-	// 如果启用了发现，则为 UDP 端口映射再一个值。我们使其带缓冲以避免在映射请求进行时阻塞设置。
+	//
+	// portMappingRegister 将接收最多两个值：如果启用了侦听，则一个用于 TCP 端口，如果启用了发现，则另一个用于启用 UDP 端口映射。
+	// 我们将其设置为缓冲，以避免在映射请求正在进行时阻止设置。
 	srv.portMappingRegister = make(chan *portMapping, 2)
 
 	switch srv.NAT.(type) {
@@ -107,10 +109,10 @@ func (srv *Server) portMappingLoop() {
 	}
 
 	var (
-		mappings  = make(map[string]*portMapping, 2) // Store mappings for TCP and UDP / 存储 TCP 和 UDP 的映射
-		refresh   = mclock.NewAlarm(srv.clock)       // Alarm for refreshing mappings / 用于刷新映射的闹钟
-		extip     = mclock.NewAlarm(srv.clock)       // Alarm for checking external IP / 用于检查外部 IP 的闹钟
-		lastExtIP net.IP                             // Last known external IP / 上次已知的外部 IP
+		mappings  = make(map[string]*portMapping, 2) // 存储 TCP 和 UDP 的映射
+		refresh   = mclock.NewAlarm(srv.clock)       // 用于刷新映射的闹钟
+		extip     = mclock.NewAlarm(srv.clock)       // 用于检查外部 IP 的闹钟
+		lastExtIP net.IP                             // 上次已知的外部 IP
 	)
 	extip.Schedule(srv.clock.Now())
 	defer func() {
