@@ -32,28 +32,28 @@ import "net"
 // TCPPipe creates an in process full duplex pipe based on a localhost TCP socket.
 // TCPPipe 创建一个基于本地 TCP 套接字的进程内全双工管道。
 func TCPPipe() (net.Conn, net.Conn, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0") // 在本地监听 TCP，端口为 0（系统分配） / Listen on TCP at localhost with port 0 (system-assigned)
+	l, err := net.Listen("tcp", "127.0.0.1:0") // 在本地监听 TCP，端口为 0（系统分配）
 	if err != nil {
-		return nil, nil, err // 如果监听失败则返回错误 / Return error if listen fails
+		return nil, nil, err // 如果监听失败则返回错误
 	}
-	defer l.Close() // 延迟关闭监听器 / Defer closing the listener
+	defer l.Close() // 延迟关闭监听器
 
-	var aconn net.Conn          // 接受的连接 / Accepted connection
-	aerr := make(chan error, 1) // 接受错误的通道 / Channel for accept errors
+	var aconn net.Conn          // 接受的连接
+	aerr := make(chan error, 1) // 接受错误的通道
 	go func() {
 		var err error
-		aconn, err = l.Accept() // 接受连接 / Accept connection
-		aerr <- err             // 将接受结果发送到通道 / Send accept result to channel
+		aconn, err = l.Accept() // 接受连接
+		aerr <- err             // 将接受结果发送到通道
 	}()
 
-	dconn, err := net.Dial("tcp", l.Addr().String()) // 拨号连接监听地址 / Dial the listener address
+	dconn, err := net.Dial("tcp", l.Addr().String()) // 拨号连接监听地址
 	if err != nil {
-		<-aerr               // 等待接受结果（清理通道） / Wait for accept result (clean channel)
-		return nil, nil, err // 如果拨号失败则返回错误 / Return error if dial fails
+		<-aerr               // 等待接受结果（清理通道）
+		return nil, nil, err // 如果拨号失败则返回错误
 	}
-	if err := <-aerr; err != nil { // 检查接受是否出错 / Check if accept failed
-		dconn.Close()        // 如果出错则关闭拨号连接 / Close dial connection if error
+	if err := <-aerr; err != nil { // 检查接受是否出错
+		dconn.Close()        // 如果出错则关闭拨号连接
 		return nil, nil, err // 返回错误 / Return error
 	}
-	return aconn, dconn, nil // 返回接受和拨号连接 / Return accepted and dialed connections
+	return aconn, dconn, nil // 返回接受和拨号连接
 }
